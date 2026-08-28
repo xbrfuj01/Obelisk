@@ -67,6 +67,7 @@
     <span class="status-icon status-{{ r.status }}">{% if r.status == 'finished' %}✓{% elif r.status == 'error' %}✕{% elif r.status == 'downloading' %}<span class="spinner"></span>{% elif r.status == 'queued' %}⏳{% else %}–{% endif %}</span>
     {% if r.status == 'finished' %}
       <a class="dl-download-btn" href="/api/file/{{ r.id }}">завантажити</a>
+      <button type="button" class="dl-share-btn btn-share" data-file-id="{{ r.id }}" title="Зберегти в галерею" hidden>📱</button>
     {% else %}
       <span class="dl-download-btn disabled">завантажити</span>
     {% endif %}
