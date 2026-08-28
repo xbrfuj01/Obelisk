@@ -293,9 +293,17 @@ def _progress_hook(job_id, d, state):
             if not state["leg_active"]:
                 state["leg_active"] = True
                 state["leg"] += 1
+                state["ticks"] = 0
             total = d.get("total_bytes") or d.get("total_bytes_estimate")
             downloaded = d.get("downloaded_bytes", 0)
-            leg_pct = (downloaded / total * 100) if total else 0
+            if total:
+                leg_pct = downloaded / total * 100
+            else:
+                # Timecode-clipped downloads go through yt-dlp's ffmpeg-based
+                # range downloader, which never reports a total size — without
+                # this the bar would sit frozen at 0% for the whole download.
+                state["ticks"] += 1
+                leg_pct = min(95, state["ticks"] * 3)
             job.progress = _combine_leg_progress(state["leg"], leg_pct)
             job.status = "downloading"
             db.commit()
@@ -330,7 +338,7 @@ def _run_job(job_id: str):
 
         height_filter = _height_filter(job.quality)
 
-        progress_state = {"leg": 0, "leg_active": False}
+        progress_state = {"leg": 0, "leg_active": False, "ticks": 0}
         ydl_opts = {
             "outtmpl": outtmpl,
             "noplaylist": True,
