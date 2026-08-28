@@ -212,6 +212,7 @@ def recent_jobs(
         {
             "id": r.id,
             "title": r.title or r.url,
+            "url": r.url,
             "status": r.status,
             "progress": r.progress,
             "source": r.source,

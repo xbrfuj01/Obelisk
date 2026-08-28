@@ -53,6 +53,7 @@
           <td>{{ '%.1f МБ'|format(h.filesize / 1048576) if h.filesize else '' }}</td>
           <td>
             {% if h.status == 'finished' %}<a href="/api/file/{{ h.id }}">файл</a>{% endif %}
+            {% if h.url %}<a href="{{ h.url }}" target="_blank" rel="noopener noreferrer" title="Відкрити оригінал" class="inline-form">🔍</a>{% endif %}
             <form method="post" action="/admin/delete/{{ h.id }}" class="inline-form">
               <button type="submit" class="link-btn">видалити</button>
             </form>

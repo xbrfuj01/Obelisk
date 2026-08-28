@@ -241,6 +241,12 @@ function statusIcon(status) {
   return "–";
 }
 
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str == null ? "" : String(str);
+  return div.innerHTML;
+}
+
 function renderRow(r) {
   const btn =
     r.status === "finished"
@@ -248,11 +254,15 @@ function renderRow(r) {
       : `<span class="dl-download-btn disabled">завантажити</span>`;
   const size = formatSize(r.filesize);
   const title = size ? `${r.title} (${size})` : r.title;
+  const sourceLink = r.url
+    ? `<a class="dl-source-btn" href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer" title="Відкрити оригінал">🔍</a>`
+    : "";
   return `
     <div class="dl-row" data-id="${r.id}">
       <span class="status-icon status-${r.status}">${statusIcon(r.status)}</span>
       ${btn}
-      <button type="button" class="dl-title">${title}</button>
+      <button type="button" class="dl-title">${escapeHtml(title)}</button>
+      ${sourceLink}
     </div>`;
 }
 

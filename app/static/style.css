@@ -521,6 +521,22 @@ button:active { transform: translateY(1px); }
   pointer-events: none;
 }
 
+.dl-source-btn {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-size: 0.9rem;
+  text-decoration: none;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+}
+
+.dl-source-btn:hover { border-color: var(--border-hover); }
+
 .dl-title {
   flex: 1;
   min-width: 0;

@@ -71,6 +71,7 @@
       <span class="dl-download-btn disabled">завантажити</span>
     {% endif %}
     <button type="button" class="dl-title">{{ r.title or r.url }}{% if r.filesize %} ({{ '%.0f МБ'|format(r.filesize / 1048576) }}){% endif %}</button>
+    {% if r.url %}<a class="dl-source-btn" href="{{ r.url }}" target="_blank" rel="noopener noreferrer" title="Відкрити оригінал">🔍</a>{% endif %}
   </div>
 {% else %}
   <p class="empty-hint">Ще немає завантажень</p>
