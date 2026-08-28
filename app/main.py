@@ -12,7 +12,14 @@ from sqlalchemy.orm import Session
 from .database import init_db, SessionLocal
 from .models import Download
 from . import auth
-from .downloader import submit_job, _source_from_url, probe_qualities, is_url_allowed, clear_ytdlp_cache
+from .downloader import (
+    submit_job,
+    _source_from_url,
+    probe_qualities,
+    is_url_allowed,
+    clear_ytdlp_cache,
+    parse_timecode,
+)
 from .cleanup import start_cleanup_thread, run_cleanup_once
 from . import timeutil
 
@@ -128,6 +135,8 @@ def create_download(
     container: str = Form("mp4"),
     subtitle_lang: str = Form(""),
     premiere_compat: bool = Form(False),
+    clip_start: str = Form(""),
+    clip_end: str = Form(""),
     db: Session = Depends(get_db),
     _=Depends(require_site_access_api),
 ):
@@ -146,6 +155,15 @@ def create_download(
     if mode not in ("video", "video_only", "audio"):
         mode = "video"
 
+    clip_start_sec = parse_timecode(clip_start)
+    clip_end_sec = parse_timecode(clip_end)
+    if clip_start and clip_start_sec is None:
+        return JSONResponse({"error": "Некоректний початковий таймкод"}, status_code=400)
+    if clip_end and clip_end_sec is None:
+        return JSONResponse({"error": "Некоректний кінцевий таймкод"}, status_code=400)
+    if clip_start_sec is not None and clip_end_sec is not None and clip_end_sec <= clip_start_sec:
+        return JSONResponse({"error": "Кінцевий таймкод має бути більшим за початковий"}, status_code=400)
+
     job = Download(
         url=url,
         source=_source_from_url(url),
@@ -154,6 +172,8 @@ def create_download(
         container=container,
         subtitle_lang=subtitle_lang.strip() or None,
         premiere_compat=1 if premiere_compat else 0,
+        clip_start=clip_start_sec,
+        clip_end=clip_end_sec,
         status="queued",
         client_ip=request.client.host if request.client else None,
         client_id=client_id,

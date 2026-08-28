@@ -13,6 +13,20 @@ const premiereCompatWrap = document.getElementById("premiere-compat-wrap");
 const subtitlesWrap = document.getElementById("subtitles-wrap");
 const subtitleSelect = document.getElementById("subtitle-select");
 const subtitleHint = document.getElementById("subtitle-hint");
+const clipToggle = document.getElementById("clip-toggle");
+const clipWrap = document.getElementById("clip-wrap");
+const clipStartInput = document.getElementById("clip-start-input");
+const clipEndInput = document.getElementById("clip-end-input");
+
+if (clipToggle) {
+  clipToggle.addEventListener("change", () => {
+    clipWrap.hidden = !clipToggle.checked;
+    if (!clipToggle.checked) {
+      clipStartInput.value = "";
+      clipEndInput.value = "";
+    }
+  });
+}
 
 const VIDEO_FORMAT_OPTIONS = [
   { value: "mp4", label: "MP4" },

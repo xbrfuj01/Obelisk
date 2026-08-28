@@ -22,6 +22,8 @@ class Download(Base):
     container = Column(String, nullable=True)
     subtitle_lang = Column(String, nullable=True)
     premiere_compat = Column(Integer, default=0)
+    clip_start = Column(Float, nullable=True)
+    clip_end = Column(Float, nullable=True)
 
     status = Column(String, default="queued")  # queued, downloading, finished, error, expired, deleted
     progress = Column(Float, default=0.0)

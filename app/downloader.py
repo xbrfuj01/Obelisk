@@ -85,6 +85,25 @@ def clear_ytdlp_cache():
     yt_dlp.YoutubeDL({"quiet": True}).cache.remove()
 
 
+def parse_timecode(value):
+    """Accepts "SS", "MM:SS" or "HH:MM:SS" (fractional seconds allowed) and
+    returns seconds as a float, or None if empty/unparseable."""
+    value = (value or "").strip()
+    if not value:
+        return None
+    parts = value.split(":")
+    try:
+        parts = [float(p) for p in parts]
+    except ValueError:
+        return None
+    if any(p < 0 for p in parts):
+        return None
+    seconds = 0.0
+    for p in parts:
+        seconds = seconds * 60 + p
+    return seconds
+
+
 def _height_filter(quality: str) -> str:
     if not quality or quality == "best":
         return ""
@@ -321,6 +340,13 @@ def _run_job(job_id: str):
         }
         if _should_use_proxy(job.url, db):
             ydl_opts["proxy"] = auth.get_proxy_url(db)
+
+        if job.clip_start is not None or job.clip_end is not None:
+            from yt_dlp.utils import download_range_func
+            start = job.clip_start or 0
+            end = job.clip_end if job.clip_end is not None else float("inf")
+            ydl_opts["download_ranges"] = download_range_func([], [(start, end)])
+            ydl_opts["force_keyframes_at_cuts"] = True
 
         if job.mode == "audio":
             audio_codec = job.container if job.container in AUDIO_FORMATS else "mp3"
