@@ -207,6 +207,13 @@ label {
   opacity: 0.8;
 }
 
+.hint.hint-error { color: var(--error); opacity: 1; }
+
+input.field-invalid {
+  border-color: var(--error);
+  box-shadow: 0 0 0 3px rgba(255, 107, 125, 0.18);
+}
+
 input, select, button {
   font-family: inherit;
   font-size: 0.96rem;

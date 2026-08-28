@@ -15,11 +15,48 @@ const subtitleSelect = document.getElementById("subtitle-select");
 const subtitleHint = document.getElementById("subtitle-hint");
 const clipStartInput = document.getElementById("clip-start-input");
 const clipEndInput = document.getElementById("clip-end-input");
+const clipHint = document.getElementById("clip-hint");
 const advancedToggle = document.getElementById("advanced-toggle");
 const advancedWrap = document.getElementById("advanced-wrap");
 
 const CLIP_START_DEFAULT = "00:00:00";
 const CLIP_END_DEFAULT = "99:99:99";
+const CLIP_HINT_DEFAULT = clipHint ? clipHint.textContent : "";
+const CLIP_HINT_ERROR = 'Некоректний таймкод — хвилини та секунди мають бути від 0 до 59 (напр. 00:14:48)';
+
+// Only the leftmost (hours) part is unbounded — minutes/seconds must be < 60,
+// mirroring the server-side check in parse_timecode() so bad input like
+// "00:61:67" gets flagged immediately instead of only failing on submit.
+function isClipFieldValid(value) {
+  const parts = value.split(":");
+  if (parts.length > 3) return false;
+  const nums = parts.map(Number);
+  if (parts.some((p) => p.trim() === "") || nums.some((n) => Number.isNaN(n) || n < 0)) return false;
+  return nums.slice(1).every((n) => n < 60);
+}
+
+function validateClipField(input, defaultValue) {
+  const v = input.value.trim();
+  const ok = v === "" || v === defaultValue || isClipFieldValid(v);
+  input.classList.toggle("field-invalid", !ok);
+  return ok;
+}
+
+function updateClipValidity() {
+  const startOk = validateClipField(clipStartInput, CLIP_START_DEFAULT);
+  const endOk = validateClipField(clipEndInput, CLIP_END_DEFAULT);
+  const allOk = startOk && endOk;
+  if (clipHint) {
+    clipHint.textContent = allOk ? CLIP_HINT_DEFAULT : CLIP_HINT_ERROR;
+    clipHint.classList.toggle("hint-error", !allOk);
+  }
+  return allOk;
+}
+
+if (clipStartInput && clipEndInput) {
+  clipStartInput.addEventListener("input", updateClipValidity);
+  clipEndInput.addEventListener("input", updateClipValidity);
+}
 
 if (advancedToggle) {
   advancedToggle.addEventListener("change", () => {
@@ -226,6 +263,10 @@ if (urlClearBtn) {
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (!updateClipValidity()) {
+    statusBox.innerHTML = `<div class="card status-card"><p class="error">${CLIP_HINT_ERROR}</p></div>`;
+    return;
+  }
   const estimatedBytes = estimatedBytesForSelection();
   const fd = new FormData(form);
   const clipStart = clipStartInput.value.trim();

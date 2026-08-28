@@ -87,16 +87,25 @@ def clear_ytdlp_cache():
 
 def parse_timecode(value):
     """Accepts "SS", "MM:SS" or "HH:MM:SS" (fractional seconds allowed) and
-    returns seconds as a float, or None if empty/unparseable."""
+    returns seconds as a float, or None if empty/unparseable/out of range.
+
+    Only the leftmost (most significant) part is unbounded — minutes and
+    seconds parts must each be below 60, so "00:61:67" is rejected rather
+    than silently normalized.
+    """
     value = (value or "").strip()
     if not value:
         return None
     parts = value.split(":")
+    if len(parts) > 3:
+        return None
     try:
         parts = [float(p) for p in parts]
     except ValueError:
         return None
     if any(p < 0 for p in parts):
+        return None
+    if any(p >= 60 for p in parts[1:]):
         return None
     seconds = 0.0
     for p in parts:
