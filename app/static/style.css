@@ -580,17 +580,19 @@ button:active { transform: translateY(1px); }
 
 .dl-download-btn {
   flex: 0 0 auto;
-  display: inline-block;
-  font-size: 0.78rem;
-  font-weight: 600;
-  padding: 6px 14px;
-  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   color: #fff;
   text-decoration: none;
   box-shadow: none;
-  white-space: nowrap;
 }
+
+.dl-download-btn:hover { filter: brightness(1.08); }
 
 .dl-download-btn.disabled {
   background: var(--bg-input);
@@ -732,7 +734,6 @@ a.tool-card:hover {
 
   .dl-row { padding: 10px 14px; gap: 8px; }
   .dl-title { font-size: 0.85rem; }
-  .dl-download-btn { padding: 5px 10px; font-size: 0.72rem; }
 
   .login-page { min-height: calc(100vh - 150px); }
 }

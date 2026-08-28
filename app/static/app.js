@@ -381,8 +381,8 @@ function escapeHtml(str) {
 function renderRow(r) {
   const btn =
     r.status === "finished"
-      ? `<a class="dl-download-btn" href="/api/file/${r.id}">завантажити</a>`
-      : `<span class="dl-download-btn disabled">завантажити</span>`;
+      ? `<a class="dl-download-btn" href="/api/file/${r.id}" title="Завантажити">${DOWNLOAD_ICON}</a>`
+      : `<span class="dl-download-btn disabled" title="Ще не готово">${DOWNLOAD_ICON}</span>`;
   const size = formatSize(r.filesize);
   const title = size ? `${r.title} (${size})` : r.title;
   const sourceLink = r.url
@@ -391,9 +391,9 @@ function renderRow(r) {
   return `
     <div class="dl-row" data-id="${r.id}">
       <span class="status-icon status-${r.status}">${statusIcon(r.status)}</span>
-      ${btn}
       <button type="button" class="dl-title">${escapeHtml(title)}</button>
       ${sourceLink}
+      ${btn}
     </div>`;
 }
 
