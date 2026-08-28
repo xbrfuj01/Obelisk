@@ -48,8 +48,8 @@ class Conversion(Base):
     input_summary = Column(Text, nullable=True)
     duration_seconds = Column(Float, nullable=True)
 
-    quality = Column(String, default="medium")  # high | medium | low
-    audio_option = Column(String, default="aac")  # aac | original | none
+    quality = Column(String, default="high")  # high | medium | low
+    audio_option = Column(String, default="original")  # aac | original | none
 
     status = Column(String, default="queued")  # queued, converting, finished, error, expired
     progress = Column(Float, default=0.0)

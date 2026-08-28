@@ -466,7 +466,7 @@ button:active { transform: translateY(1px); }
 
 .badge-finished { background: rgba(62, 207, 142, 0.15); color: var(--success); }
 .badge-error { background: rgba(255, 107, 125, 0.15); color: var(--error); }
-.badge-downloading, .badge-queued { background: rgba(91, 124, 255, 0.15); color: var(--accent); }
+.badge-downloading, .badge-converting, .badge-queued { background: rgba(91, 124, 255, 0.15); color: var(--accent); }
 
 .admin-header {
   display: flex;
@@ -512,6 +512,38 @@ button:active { transform: translateY(1px); }
 }
 
 .tab-panel[hidden] { display: none; }
+
+.period-tabs {
+  display: flex;
+  gap: 6px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.period-tab-btn {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-weight: 500;
+  font-size: 0.82rem;
+  padding: 7px 14px;
+  border-radius: 20px;
+  width: auto;
+  box-shadow: none;
+}
+
+.period-tab-btn:hover { color: var(--text); border-color: var(--border-hover); }
+
+.period-tab-btn.active {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-color: transparent;
+  color: #fff;
+}
+
+.period-panel[hidden] { display: none; }
+.period-panel { margin-top: 12px; }
+
+section h3 { margin: 22px 0 4px; font-size: 1rem; }
 
 .stats-grid {
   display: grid;

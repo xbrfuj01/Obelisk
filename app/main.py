@@ -25,6 +25,8 @@ from .downloader import (
 )
 from .cleanup import start_cleanup_thread, run_cleanup_once
 from . import timeutil
+from . import stats as stats_module
+from . import sysinfo
 
 BASE_DIR = os.path.dirname(__file__)
 
@@ -51,6 +53,7 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 templates.env.globals["format_dt"] = timeutil.format_local
+templates.env.globals["format_bytes"] = sysinfo.format_bytes
 
 
 @app.exception_handler(auth.NotAuthenticated)
@@ -293,8 +296,8 @@ async def create_conversion(
     request: Request,
     response: Response,
     file: UploadFile = File(...),
-    quality: str = Form("medium"),
-    audio_option: str = Form("aac"),
+    quality: str = Form("high"),
+    audio_option: str = Form("original"),
     db: Session = Depends(get_db),
     _=Depends(require_site_access_api),
 ):
@@ -306,9 +309,9 @@ async def create_conversion(
 
     client_id = get_client_id(request, response)
     if quality not in CONVERT_QUALITIES:
-        quality = "medium"
+        quality = "high"
     if audio_option not in CONVERT_AUDIO_OPTIONS:
-        audio_option = "aac"
+        audio_option = "original"
 
     job_id = uuid.uuid4().hex
     job_dir = os.path.join(config.DOWNLOAD_DIR, "converts", job_id)
@@ -518,6 +521,28 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(a
     )
 
     history = db.query(Download).order_by(Download.created_at.desc()).limit(100).all()
+
+    conversion_total = db.query(func.count(Conversion.id)).scalar()
+    conversion_finished = db.query(func.count(Conversion.id)).filter(Conversion.status == "finished").scalar()
+    conversion_errors = db.query(func.count(Conversion.id)).filter(Conversion.status == "error").scalar()
+    conversion_total_size = (
+        db.query(func.coalesce(func.sum(Conversion.filesize), 0))
+        .filter(Conversion.status == "finished")
+        .scalar()
+    )
+    conversion_history = db.query(Conversion).order_by(Conversion.created_at.desc()).limit(100).all()
+
+    user_activity = stats_module.user_activity(db)
+    activity_periods = [(key, label) for key, label, _delta in stats_module.PERIODS]
+
+    sys_info = {
+        "memory": sysinfo.get_memory_stats(),
+        "cpu_temp": sysinfo.get_cpu_temperature(),
+        "network": sysinfo.get_network_stats(),
+        "cpu_count": sysinfo.get_cpu_count(),
+        "load_avg": sysinfo.get_load_average(),
+    }
+
     retention_hours = auth.get_retention_hours(db)
     admin_username = auth.get_admin_username(db)
     site_gate_enabled = auth.is_site_gate_enabled(db)
@@ -543,6 +568,14 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(a
             "total_size": total_size,
             "by_source": by_source,
             "history": history,
+            "conversion_total": conversion_total,
+            "conversion_finished": conversion_finished,
+            "conversion_errors": conversion_errors,
+            "conversion_total_size": conversion_total_size,
+            "conversion_history": conversion_history,
+            "user_activity": user_activity,
+            "activity_periods": activity_periods,
+            "sys_info": sys_info,
             "retention_hours": retention_hours,
             "admin_username": admin_username,
             "cleanup_interval_minutes": cleanup_interval_minutes,
@@ -561,6 +594,23 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(a
 @app.post("/admin/delete/{job_id}")
 def admin_delete(job_id: str, db: Session = Depends(get_db), _=Depends(auth.require_admin)):
     job = db.get(Download, job_id)
+    if job:
+        if job.filepath and os.path.exists(job.filepath):
+            try:
+                os.remove(job.filepath)
+                parent = os.path.dirname(job.filepath)
+                if os.path.isdir(parent) and not os.listdir(parent):
+                    os.rmdir(parent)
+            except OSError:
+                pass
+        db.delete(job)
+        db.commit()
+    return RedirectResponse("/admin?tab=stats", status_code=303)
+
+
+@app.post("/admin/delete-conversion/{job_id}")
+def admin_delete_conversion(job_id: str, db: Session = Depends(get_db), _=Depends(auth.require_admin)):
+    job = db.get(Conversion, job_id)
     if job:
         if job.filepath and os.path.exists(job.filepath):
             try:

@@ -8,16 +8,58 @@
 <nav class="admin-tabs">
   <button type="button" class="admin-tab-btn" data-tab="stats">Статистика</button>
   <button type="button" class="admin-tab-btn" data-tab="users">Користувачі</button>
+  <button type="button" class="admin-tab-btn" data-tab="system">Система</button>
   <button type="button" class="admin-tab-btn" data-tab="settings">Налаштування</button>
   <button type="button" class="admin-tab-btn" data-tab="password">Зміна паролю</button>
 </nav>
 
 <div class="tab-panel" data-tab-panel="stats">
-  <section class="stats-grid">
-    <div class="stat-card"><span class="stat-value">{{ total }}</span><span class="stat-label">Всього завантажень</span></div>
-    <div class="stat-card"><span class="stat-value">{{ finished }}</span><span class="stat-label">Успішних</span></div>
-    <div class="stat-card"><span class="stat-value">{{ errors }}</span><span class="stat-label">Помилок</span></div>
-    <div class="stat-card"><span class="stat-value">{{ "%.1f"|format(total_size / 1048576) }} МБ</span><span class="stat-label">Займано місця</span></div>
+  <section>
+    <h2>Завантаження</h2>
+    <div class="stats-grid">
+      <div class="stat-card"><span class="stat-value">{{ total }}</span><span class="stat-label">Всього завантажень</span></div>
+      <div class="stat-card"><span class="stat-value">{{ finished }}</span><span class="stat-label">Успішних</span></div>
+      <div class="stat-card"><span class="stat-value">{{ errors }}</span><span class="stat-label">Помилок</span></div>
+      <div class="stat-card"><span class="stat-value">{{ format_bytes(total_size) }}</span><span class="stat-label">Займано місця</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Конвертації</h2>
+    <div class="stats-grid">
+      <div class="stat-card"><span class="stat-value">{{ conversion_total }}</span><span class="stat-label">Всього конвертацій</span></div>
+      <div class="stat-card"><span class="stat-value">{{ conversion_finished }}</span><span class="stat-label">Успішних</span></div>
+      <div class="stat-card"><span class="stat-value">{{ conversion_errors }}</span><span class="stat-label">Помилок</span></div>
+      <div class="stat-card"><span class="stat-value">{{ format_bytes(conversion_total_size) }}</span><span class="stat-label">Займано місця</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Активність користувачів</h2>
+    <nav class="period-tabs">
+      {% for key, label in activity_periods %}
+        <button type="button" class="period-tab-btn" data-period="{{ key }}">{{ label }}</button>
+      {% endfor %}
+    </nav>
+    {% for key, label in activity_periods %}
+      <div class="table-wrap card period-panel" data-period-panel="{{ key }}">
+      <table class="table">
+        <thead><tr><th>Користувач</th><th>Завантажень</th><th>Конвертацій</th><th>Розмір</th></tr></thead>
+        <tbody>
+        {% for row in user_activity[key] %}
+          <tr>
+            <td>{{ row.username }}</td>
+            <td>{{ row.downloads }}</td>
+            <td>{{ row.conversions }}</td>
+            <td>{{ format_bytes(row.size) }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4">Немає активності за цей період</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    {% endfor %}
   </section>
 
   <section>
@@ -50,7 +92,7 @@
           <td><span class="badge badge-{{ h.status }}">{{ h.status }}</span></td>
           <td>{{ h.username or '—' }}</td>
           <td>{{ format_dt(h.created_at, timezone) }}</td>
-          <td>{{ '%.1f МБ'|format(h.filesize / 1048576) if h.filesize else '' }}</td>
+          <td>{{ format_bytes(h.filesize) if h.filesize else '' }}</td>
           <td>
             {% if h.status == 'finished' %}<a href="/api/file/{{ h.id }}">файл</a>{% endif %}
             {% if h.url %}<a href="{{ h.url }}" target="_blank" rel="noopener noreferrer" title="Відкрити оригінал" class="inline-form">🔍</a>{% endif %}
@@ -61,6 +103,36 @@
         </tr>
       {% else %}
         <tr><td colspan="8">Ще немає завантажень</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Історія конвертацій</h2>
+    <div class="table-wrap card">
+    <table class="table">
+      <thead><tr><th>Файл</th><th>Якість</th><th>Аудіо</th><th>Статус</th><th>Користувач</th><th>Дата</th><th>Розмір</th><th></th></tr></thead>
+      <tbody>
+      {% for c in conversion_history %}
+        <tr>
+          <td>{{ c.original_filename or "video" }}</td>
+          <td>{{ c.quality }}</td>
+          <td>{{ c.audio_option }}</td>
+          <td><span class="badge badge-{{ c.status }}">{{ c.status }}</span></td>
+          <td>{{ c.username or '—' }}</td>
+          <td>{{ format_dt(c.created_at, timezone) }}</td>
+          <td>{{ format_bytes(c.filesize) if c.filesize else '' }}</td>
+          <td>
+            {% if c.status == 'finished' %}<a href="/api/convert/file/{{ c.id }}">файл</a>{% endif %}
+            <form method="post" action="/admin/delete-conversion/{{ c.id }}" class="inline-form">
+              <button type="submit" class="link-btn">видалити</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8">Ще немає конвертацій</td></tr>
       {% endfor %}
       </tbody>
     </table>
@@ -118,6 +190,49 @@
       </label>
       <button type="submit">Додати</button>
     </form>
+  </section>
+</div>
+
+<div class="tab-panel" data-tab-panel="system">
+  <section>
+    <h2>Система</h2>
+    <p class="hint">Показники самого сервера (TrueNAS), а не лише контейнера — оскільки Obelisk єдиний процес у своєму контейнері, мережевий трафік нижче фактично і є трафіком сервісу. Деякі значення можуть бути недоступні залежно від того, що Docker відкриває контейнеру.</p>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <span class="stat-value">{{ "%.1f°C"|format(sys_info.cpu_temp) if sys_info.cpu_temp is not none else "—" }}</span>
+        <span class="stat-label">Температура CPU</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value">{{ sys_info.cpu_count if sys_info.cpu_count is not none else "—" }}</span>
+        <span class="stat-label">Ядер CPU</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value">{{ "%.2f"|format(sys_info.load_avg[0]) if sys_info.load_avg else "—" }}</span>
+        <span class="stat-label">Навантаження (1 хв)</span>
+      </div>
+    </div>
+
+    <h3>Пам'ять</h3>
+    {% if sys_info.memory %}
+    <div class="stats-grid">
+      <div class="stat-card"><span class="stat-value">{{ format_bytes(sys_info.memory.total) }}</span><span class="stat-label">Всього RAM</span></div>
+      <div class="stat-card"><span class="stat-value">{{ format_bytes(sys_info.memory.used) }}</span><span class="stat-label">Використано</span></div>
+      <div class="stat-card"><span class="stat-value">{{ format_bytes(sys_info.memory.cached) }}</span><span class="stat-label">Кеш/буфери</span></div>
+      <div class="stat-card"><span class="stat-value">{{ format_bytes(sys_info.memory.available) }}</span><span class="stat-label">Доступно</span></div>
+    </div>
+    {% else %}
+    <p class="hint">Інформація про пам'ять недоступна в цьому середовищі.</p>
+    {% endif %}
+
+    <h3>Мережа (з моменту старту контейнера)</h3>
+    {% if sys_info.network %}
+    <div class="stats-grid">
+      <div class="stat-card"><span class="stat-value">{{ format_bytes(sys_info.network.rx_bytes) }}</span><span class="stat-label">Отримано</span></div>
+      <div class="stat-card"><span class="stat-value">{{ format_bytes(sys_info.network.tx_bytes) }}</span><span class="stat-label">Надіслано</span></div>
+    </div>
+    {% else %}
+    <p class="hint">Інформація про мережу недоступна в цьому середовищі.</p>
+    {% endif %}
   </section>
 </div>
 
@@ -229,6 +344,20 @@
   var requested = new URLSearchParams(window.location.search).get("tab");
   var valid = Array.prototype.map.call(btns, function (b) { return b.dataset.tab; });
   activate(valid.includes(requested) ? requested : "stats");
+
+  var periodBtns = document.querySelectorAll(".period-tab-btn");
+  var periodPanels = document.querySelectorAll(".period-panel");
+
+  function activatePeriod(period) {
+    periodBtns.forEach(function (b) { b.classList.toggle("active", b.dataset.period === period); });
+    periodPanels.forEach(function (p) { p.hidden = p.dataset.periodPanel !== period; });
+  }
+
+  periodBtns.forEach(function (btn) {
+    btn.addEventListener("click", function () { activatePeriod(btn.dataset.period); });
+  });
+
+  if (periodBtns.length) activatePeriod(periodBtns[0].dataset.period);
 })();
 </script>
 {% endblock %}
