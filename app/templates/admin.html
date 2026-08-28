@@ -77,10 +77,14 @@
       <input type="password" name="new_password_confirm" autocomplete="new-password">
     </label>
 
-    <label>Пароль сайту {% if site_gate_enabled %}<span class="badge badge-finished">увімкнено</span>{% else %}<span class="badge">вимкнено</span>{% endif %}
-      <input type="password" name="new_site_password" autocomplete="new-password" placeholder="{% if site_gate_enabled %}залиште порожнім, щоб не змінювати{% else %}задайте, щоб увімкнути пароль на весь сайт{% endif %}">
+    <label>Вхід на сайт {% if site_gate_enabled %}<span class="badge badge-finished">увімкнено</span>{% else %}<span class="badge">вимкнено</span>{% endif %}</label>
+    <label>Логін сайту
+      <input type="text" name="new_site_username" value="{{ site_username }}" autocomplete="username">
     </label>
-    <label class="checkbox-row"><input type="checkbox" name="disable_site_password"> <span>Вимкнути пароль сайту (сайт стане відкритим для всіх)</span></label>
+    <label>Новий пароль сайту
+      <input type="password" name="new_site_password" autocomplete="new-password" placeholder="{% if site_gate_enabled %}залиште порожнім, щоб не змінювати{% else %}задайте, щоб увімкнути вхід на сайт{% endif %}">
+    </label>
+    <label class="checkbox-row"><input type="checkbox" name="disable_site_password"> <span>Вимкнути вхід на сайт (сайт стане відкритим для всіх)</span></label>
 
     <button type="submit">Зберегти</button>
   </form>

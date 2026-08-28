@@ -500,6 +500,66 @@ button:active { transform: translateY(1px); }
   text-align: center;
 }
 
+.back-link {
+  display: inline-block;
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 0.86rem;
+  margin-bottom: 18px;
+}
+
+.back-link:hover { color: var(--text); }
+
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.tool-card {
+  background: linear-gradient(180deg, var(--bg-card), rgba(21, 24, 34, 0.85));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--text);
+  box-shadow: 0 12px 30px -18px rgba(0, 0, 0, 0.6);
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+a.tool-card:hover {
+  border-color: var(--border-hover);
+  transform: translateY(-2px);
+}
+
+.tool-card.disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.tool-icon {
+  font-size: 1.6rem;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+}
+
+.tool-card.disabled .tool-icon {
+  background: var(--bg-input);
+  color: var(--text-dim);
+}
+
+.tool-name { font-size: 1.05rem; font-weight: 700; }
+.tool-desc { font-size: 0.85rem; color: var(--text-dim); }
+
 /* Mobile */
 
 @media (max-width: 640px) {

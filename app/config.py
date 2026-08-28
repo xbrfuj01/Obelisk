@@ -4,9 +4,10 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin")
 
-# Optional password gate for the whole public site (separate from the admin
-# login). Empty = disabled (current behaviour). Can also be set/changed later
-# from the admin settings page.
+# Optional login gate for the whole public site (separate from the admin
+# login). Empty password = disabled (site stays open). Can also be
+# set/changed later from the admin settings page.
+SITE_USERNAME = os.environ.get("SITE_USERNAME", "user")
 SITE_PASSWORD = os.environ.get("SITE_PASSWORD", "")
 
 # How long a successful login (site or admin) is remembered on a device.

@@ -63,10 +63,11 @@ def require_admin(request: Request):
         raise NotAuthenticated()
 
 
-# ---------------- Site-wide password gate ----------------
+# ---------------- Site-wide login gate ----------------
 
 def ensure_site_password(db: Session):
     if config.SITE_PASSWORD and not get_setting(db, "site_password_hash"):
+        set_setting(db, "site_username", config.SITE_USERNAME)
         set_setting(db, "site_password_hash", pwd_context.hash(config.SITE_PASSWORD))
 
 
@@ -74,11 +75,20 @@ def is_site_gate_enabled(db: Session) -> bool:
     return bool(get_setting(db, "site_password_hash"))
 
 
-def verify_site_password(db: Session, password: str) -> bool:
+def get_site_username(db: Session) -> str:
+    return get_setting(db, "site_username", config.SITE_USERNAME)
+
+
+def verify_site_credentials(db: Session, username: str, password: str) -> bool:
+    expected_username = get_site_username(db)
     hash_ = get_setting(db, "site_password_hash")
-    if not hash_:
+    if not hash_ or username != expected_username:
         return False
     return pwd_context.verify(password, hash_)
+
+
+def set_site_username(db: Session, username: str):
+    set_setting(db, "site_username", username)
 
 
 def set_site_password(db: Session, password: str):
@@ -127,3 +137,26 @@ def register_failed_attempt(key: str):
 def register_successful_attempt(key: str):
     with _login_lock:
         _login_attempts.pop(key, None)
+
+
+# ---------------- Download rate limiting ----------------
+
+DOWNLOAD_RATE_LIMIT = 20
+DOWNLOAD_RATE_WINDOW_MINUTES = 10
+
+_download_lock = threading.Lock()
+_download_windows = {}  # key -> {"count": int, "window_started": datetime}
+
+
+def check_download_rate_limit(key: str) -> bool:
+    """Returns True if this key is allowed to submit another download now."""
+    with _download_lock:
+        entry = _download_windows.get(key)
+        now = datetime.utcnow()
+        if not entry or now - entry["window_started"] > timedelta(minutes=DOWNLOAD_RATE_WINDOW_MINUTES):
+            _download_windows[key] = {"count": 1, "window_started": now}
+            return True
+        if entry["count"] >= DOWNLOAD_RATE_LIMIT:
+            return False
+        entry["count"] += 1
+        return True

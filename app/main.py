@@ -13,12 +13,12 @@ from . import config
 from .database import init_db, SessionLocal
 from .models import Download
 from . import auth
-from .downloader import submit_job, _source_from_url, probe_qualities
+from .downloader import submit_job, _source_from_url, probe_qualities, is_url_allowed
 from .cleanup import start_cleanup_thread
 
 BASE_DIR = os.path.dirname(__file__)
 
-app = FastAPI(title="Video Downloader")
+app = FastAPI(title="Obelisk")
 app.add_middleware(
     SessionMiddleware,
     secret_key=config.SECRET_KEY,
@@ -85,7 +85,12 @@ def on_startup():
 # ---------------- Public ----------------
 
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_page)):
+def hub(request: Request, _=Depends(require_site_access_page)):
+    return templates.TemplateResponse("hub.html", {"request": request})
+
+
+@app.get("/downloader", response_class=HTMLResponse)
+def downloader_page(request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_page)):
     client_id = request.cookies.get(CLIENT_ID_COOKIE)
     is_new_client = not client_id
     if is_new_client:
@@ -98,7 +103,7 @@ def index(request: Request, db: Session = Depends(get_db), _=Depends(require_sit
         .limit(20)
         .all()
     )
-    resp = templates.TemplateResponse("index.html", {"request": request, "recent": recent})
+    resp = templates.TemplateResponse("downloader.html", {"request": request, "recent": recent})
     if is_new_client:
         resp.set_cookie(
             CLIENT_ID_COOKIE, client_id, max_age=CLIENT_ID_MAX_AGE, httponly=True, samesite="lax"
@@ -119,10 +124,17 @@ def create_download(
     _=Depends(require_site_access_api),
 ):
     client_id = get_client_id(request, response)
+    ip = request.client.host if request.client else "unknown"
 
     url = url.strip()
     if not url.startswith(("http://", "https://")):
         return JSONResponse({"error": "Некоректне посилання"}, status_code=400)
+    if not is_url_allowed(url):
+        return JSONResponse({"error": "Це посилання вказує на заборонену адресу"}, status_code=400)
+    if not auth.check_download_rate_limit(f"dl:{ip}"):
+        return JSONResponse(
+            {"error": "Забагато завантажень поспіль. Спробуйте пізніше."}, status_code=429
+        )
     if mode not in ("video", "video_only", "audio"):
         mode = "video"
 
@@ -164,6 +176,8 @@ def get_formats(url: str, db: Session = Depends(get_db), _=Depends(require_site_
     url = url.strip()
     if not url.startswith(("http://", "https://")):
         return JSONResponse({"error": "Некоректне посилання"}, status_code=400)
+    if not is_url_allowed(url):
+        return JSONResponse({"error": "Це посилання вказує на заборонену адресу"}, status_code=400)
     try:
         qualities = probe_qualities(url)
     except Exception as e:
@@ -218,7 +232,12 @@ def site_login_form(request: Request, db: Session = Depends(get_db)):
 
 
 @app.post("/site-login")
-def site_login(request: Request, password: str = Form(...), db: Session = Depends(get_db)):
+def site_login(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db),
+):
     ip = request.client.host if request.client else "unknown"
     key = f"site:{ip}"
     locked, remaining = auth.check_lockout(key)
@@ -229,13 +248,13 @@ def site_login(request: Request, password: str = Form(...), db: Session = Depend
             {"request": request, "error": f"Забагато спроб. Спробуйте ще раз через {minutes} хв."},
             status_code=429,
         )
-    if auth.verify_site_password(db, password):
+    if auth.verify_site_credentials(db, username, password):
         auth.register_successful_attempt(key)
         request.session["site_access"] = True
         return RedirectResponse("/", status_code=303)
     auth.register_failed_attempt(key)
     return templates.TemplateResponse(
-        "site_login.html", {"request": request, "error": "Невірний пароль"}, status_code=401
+        "site_login.html", {"request": request, "error": "Невірний логін або пароль"}, status_code=401
     )
 
 
@@ -308,12 +327,14 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(a
     retention_hours = auth.get_retention_hours(db)
     admin_username = auth.get_admin_username(db)
     site_gate_enabled = auth.is_site_gate_enabled(db)
+    site_username = auth.get_site_username(db)
 
     return templates.TemplateResponse(
         "admin.html",
         {
             "request": request,
             "site_gate_enabled": site_gate_enabled,
+            "site_username": site_username,
             "total": total,
             "finished": finished,
             "errors": errors,
@@ -351,6 +372,7 @@ def admin_settings(
     new_username: str = Form(""),
     new_password: str = Form(""),
     new_password_confirm: str = Form(""),
+    new_site_username: str = Form(""),
     new_site_password: str = Form(""),
     disable_site_password: bool = Form(False),
     db: Session = Depends(get_db),
@@ -369,7 +391,11 @@ def admin_settings(
 
     if disable_site_password:
         auth.clear_site_password(db)
-    elif new_site_password:
-        auth.set_site_password(db, new_site_password)
+    else:
+        if new_site_password:
+            auth.set_site_password(db, new_site_password)
+        new_site_username = new_site_username.strip()
+        if new_site_username:
+            auth.set_site_username(db, new_site_username)
 
     return RedirectResponse("/admin", status_code=303)

@@ -1,8 +1,8 @@
 services:
-  video-downloader:
+  obelisk:
     image: ghcr.io/xbrfuj01/obelisk:latest
     pull_policy: always
-    container_name: video-downloader
+    container_name: obelisk
     ports:
       - "30301:30301"
     environment:

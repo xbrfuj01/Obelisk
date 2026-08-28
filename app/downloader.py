@@ -1,5 +1,7 @@
+import ipaddress
 import os
 import re
+import socket
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from urllib.parse import urlparse
@@ -38,6 +40,8 @@ def _height_filter(quality: str) -> str:
 
 def probe_qualities(url: str):
     """Fetch the real (width x height) resolutions actually available for this URL."""
+    if not is_url_allowed(url):
+        raise RuntimeError("Це посилання вказує на заборонену адресу")
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
@@ -87,6 +91,34 @@ def _should_use_proxy(url: str) -> bool:
         return True
     source = _source_from_url(url)
     return any(d in source for d in config.PROXY_DOMAINS)
+
+
+def _is_safe_direct_url(url: str) -> bool:
+    """Rejects hosts that resolve to a private/internal IP, so the download
+    form can't be used to make the server probe its own local network."""
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        for info in socket.getaddrinfo(hostname, None):
+            ip = ipaddress.ip_address(info[4][0])
+            if not ip.is_global:
+                return False
+        return True
+    except Exception:
+        return False
+
+
+def is_url_allowed(url: str) -> bool:
+    # Proxied domains are a small admin-curated allowlist (not attacker
+    # controlled) and are resolved remotely by the proxy anyway, so the
+    # local SSRF check doesn't apply to them.
+    if _should_use_proxy(url):
+        return True
+    return _is_safe_direct_url(url)
 
 
 def submit_job(job_id: str):
@@ -139,6 +171,9 @@ def _run_job(job_id: str):
         db.close()
         return
     try:
+        if not is_url_allowed(job.url):
+            raise RuntimeError("Це посилання вказує на заборонену адресу")
+
         _update(db, job, status="downloading")
 
         out_dir = os.path.join(config.DOWNLOAD_DIR, job_id)
