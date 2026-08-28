@@ -46,16 +46,19 @@
   <label class="checkbox-row advanced-toggle-row"><input type="checkbox" id="advanced-toggle"> <span>Розширені налаштування</span></label>
 
   <div class="advanced-panel" id="advanced-wrap" hidden>
-    <label class="checkbox-row"><input type="checkbox" id="clip-toggle"> <span>Таймкоди (завантажити лише фрагмент відео)</span></label>
-    <div class="grid-2" id="clip-wrap" hidden>
-      <div class="field-group">
-        <span class="field-label">Початок</span>
-        <input type="text" name="clip_start" id="clip-start-input" placeholder="0:00" autocomplete="off">
+    <div class="field-group">
+      <span class="field-label">Таймкоди (завантажити лише фрагмент відео)</span>
+      <div class="grid-2" id="clip-wrap">
+        <div class="field-group">
+          <span class="field-label">Початок</span>
+          <input type="text" name="clip_start" id="clip-start-input" value="00:00:00" autocomplete="off">
+        </div>
+        <div class="field-group">
+          <span class="field-label">Кінець</span>
+          <input type="text" name="clip_end" id="clip-end-input" value="99:99:99" autocomplete="off">
+        </div>
       </div>
-      <div class="field-group">
-        <span class="field-label">Кінець</span>
-        <input type="text" name="clip_end" id="clip-end-input" placeholder="до кінця" autocomplete="off">
-      </div>
+      <span class="hint">Відео обріжеться лише для полів, які ви змінили. Незмінене поле означає "від початку" / "до кінця".</span>
     </div>
 
     <div class="field-group" id="subtitles-wrap">

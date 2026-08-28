@@ -13,26 +13,17 @@ const premiereCompatWrap = document.getElementById("premiere-compat-wrap");
 const subtitlesWrap = document.getElementById("subtitles-wrap");
 const subtitleSelect = document.getElementById("subtitle-select");
 const subtitleHint = document.getElementById("subtitle-hint");
-const clipToggle = document.getElementById("clip-toggle");
-const clipWrap = document.getElementById("clip-wrap");
 const clipStartInput = document.getElementById("clip-start-input");
 const clipEndInput = document.getElementById("clip-end-input");
 const advancedToggle = document.getElementById("advanced-toggle");
 const advancedWrap = document.getElementById("advanced-wrap");
 
+const CLIP_START_DEFAULT = "00:00:00";
+const CLIP_END_DEFAULT = "99:99:99";
+
 if (advancedToggle) {
   advancedToggle.addEventListener("change", () => {
     advancedWrap.hidden = !advancedToggle.checked;
-  });
-}
-
-if (clipToggle) {
-  clipToggle.addEventListener("change", () => {
-    clipWrap.hidden = !clipToggle.checked;
-    if (!clipToggle.checked) {
-      clipStartInput.value = "";
-      clipEndInput.value = "";
-    }
   });
 }
 
@@ -237,6 +228,10 @@ form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const estimatedBytes = estimatedBytesForSelection();
   const fd = new FormData(form);
+  const clipStart = clipStartInput.value.trim();
+  const clipEnd = clipEndInput.value.trim();
+  fd.set("clip_start", clipStart === CLIP_START_DEFAULT ? "" : clipStart);
+  fd.set("clip_end", clipEnd === CLIP_END_DEFAULT ? "" : clipEnd);
   statusBox.innerHTML = '<div class="card status-card"><p>Додаємо у чергу...</p></div>';
   try {
     const res = await fetch("/api/download", { method: "POST", body: fd });
