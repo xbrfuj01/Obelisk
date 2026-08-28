@@ -153,6 +153,35 @@ label {
 
 .input-with-status input { flex: 1; min-width: 0; }
 
+.file-input-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.file-choose-btn {
+  flex: 0 0 auto;
+  width: fit-content;
+  padding: 11px 20px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border: none;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.file-choose-btn:hover { filter: brightness(1.08); }
+
+.file-name {
+  color: var(--text-dim);
+  font-size: 0.88rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .url-status {
   flex: 0 0 auto;
   display: flex;
@@ -576,6 +605,7 @@ button:active { transform: translateY(1px); }
 .status-icon.status-finished { background: rgba(62, 207, 142, 0.15); color: var(--success); }
 .status-icon.status-error { background: rgba(255, 107, 125, 0.15); color: var(--error); }
 .status-icon.status-downloading,
+.status-icon.status-converting,
 .status-icon.status-queued { background: rgba(91, 124, 255, 0.15); color: var(--accent); }
 
 .dl-download-btn {

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<a href="/" class="back-link">← Усі інструменти</a>
+<div class="hero">
+  <h1>Конвертер відео</h1>
+  <p class="hero-sub">Завантаж відеофайл — сконвертуємо його у формат, який без проблем відкриється й монтується в Adobe Premiere Pro.</p>
+</div>
+
+<form id="convert-form" class="card">
+  <label>Відеофайл
+    <div class="file-input-row">
+      <button type="button" class="file-choose-btn" id="file-choose-btn">Обрати файл</button>
+      <span class="file-name" id="file-name">Файл не обрано</span>
+      <input type="file" name="file" id="file-input" accept="video/*" required hidden>
+    </div>
+    <span class="hint">Максимальний розмір файлу: {{ max_upload_mb }} МБ.</span>
+  </label>
+
+  <label class="checkbox-row advanced-toggle-row"><input type="checkbox" id="advanced-toggle"> <span>Розширені налаштування</span></label>
+
+  <div class="advanced-panel" id="advanced-wrap" hidden>
+    <div class="field-group">
+      <span class="field-label">Якість</span>
+      <select name="quality" id="quality-select">
+        <option value="high">Висока (більший файл, максимальна якість)</option>
+        <option value="medium" selected>Середня (рекомендовано)</option>
+        <option value="low">Низька (менший файл)</option>
+      </select>
+    </div>
+    <div class="field-group">
+      <span class="field-label">Аудіо-доріжка</span>
+      <select name="audio_option" id="audio-select">
+        <option value="aac" selected>AAC 192 кбіт/с (рекомендовано)</option>
+        <option value="original">Оригінальна доріжка (без перекодування)</option>
+        <option value="none">Без звуку</option>
+      </select>
+    </div>
+  </div>
+
+  <button type="submit" class="btn-primary">Конвертувати</button>
+</form>
+
+<div id="status-box"></div>
+
+<h2>Останні конвертації</h2>
+<div class="card dl-list" id="recent-list">
+{% for r in recent %}
+  <div class="dl-row" data-id="{{ r.id }}">
+    <span class="status-icon status-{{ r.status }}">{% if r.status == 'finished' %}✓{% elif r.status == 'error' %}✕{% elif r.status == 'converting' %}<span class="spinner"></span>{% elif r.status == 'queued' %}⏳{% else %}–{% endif %}</span>
+    <button type="button" class="dl-title">{{ r.original_filename or "video" }}{% if r.filesize %} ({{ '%.0f МБ'|format(r.filesize / 1048576) }}){% endif %}</button>
+    {% if r.status == 'finished' %}
+      <a class="dl-download-btn" href="/api/convert/file/{{ r.id }}" title="Завантажити"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></a>
+    {% else %}
+      <span class="dl-download-btn disabled" title="Ще не готово"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></span>
+    {% endif %}
+  </div>
+{% else %}
+  <p class="empty-hint">Ще немає конвертацій</p>
+{% endfor %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/converter.js"></script>
+{% endblock %}

@@ -40,6 +40,31 @@ class Download(Base):
     finished_at = Column(DateTime, nullable=True)
 
 
+class Conversion(Base):
+    __tablename__ = "conversions"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    original_filename = Column(Text, nullable=True)
+    input_summary = Column(Text, nullable=True)
+    duration_seconds = Column(Float, nullable=True)
+
+    quality = Column(String, default="medium")  # high | medium | low
+    audio_option = Column(String, default="aac")  # aac | original | none
+
+    status = Column(String, default="queued")  # queued, converting, finished, error, expired
+    progress = Column(Float, default=0.0)
+
+    filepath = Column(Text, nullable=True)
+    filesize = Column(Integer, nullable=True)
+    error_message = Column(Text, nullable=True)
+
+    client_ip = Column(String, nullable=True)
+    client_id = Column(String, nullable=True, index=True)
+    username = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    finished_at = Column(DateTime, nullable=True)
+
+
 class Setting(Base):
     __tablename__ = "settings"
 

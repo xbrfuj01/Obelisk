@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from . import auth
 from .database import SessionLocal
-from .models import Download
+from .models import Conversion, Download
 
 
 def run_cleanup_once():
@@ -13,24 +13,25 @@ def run_cleanup_once():
     try:
         retention_hours = auth.get_retention_hours(db)
         cutoff = datetime.utcnow() - timedelta(hours=retention_hours)
-        expired = (
-            db.query(Download)
-            .filter(Download.status == "finished")
-            .filter(Download.finished_at.isnot(None))
-            .filter(Download.finished_at < cutoff)
-            .all()
-        )
-        for job in expired:
-            if job.filepath and os.path.exists(job.filepath):
-                try:
-                    os.remove(job.filepath)
-                    parent = os.path.dirname(job.filepath)
-                    if os.path.isdir(parent) and not os.listdir(parent):
-                        os.rmdir(parent)
-                except OSError:
-                    pass
-            job.filepath = None
-            job.status = "expired"
+        for model in (Download, Conversion):
+            expired = (
+                db.query(model)
+                .filter(model.status == "finished")
+                .filter(model.finished_at.isnot(None))
+                .filter(model.finished_at < cutoff)
+                .all()
+            )
+            for job in expired:
+                if job.filepath and os.path.exists(job.filepath):
+                    try:
+                        os.remove(job.filepath)
+                        parent = os.path.dirname(job.filepath)
+                        if os.path.isdir(parent) and not os.listdir(parent):
+                            os.rmdir(parent)
+                    except OSError:
+                        pass
+                job.filepath = None
+                job.status = "expired"
         db.commit()
     finally:
         db.close()

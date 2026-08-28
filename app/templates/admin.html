@@ -140,6 +140,16 @@
         <input type="number" name="max_concurrent_downloads" value="{{ max_concurrent_downloads }}" min="1" required>
       </label>
 
+      <p class="settings-group-title">Конвертер відео</p>
+      <div class="grid-2">
+        <label>Максимум одночасних конвертацій <span class="hint">— кодування навантажує CPU, тримайте невисоким</span>
+          <input type="number" name="max_concurrent_conversions" value="{{ max_concurrent_conversions }}" min="1" required>
+        </label>
+        <label>Максимальний розмір файлу для завантаження (МБ)
+          <input type="number" name="max_upload_mb" value="{{ max_upload_mb }}" min="1" required>
+        </label>
+      </div>
+
       <p class="settings-group-title">Часовий пояс</p>
       <label>Часовий пояс для відображення дат/часу
         <select name="timezone">

@@ -78,6 +78,16 @@ def get_max_concurrent_downloads(db: Session) -> int:
     return int(val) if val else config.DEFAULT_MAX_CONCURRENT_DOWNLOADS
 
 
+def get_max_concurrent_conversions(db: Session) -> int:
+    val = get_setting(db, "max_concurrent_conversions")
+    return int(val) if val else config.DEFAULT_MAX_CONCURRENT_CONVERSIONS
+
+
+def get_max_upload_mb(db: Session) -> int:
+    val = get_setting(db, "max_upload_mb")
+    return int(val) if val else config.DEFAULT_MAX_UPLOAD_MB
+
+
 def get_session_max_age_days(db: Session) -> int:
     val = get_setting(db, "session_max_age_days")
     return int(val) if val else config.DEFAULT_SESSION_MAX_AGE_DAYS

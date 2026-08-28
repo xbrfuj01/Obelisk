@@ -1,7 +1,8 @@
 import os
+import shutil
 import uuid
 
-from fastapi import FastAPI, Request, Response, Form, Depends, HTTPException
+from fastapi import FastAPI, File, Request, Response, Form, Depends, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -9,9 +10,11 @@ from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from . import config
 from .database import init_db, SessionLocal
-from .models import Download
+from .models import Conversion, Download
 from . import auth
+from . import converter
 from .downloader import (
     submit_job,
     _source_from_url,
@@ -118,6 +121,31 @@ def downloader_page(request: Request, db: Session = Depends(get_db), _=Depends(r
         .all()
     )
     resp = templates.TemplateResponse("downloader.html", {"request": request, "recent": recent})
+    if is_new_client:
+        resp.set_cookie(
+            CLIENT_ID_COOKIE, client_id, max_age=CLIENT_ID_MAX_AGE, httponly=True, samesite="lax"
+        )
+    return resp
+
+
+@app.get("/converter", response_class=HTMLResponse)
+def converter_page(request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_page)):
+    client_id = request.cookies.get(CLIENT_ID_COOKIE)
+    is_new_client = not client_id
+    if is_new_client:
+        client_id = uuid.uuid4().hex
+
+    recent = (
+        db.query(Conversion)
+        .filter(Conversion.client_id == client_id)
+        .order_by(Conversion.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    resp = templates.TemplateResponse(
+        "converter.html",
+        {"request": request, "recent": recent, "max_upload_mb": auth.get_max_upload_mb(db)},
+    )
     if is_new_client:
         resp.set_cookie(
             CLIENT_ID_COOKIE, client_id, max_age=CLIENT_ID_MAX_AGE, httponly=True, samesite="lax"
@@ -254,6 +282,137 @@ def download_file(job_id: str, db: Session = Depends(get_db), _=Depends(require_
     return FileResponse(job.filepath, filename=filename)
 
 
+# ---------------- Video converter ----------------
+
+CONVERT_QUALITIES = {"high", "medium", "low"}
+CONVERT_AUDIO_OPTIONS = {"aac", "original", "none"}
+
+
+@app.post("/api/convert")
+async def create_conversion(
+    request: Request,
+    response: Response,
+    file: UploadFile = File(...),
+    quality: str = Form("medium"),
+    audio_option: str = Form("aac"),
+    db: Session = Depends(get_db),
+    _=Depends(require_site_access_api),
+):
+    ip = request.client.host if request.client else "unknown"
+    if not auth.check_download_rate_limit(f"cv:{ip}"):
+        return JSONResponse(
+            {"error": "Забагато конвертацій поспіль. Спробуйте пізніше."}, status_code=429
+        )
+
+    client_id = get_client_id(request, response)
+    if quality not in CONVERT_QUALITIES:
+        quality = "medium"
+    if audio_option not in CONVERT_AUDIO_OPTIONS:
+        audio_option = "aac"
+
+    job_id = uuid.uuid4().hex
+    job_dir = os.path.join(config.DOWNLOAD_DIR, "converts", job_id)
+    os.makedirs(job_dir, exist_ok=True)
+
+    original_name = file.filename or "video"
+    ext = os.path.splitext(original_name)[1][:10] or ".bin"
+    input_path = os.path.join(job_dir, f"input{ext}")
+
+    max_bytes = auth.get_max_upload_mb(db) * 1024 * 1024
+    total = 0
+    too_large = False
+    with open(input_path, "wb") as out:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                too_large = True
+                break
+            out.write(chunk)
+    if too_large:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        return JSONResponse(
+            {"error": f"Файл перевищує ліміт {auth.get_max_upload_mb(db)} МБ"}, status_code=413
+        )
+
+    info = converter.probe_input(input_path)
+    if not info:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        return JSONResponse({"error": "Не вдалося розпізнати відеофайл"}, status_code=400)
+
+    job = Conversion(
+        id=job_id,
+        original_filename=original_name,
+        input_summary=info["summary"],
+        duration_seconds=info["duration"],
+        quality=quality,
+        audio_option=audio_option,
+        status="queued",
+        client_ip=request.client.host if request.client else None,
+        client_id=client_id,
+        username=request.session.get("site_username"),
+    )
+    db.add(job)
+    db.commit()
+
+    converter.submit_job(job_id, input_path, info)
+    return {"id": job.id, "input_summary": job.input_summary, "duration_seconds": job.duration_seconds}
+
+
+@app.get("/api/convert/status/{job_id}")
+def conversion_status(job_id: str, db: Session = Depends(get_db), _=Depends(require_site_access_api)):
+    job = db.get(Conversion, job_id)
+    if not job:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return {
+        "id": job.id,
+        "status": job.status,
+        "progress": job.progress,
+        "input_summary": job.input_summary,
+        "duration_seconds": job.duration_seconds,
+        "error": job.error_message,
+        "filesize": job.filesize,
+    }
+
+
+@app.get("/api/convert/recent")
+def recent_conversions(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    _=Depends(require_site_access_api),
+):
+    client_id = get_client_id(request, response)
+    rows = (
+        db.query(Conversion)
+        .filter(Conversion.client_id == client_id)
+        .order_by(Conversion.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "title": r.original_filename or "video",
+            "status": r.status,
+            "progress": r.progress,
+            "filesize": r.filesize,
+        }
+        for r in rows
+    ]
+
+
+@app.get("/api/convert/file/{job_id}")
+def conversion_file(job_id: str, db: Session = Depends(get_db), _=Depends(require_site_access_api)):
+    job = db.get(Conversion, job_id)
+    if not job or job.status != "finished" or not job.filepath or not os.path.exists(job.filepath):
+        return JSONResponse({"error": "Файл недоступний"}, status_code=404)
+    filename = os.path.basename(job.filepath)
+    return FileResponse(job.filepath, filename=filename)
+
+
 # ---------------- Site gate ----------------
 
 @app.get("/site-login", response_class=HTMLResponse)
@@ -365,6 +524,8 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(a
     users = auth.list_users(db)
     cleanup_interval_minutes = auth.get_cleanup_interval_minutes(db)
     max_concurrent_downloads = auth.get_max_concurrent_downloads(db)
+    max_concurrent_conversions = auth.get_max_concurrent_conversions(db)
+    max_upload_mb = auth.get_max_upload_mb(db)
     session_max_age_days = auth.get_session_max_age_days(db)
     proxy_url = auth.get_proxy_url(db)
     proxy_domains = ",".join(auth.get_proxy_domains(db))
@@ -386,6 +547,8 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(a
             "admin_username": admin_username,
             "cleanup_interval_minutes": cleanup_interval_minutes,
             "max_concurrent_downloads": max_concurrent_downloads,
+            "max_concurrent_conversions": max_concurrent_conversions,
+            "max_upload_mb": max_upload_mb,
             "session_max_age_days": session_max_age_days,
             "proxy_url": proxy_url,
             "proxy_domains": proxy_domains,
@@ -496,6 +659,8 @@ def admin_settings(
     retention_hours: int = Form(...),
     cleanup_interval_minutes: int = Form(...),
     max_concurrent_downloads: int = Form(...),
+    max_concurrent_conversions: int = Form(...),
+    max_upload_mb: int = Form(...),
     session_max_age_days: int = Form(...),
     proxy_url: str = Form(""),
     proxy_domains: str = Form(""),
@@ -506,6 +671,8 @@ def admin_settings(
     auth.set_setting(db, "cleanup_hours", str(retention_hours))
     auth.set_setting(db, "cleanup_interval_minutes", str(cleanup_interval_minutes))
     auth.set_setting(db, "max_concurrent_downloads", str(max_concurrent_downloads))
+    auth.set_setting(db, "max_concurrent_conversions", str(max_concurrent_conversions))
+    auth.set_setting(db, "max_upload_mb", str(max_upload_mb))
     auth.set_setting(db, "session_max_age_days", str(session_max_age_days))
     auth.set_setting(db, "proxy_url", proxy_url.strip())
     auth.set_setting(db, "proxy_domains", proxy_domains.strip())
