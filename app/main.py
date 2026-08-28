@@ -125,6 +125,7 @@ def create_download(
     quality: str = Form("best"),
     container: str = Form("mp4"),
     subtitles: bool = Form(False),
+    premiere_compat: bool = Form(False),
     db: Session = Depends(get_db),
     _=Depends(require_site_access_api),
 ):
@@ -150,6 +151,7 @@ def create_download(
         quality=quality,
         container=container,
         subtitles=1 if subtitles else 0,
+        premiere_compat=1 if premiere_compat else 0,
         status="queued",
         client_ip=request.client.host if request.client else None,
         client_id=client_id,

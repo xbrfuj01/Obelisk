@@ -239,7 +239,12 @@ def _run_job(job_id: str):
                 "preferredquality": "192",
             }]
         elif job.mode == "video_only":
-            ydl_opts["format"] = f"bestvideo{height_filter}/best{height_filter}"
+            if job.premiere_compat:
+                ydl_opts["format"] = (
+                    f"bestvideo[vcodec^=avc1]{height_filter}/bestvideo{height_filter}/best{height_filter}"
+                )
+            else:
+                ydl_opts["format"] = f"bestvideo{height_filter}/best{height_filter}"
             if job.container in VIDEO_FORMATS:
                 ydl_opts.setdefault("postprocessors", [])
                 ydl_opts["postprocessors"].append({
@@ -247,7 +252,16 @@ def _run_job(job_id: str):
                     "preferedformat": job.container,
                 })
         else:
-            ydl_opts["format"] = f"bestvideo{height_filter}+bestaudio/best{height_filter}"
+            if job.premiere_compat:
+                # Prefer H.264 video + AAC audio (what Adobe Premiere Pro can actually
+                # decode) over YouTube's usual best pick, which is often VP9/AV1 + Opus.
+                ydl_opts["format"] = (
+                    f"bestvideo[vcodec^=avc1]{height_filter}+bestaudio[acodec^=mp4a]"
+                    f"/best[vcodec^=avc1]{height_filter}"
+                    f"/bestvideo{height_filter}+bestaudio/best{height_filter}"
+                )
+            else:
+                ydl_opts["format"] = f"bestvideo{height_filter}+bestaudio/best{height_filter}"
             if job.container in VIDEO_FORMATS:
                 ydl_opts["merge_output_format"] = job.container
 

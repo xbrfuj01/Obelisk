@@ -8,6 +8,7 @@ const urlInput = document.getElementById("url-input");
 const urlStatus = document.getElementById("url-status");
 const qualitySelect = document.getElementById("quality-select");
 const qualityHint = document.getElementById("quality-hint");
+const premiereCompatWrap = document.getElementById("premiere-compat-wrap");
 
 const VIDEO_FORMAT_OPTIONS = [
   { value: "mp4", label: "MP4" },
@@ -25,6 +26,7 @@ function updateVisibility() {
   const checked = document.querySelector('input[name="mode"]:checked');
   const mode = checked ? checked.value : "video";
   qualityWrap.style.display = mode === "audio" ? "none" : "";
+  if (premiereCompatWrap) premiereCompatWrap.style.display = mode === "audio" ? "none" : "";
 
   const options = mode === "audio" ? AUDIO_FORMAT_OPTIONS : VIDEO_FORMAT_OPTIONS;
   const current = containerSelect.value;
