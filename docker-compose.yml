@@ -1,6 +1,6 @@
 services:
   video-downloader:
-    image: ghcr.io/xbrfuj01/video-downloader:latest
+    image: ghcr.io/xbrfuj01/obelisk:latest
     pull_policy: always
     container_name: video-downloader
     ports:

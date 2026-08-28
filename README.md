@@ -1,4 +1,4 @@
-# Video Downloader
+# Obelisk
 
 Веб-сервіс для завантаження відео з YouTube, Instagram, VK, TikTok та інших сайтів, підтримуваних [yt-dlp](https://github.com/yt-dlp/yt-dlp). Працює у локальній мережі через Docker Compose.
 
@@ -11,13 +11,13 @@
 
 ## Як це працює
 
-Образ автоматично збирається GitHub Actions ([.github/workflows/docker-publish.yml](.github/workflows/docker-publish.yml)) при кожному push у `main` і публікується в GitHub Container Registry: `ghcr.io/xbrfuj01/video-downloader:latest`. `docker-compose.yml` посилається саме на цей готовий образ (`image:`, без `build:`) — тому на сервері **не потрібен ні git, ні вихідний код**, лише сам `docker-compose.yml`.
+Образ автоматично збирається GitHub Actions ([.github/workflows/docker-publish.yml](.github/workflows/docker-publish.yml)) при кожному push у `main` і публікується в GitHub Container Registry: `ghcr.io/xbrfuj01/obelisk:latest`. `docker-compose.yml` посилається саме на цей готовий образ (`image:`, без `build:`) — тому на сервері **не потрібен ні git, ні вихідний код**, лише сам `docker-compose.yml`.
 
 ## Запуск (TrueNAS / Dockge)
 
 1. У Dockge створіть новий стек (Compose) і вставте туди вміст [docker-compose.yml](docker-compose.yml) з цього репозиторію.
 
-2. Одноразово: зробіть пакет `video-downloader` у GHCR публічним, щоб Dockge міг стягнути образ без логіну — на GitHub відкрийте свій профіль → вкладка **Packages** → `video-downloader` → **Package settings** → **Change visibility** → **Public**. (Якщо лишити приватним — доведеться один раз виконати `docker login ghcr.io` на TrueNAS з Personal Access Token, що має право `read:packages`.)
+2. Одноразово: зробіть пакет `obelisk` у GHCR публічним, щоб Dockge міг стягнути образ без логіну — на GitHub відкрийте свій профіль → вкладка **Packages** → `obelisk` → **Package settings** → **Change visibility** → **Public**. (Якщо лишити приватним — доведеться один раз виконати `docker login ghcr.io` на TrueNAS з Personal Access Token, що має право `read:packages`.)
 
 3. У змінних середовища стека (вкладка Dockge "Environment variables" або прямо в тексті compose) задайте:
    ```
