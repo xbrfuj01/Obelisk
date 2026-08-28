@@ -75,23 +75,29 @@
     {% if request.query_params.get('user_error') == 'mismatch' %}<p class="error">Паролі не співпадають</p>{% endif %}
     {% if request.query_params.get('user_error') == 'exists' %}<p class="error">Такий логін вже існує</p>{% endif %}
     {% if request.query_params.get('user_added') %}<p class="success">Користувача додано.</p>{% endif %}
+    {% if request.query_params.get('pw_reset') %}<p class="success">Пароль користувача змінено.</p>{% endif %}
 
     <div class="table-wrap card">
     <table class="table">
-      <thead><tr><th>Логін</th><th>Створено</th><th></th></tr></thead>
+      <thead><tr><th>Логін</th><th>Останній вхід</th><th>Створено</th><th></th></tr></thead>
       <tbody>
       {% for u in users %}
         <tr>
           <td>{{ u.username }}</td>
+          <td>{{ u.last_login.strftime('%Y-%m-%d %H:%M') if u.last_login else '—' }}</td>
           <td>{{ u.created_at.strftime('%Y-%m-%d %H:%M') if u.created_at else '' }}</td>
           <td>
+            <form method="post" action="/admin/users/reset-password/{{ u.id }}" class="inline-form">
+              <input type="password" name="new_password" class="mini-input" placeholder="новий пароль" required autocomplete="new-password">
+              <button type="submit" class="link-btn">змінити пароль</button>
+            </form>
             <form method="post" action="/admin/users/delete/{{ u.id }}" class="inline-form">
               <button type="submit" class="link-btn">видалити</button>
             </form>
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="3">Ще немає користувачів — сайт відкритий для всіх</td></tr>
+        <tr><td colspan="4">Ще немає користувачів — сайт відкритий для всіх</td></tr>
       {% endfor %}
       </tbody>
     </table>

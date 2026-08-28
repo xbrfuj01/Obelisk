@@ -127,11 +127,27 @@ def delete_user(db: Session, user_id: str):
         db.commit()
 
 
+def reset_user_password(db: Session, user_id: str, password: str) -> bool:
+    user = db.get(User, user_id)
+    if not user:
+        return False
+    user.password_hash = pwd_context.hash(password)
+    db.commit()
+    return True
+
+
 def verify_site_credentials(db: Session, username: str, password: str) -> bool:
     user = db.query(User).filter(User.username == username).first()
     if not user:
         return False
     return pwd_context.verify(password, user.password_hash)
+
+
+def record_login(db: Session, username: str):
+    user = db.query(User).filter(User.username == username).first()
+    if user:
+        user.last_login = datetime.utcnow()
+        db.commit()
 
 
 def require_site_access(request: Request, db: Session):

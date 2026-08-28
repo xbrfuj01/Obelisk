@@ -323,6 +323,12 @@ button:active { transform: translateY(1px); }
 
 .inline-form { display: inline; margin-left: 10px; }
 
+.mini-input {
+  width: 130px;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+}
+
 #status-box { margin-top: 18px; }
 
 .status-card { padding: 18px 22px; }

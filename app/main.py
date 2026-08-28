@@ -260,6 +260,7 @@ def site_login(
         )
     if auth.verify_site_credentials(db, username, password):
         auth.register_successful_attempt(key)
+        auth.record_login(db, username)
         request.session["site_access"] = True
         request.session["site_username"] = username
         return RedirectResponse("/", status_code=303)
@@ -410,6 +411,19 @@ def admin_add_user(
 def admin_delete_user(user_id: str, db: Session = Depends(get_db), _=Depends(auth.require_admin)):
     auth.delete_user(db, user_id)
     return RedirectResponse("/admin?tab=users", status_code=303)
+
+
+@app.post("/admin/users/reset-password/{user_id}")
+def admin_reset_user_password(
+    user_id: str,
+    new_password: str = Form(...),
+    db: Session = Depends(get_db),
+    _=Depends(auth.require_admin),
+):
+    if not new_password:
+        return RedirectResponse("/admin?tab=users&user_error=empty", status_code=303)
+    auth.reset_user_password(db, user_id, new_password)
+    return RedirectResponse("/admin?tab=users&pw_reset=1", status_code=303)
 
 
 @app.post("/admin/clear-ytdlp-cache")
