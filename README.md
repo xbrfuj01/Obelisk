@@ -97,8 +97,8 @@
 
 ## Дані
 
-- `/mnt/vault/video_downloader/downloads` — завантажені файли (том, монтується в контейнер як `/downloads`).
-- `/mnt/vault/video_downloader/data` — SQLite база з історією та налаштуваннями (том, монтується як `/data`).
+- `/mnt/vault/obelisk/downloads` — завантажені файли (том, монтується в контейнер як `/downloads`).
+- `/mnt/vault/obelisk/data` — SQLite база з історією та налаштуваннями (том, монтується як `/data`).
 
 ## Важливо
 

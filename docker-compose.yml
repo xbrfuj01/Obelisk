@@ -10,6 +10,7 @@ services:
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
       - SECRET_KEY=${SECRET_KEY:-please-change-this-secret-key}
+      - SITE_USERNAME=${SITE_USERNAME:-user}
       - SITE_PASSWORD=${SITE_PASSWORD:-}
       - SESSION_MAX_AGE_DAYS=${SESSION_MAX_AGE_DAYS:-30}
       - MAX_CONCURRENT_DOWNLOADS=${MAX_CONCURRENT_DOWNLOADS:-2}
@@ -18,6 +19,6 @@ services:
       - PROXY_URL=${PROXY_URL:-}
       - PROXY_DOMAINS=${PROXY_DOMAINS:-vk.com,vk.ru,vkvideo.ru,ok.ru,rutube.ru,mail.ru}
     volumes:
-      - /mnt/vault/video_downloader/data:/data
-      - /mnt/vault/video_downloader/downloads:/downloads
+      - /mnt/vault/obelisk/data:/data
+      - /mnt/vault/obelisk/downloads:/downloads
     restart: unless-stopped
