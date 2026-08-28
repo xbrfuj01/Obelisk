@@ -43,24 +43,28 @@
     </div>
   </div>
 
-  <div class="field-group" id="subtitles-wrap">
-    <span class="field-label">Субтитри</span>
-    <select name="subtitle_lang" id="subtitle-select">
-      <option value="">Без субтитрів</option>
-    </select>
-    <span class="hint" id="subtitle-hint">Встав посилання, щоб побачити доступні мови. Вшиваються у файл — лише для MP4/MKV.</span>
-  </div>
-  <label class="checkbox-row" id="premiere-compat-wrap"><input type="checkbox" name="premiere_compat"> <span>Сумісність з відеоредакторами (Максимальна якість може обмежитись до 1080p.)</span></label>
+  <label class="checkbox-row advanced-toggle-row"><input type="checkbox" id="advanced-toggle"> <span>Розширені налаштування</span></label>
 
-  <label class="checkbox-row"><input type="checkbox" id="clip-toggle"> <span>Таймкоди (завантажити лише фрагмент відео)</span></label>
-  <div class="grid-2" id="clip-wrap" hidden>
-    <div class="field-group">
-      <span class="field-label">Початок</span>
-      <input type="text" name="clip_start" id="clip-start-input" placeholder="0:00" autocomplete="off">
+  <div class="advanced-panel" id="advanced-wrap" hidden>
+    <div class="field-group" id="subtitles-wrap">
+      <span class="field-label">Субтитри</span>
+      <select name="subtitle_lang" id="subtitle-select">
+        <option value="">Без субтитрів</option>
+      </select>
+      <span class="hint" id="subtitle-hint">Встав посилання, щоб побачити доступні мови. Вшиваються у файл — лише для MP4/MKV.</span>
     </div>
-    <div class="field-group">
-      <span class="field-label">Кінець</span>
-      <input type="text" name="clip_end" id="clip-end-input" placeholder="до кінця" autocomplete="off">
+    <label class="checkbox-row" id="premiere-compat-wrap"><input type="checkbox" name="premiere_compat"> <span>Сумісність з відеоредакторами (Максимальна якість може обмежитись до 1080p.)</span></label>
+
+    <label class="checkbox-row"><input type="checkbox" id="clip-toggle"> <span>Таймкоди (завантажити лише фрагмент відео)</span></label>
+    <div class="grid-2" id="clip-wrap" hidden>
+      <div class="field-group">
+        <span class="field-label">Початок</span>
+        <input type="text" name="clip_start" id="clip-start-input" placeholder="0:00" autocomplete="off">
+      </div>
+      <div class="field-group">
+        <span class="field-label">Кінець</span>
+        <input type="text" name="clip_end" id="clip-end-input" placeholder="до кінця" autocomplete="off">
+      </div>
     </div>
   </div>
 

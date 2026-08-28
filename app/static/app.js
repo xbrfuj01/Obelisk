@@ -17,6 +17,14 @@ const clipToggle = document.getElementById("clip-toggle");
 const clipWrap = document.getElementById("clip-wrap");
 const clipStartInput = document.getElementById("clip-start-input");
 const clipEndInput = document.getElementById("clip-end-input");
+const advancedToggle = document.getElementById("advanced-toggle");
+const advancedWrap = document.getElementById("advanced-wrap");
+
+if (advancedToggle) {
+  advancedToggle.addEventListener("change", () => {
+    advancedWrap.hidden = !advancedToggle.checked;
+  });
+}
 
 if (clipToggle) {
   clipToggle.addEventListener("change", () => {
