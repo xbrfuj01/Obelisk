@@ -247,21 +247,42 @@ def _find_main_file(out_dir: str):
     return max(candidates, key=os.path.getsize)
 
 
-def _progress_hook(job_id, d):
+def _combine_leg_progress(leg: int, leg_pct: float) -> float:
+    """Maps progress within one download leg to a spot on the overall bar.
+
+    "video" mode downloads video and audio as two separate legs (yt-dlp
+    merges them afterwards via ffmpeg), which otherwise shows as the bar
+    going 0->100% twice. The first leg (video, normally the bulk of the
+    size) gets 0-90%, a second leg (audio) gets 90-99%, and the last 1% is
+    left for the merge/postprocessing step, which isn't itself tracked here.
+    """
+    if leg <= 1:
+        return round(leg_pct * 0.9, 1)
+    if leg == 2:
+        return round(90 + leg_pct * 0.09, 1)
+    return 99.0
+
+
+def _progress_hook(job_id, d, state):
     db = SessionLocal()
     try:
         job = db.get(Download, job_id)
         if not job:
             return
-        if d.get("status") == "downloading":
+        status = d.get("status")
+        if status == "downloading":
+            if not state["leg_active"]:
+                state["leg_active"] = True
+                state["leg"] += 1
             total = d.get("total_bytes") or d.get("total_bytes_estimate")
             downloaded = d.get("downloaded_bytes", 0)
-            if total:
-                job.progress = round(downloaded / total * 100, 1)
+            leg_pct = (downloaded / total * 100) if total else 0
+            job.progress = _combine_leg_progress(state["leg"], leg_pct)
             job.status = "downloading"
             db.commit()
-        elif d.get("status") == "finished":
-            job.progress = 99.0
+        elif status == "finished":
+            state["leg_active"] = False
+            job.progress = _combine_leg_progress(state["leg"], 100)
             db.commit()
     except Exception:
         pass
@@ -290,12 +311,13 @@ def _run_job(job_id: str):
 
         height_filter = _height_filter(job.quality)
 
+        progress_state = {"leg": 0, "leg_active": False}
         ydl_opts = {
             "outtmpl": outtmpl,
             "noplaylist": True,
             "quiet": True,
             "no_warnings": True,
-            "progress_hooks": [lambda d: _progress_hook(job_id, d)],
+            "progress_hooks": [lambda d: _progress_hook(job_id, d, progress_state)],
         }
         if _should_use_proxy(job.url, db):
             ydl_opts["proxy"] = auth.get_proxy_url(db)
