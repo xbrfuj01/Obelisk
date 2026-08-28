@@ -20,7 +20,7 @@ class Download(Base):
     mode = Column(String, nullable=False)  # video | video_only | audio
     quality = Column(String, nullable=True)
     container = Column(String, nullable=True)
-    subtitles = Column(Integer, default=0)
+    subtitle_lang = Column(String, nullable=True)
     premiere_compat = Column(Integer, default=0)
 
     status = Column(String, default="queued")  # queued, downloading, finished, error, expired, deleted

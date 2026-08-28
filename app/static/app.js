@@ -9,6 +9,9 @@ const urlStatus = document.getElementById("url-status");
 const qualitySelect = document.getElementById("quality-select");
 const qualityHint = document.getElementById("quality-hint");
 const premiereCompatWrap = document.getElementById("premiere-compat-wrap");
+const subtitlesWrap = document.getElementById("subtitles-wrap");
+const subtitleSelect = document.getElementById("subtitle-select");
+const subtitleHint = document.getElementById("subtitle-hint");
 
 const VIDEO_FORMAT_OPTIONS = [
   { value: "mp4", label: "MP4" },
@@ -62,10 +65,48 @@ function renderQualityOptions() {
   qualitySelect.value = values.includes(current) ? current : "best";
 }
 
+let lastSubtitles = [];
+
+function renderSubtitleOptions() {
+  const current = subtitleSelect.value;
+  subtitleSelect.innerHTML = "";
+
+  const noneOpt = document.createElement("option");
+  noneOpt.value = "";
+  noneOpt.textContent = "Без субтитрів";
+  subtitleSelect.appendChild(noneOpt);
+
+  lastSubtitles.forEach((s) => {
+    const opt = document.createElement("option");
+    opt.value = s.code;
+    opt.textContent = s.label + (s.auto ? " (авто)" : "");
+    subtitleSelect.appendChild(opt);
+  });
+
+  const values = Array.from(subtitleSelect.options).map((o) => o.value);
+  subtitleSelect.value = values.includes(current) ? current : "";
+}
+
+function updateSubtitleAvailability() {
+  if (!subtitleSelect) return;
+  const embeddable = containerSelect.value === "mp4" || containerSelect.value === "mkv";
+  subtitleSelect.disabled = !embeddable;
+  if (!embeddable) {
+    subtitleSelect.value = "";
+    if (subtitleHint) subtitleHint.textContent = "Субтитри вшиваються лише для MP4/MKV — оберіть інший формат файлу.";
+  } else if (lastSubtitles.length) {
+    if (subtitleHint) subtitleHint.textContent = `Знайдено ${lastSubtitles.length} мов(и) субтитрів для цього відео.`;
+  } else if (subtitleHint) {
+    subtitleHint.textContent = "Встав посилання, щоб побачити доступні мови. Вшиваються у файл — лише для MP4/MKV.";
+  }
+}
+containerSelect.addEventListener("change", updateSubtitleAvailability);
+
 function updateVisibility() {
   const mode = currentMode();
   qualityWrap.style.display = mode === "audio" ? "none" : "";
   if (premiereCompatWrap) premiereCompatWrap.style.display = mode === "audio" ? "none" : "";
+  if (subtitlesWrap) subtitlesWrap.style.display = mode === "audio" ? "none" : "";
   renderQualityOptions();
 
   const options = mode === "audio" ? AUDIO_FORMAT_OPTIONS : VIDEO_FORMAT_OPTIONS;
@@ -79,6 +120,8 @@ function updateVisibility() {
   });
   const values = options.map((o) => o.value);
   containerSelect.value = values.includes(current) ? current : options[0].value;
+
+  updateSubtitleAvailability();
 }
 modeRadios.forEach((r) => r.addEventListener("change", updateVisibility));
 updateVisibility();
@@ -106,7 +149,10 @@ async function probeQualities() {
     }
 
     lastQualities = data.qualities;
+    lastSubtitles = data.subtitles || [];
     renderQualityOptions();
+    renderSubtitleOptions();
+    updateSubtitleAvailability();
 
     urlStatus.innerHTML = "✓";
     urlStatus.className = "url-status ok";

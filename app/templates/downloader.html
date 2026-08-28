@@ -46,7 +46,13 @@
     </div>
   </div>
 
-  <label class="checkbox-row"><input type="checkbox" name="subtitles"> <span>Завантажити субтитри (якщо є)</span></label>
+  <div class="field-group" id="subtitles-wrap">
+    <span class="field-label">Субтитри</span>
+    <select name="subtitle_lang" id="subtitle-select">
+      <option value="">Без субтитрів</option>
+    </select>
+    <span class="hint" id="subtitle-hint">Встав посилання, щоб побачити доступні мови. Вшиваються у файл — лише для MP4/MKV.</span>
+  </div>
   <label class="checkbox-row" id="premiere-compat-wrap"><input type="checkbox" name="premiere_compat"> <span>Сумісність з відеоредакторами (H.264/AAC — потрібно для Adobe Premiere Pro, інакше формат може бути VP9/AV1, який Premiere не відкриває). Максимальна якість може обмежитись до 1080p.</span></label>
 
   <button type="submit" class="btn-primary">Завантажити</button>

@@ -124,7 +124,7 @@ def create_download(
     mode: str = Form("video"),
     quality: str = Form("best"),
     container: str = Form("mp4"),
-    subtitles: bool = Form(False),
+    subtitle_lang: str = Form(""),
     premiere_compat: bool = Form(False),
     db: Session = Depends(get_db),
     _=Depends(require_site_access_api),
@@ -150,7 +150,7 @@ def create_download(
         mode=mode,
         quality=quality,
         container=container,
-        subtitles=1 if subtitles else 0,
+        subtitle_lang=subtitle_lang.strip() or None,
         premiere_compat=1 if premiere_compat else 0,
         status="queued",
         client_ip=request.client.host if request.client else None,
@@ -186,10 +186,9 @@ def get_formats(url: str, db: Session = Depends(get_db), _=Depends(require_site_
     if not is_url_allowed(url, db):
         return JSONResponse({"error": "Це посилання вказує на заборонену адресу"}, status_code=400)
     try:
-        qualities = probe_qualities(url, db)
+        return probe_qualities(url, db)
     except Exception as e:
         return JSONResponse({"error": str(e)[:300]}, status_code=400)
-    return {"qualities": qualities}
 
 
 @app.get("/api/recent")

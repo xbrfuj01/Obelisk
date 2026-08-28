@@ -28,6 +28,14 @@ COMMON_LABELS = {
 
 SKIP_EXT = {".srt", ".vtt", ".json", ".description", ".part", ".ytdl"}
 
+LANG_NAMES = {
+    "uk": "Українська", "en": "English", "ru": "Русский", "es": "Español",
+    "fr": "Français", "de": "Deutsch", "pl": "Polski", "pt": "Português",
+    "it": "Italiano", "ja": "日本語", "ko": "한국어", "zh": "中文", "tr": "Türkçe",
+}
+
+EMBEDDABLE_SUBTITLE_CONTAINERS = {"mp4", "mkv"}
+
 VIDEO_FORMATS = {"mp4", "webm", "mkv"}
 AUDIO_FORMATS = {"mp3", "m4a", "opus", "wav"}
 
@@ -71,8 +79,26 @@ def _height_filter(quality: str) -> str:
     return f"[height<={height}]"
 
 
+def _subtitle_options(info):
+    manual = (info or {}).get("subtitles") or {}
+    auto = (info or {}).get("automatic_captions") or {}
+    result = []
+    seen = set()
+    for code in manual:
+        if code in seen:
+            continue
+        seen.add(code)
+        result.append({"code": code, "label": LANG_NAMES.get(code, code), "auto": False})
+    for code in auto:
+        if code in seen:
+            continue
+        seen.add(code)
+        result.append({"code": code, "label": LANG_NAMES.get(code, code), "auto": True})
+    return result
+
+
 def probe_qualities(url: str, db):
-    """Fetch the real (width x height) resolutions actually available for this URL."""
+    """Fetch the real (width x height) resolutions and subtitle languages available for this URL."""
     if not is_url_allowed(url, db):
         raise RuntimeError("Це посилання вказує на заборонену адресу")
     ydl_opts = {
@@ -119,7 +145,7 @@ def probe_qualities(url: str, db):
             "video_bytes": entry["bytes"],
             "audio_bytes": best_audio_bytes or None,
         })
-    return result
+    return {"qualities": result, "subtitles": _subtitle_options(info)}
 
 
 def _source_from_url(url: str) -> str:
@@ -278,15 +304,19 @@ def _run_job(job_id: str):
             if job.container in VIDEO_FORMATS:
                 ydl_opts["merge_output_format"] = job.container
 
-        if job.subtitles:
+        if job.subtitle_lang and job.mode != "audio" and job.container in EMBEDDABLE_SUBTITLE_CONTAINERS:
+            # Written as .srt and embedded (soft subs) directly into the video so
+            # there's still exactly one output file — no orphaned subtitle file
+            # left behind that nothing ever downloads or cleans up.
             ydl_opts["writesubtitles"] = True
             ydl_opts["writeautomaticsub"] = True
-            ydl_opts["subtitleslangs"] = ["uk", "en"]
+            ydl_opts["subtitleslangs"] = [job.subtitle_lang]
             ydl_opts.setdefault("postprocessors", [])
             ydl_opts["postprocessors"].append({
                 "key": "FFmpegSubtitlesConvertor",
                 "format": "srt",
             })
+            ydl_opts["postprocessors"].append({"key": "FFmpegEmbedSubtitle"})
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(job.url, download=True)
