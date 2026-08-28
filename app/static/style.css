@@ -537,45 +537,6 @@ button:active { transform: translateY(1px); }
 
 .dl-source-btn:hover { border-color: var(--border-hover); }
 
-.result-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 6px;
-}
-
-.btn-share {
-  background: var(--bg-input);
-  color: var(--text);
-  border: 1px solid var(--border);
-  box-shadow: none;
-  font-weight: 600;
-  padding: 12px 22px;
-}
-
-.btn-share:hover { border-color: var(--border-hover); filter: none; }
-.btn-share[hidden] { display: none; }
-
-.dl-share-btn {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  font-size: 0.85rem;
-  padding: 0;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  color: var(--text);
-  box-shadow: none;
-}
-
-.dl-share-btn:hover { border-color: var(--border-hover); }
-.dl-share-btn[hidden] { display: none; }
-
 .dl-title {
   flex: 1;
   min-width: 0;

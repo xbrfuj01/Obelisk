@@ -205,49 +205,6 @@ form.addEventListener("submit", async (e) => {
   }
 });
 
-function supportsFileShare() {
-  return typeof navigator !== "undefined" && typeof navigator.share === "function" && typeof navigator.canShare === "function";
-}
-
-async function shareFile(id, btn) {
-  const original = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = "Завантажуємо...";
-  try {
-    const res = await fetch(`/api/file/${id}`);
-    if (!res.ok) throw new Error("fetch failed");
-    const blob = await res.blob();
-    const cd = res.headers.get("Content-Disposition") || "";
-    const match = cd.match(/filename="?([^"]+)"?/);
-    const filename = match ? decodeURIComponent(match[1]) : "video.mp4";
-    const file = new File([blob], filename, { type: blob.type || "video/mp4" });
-    if (navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file] });
-    } else {
-      alert("Пряме збереження в галерею тут не підтримується. Скористайтесь кнопкою «Завантажити файл», а потім у Файлах: Поділитися → Save Video.");
-    }
-  } catch (err) {
-    if (err && err.name !== "AbortError") {
-      alert("Не вдалося поділитись файлом.");
-    }
-  } finally {
-    btn.disabled = false;
-    btn.textContent = original;
-  }
-}
-
-if (supportsFileShare()) {
-  document.querySelectorAll(".dl-share-btn[hidden]").forEach((b) => { b.hidden = false; });
-}
-
-document.addEventListener("click", (e) => {
-  const shareBtn = e.target.closest(".btn-share");
-  if (shareBtn && shareBtn.dataset.fileId) {
-    e.preventDefault();
-    shareFile(shareBtn.dataset.fileId, shareBtn);
-  }
-});
-
 function pollStatus(id, estimatedBytes) {
   const estimatedSize = formatSize(estimatedBytes);
   const interval = setInterval(async () => {
@@ -256,16 +213,7 @@ function pollStatus(id, estimatedBytes) {
       const job = await res.json();
       if (job.status === "finished") {
         const finalSize = formatSize(job.filesize) || estimatedSize;
-        const shareBtnHtml = supportsFileShare()
-          ? `<button type="button" class="btn-primary btn-share" data-file-id="${id}">Зберегти в галерею</button>`
-          : "";
-        statusBox.innerHTML = `<div class="card status-card">
-          <p class="success">✓ Готово: ${job.title || ""}${finalSize ? ` (${finalSize})` : ""}</p>
-          <div class="result-actions">
-            <a class="btn-primary btn-download" href="/api/file/${id}">Завантажити файл</a>
-            ${shareBtnHtml}
-          </div>
-        </div>`;
+        statusBox.innerHTML = `<div class="card status-card"><p class="success">✓ Готово: ${job.title || ""}${finalSize ? ` (${finalSize})` : ""}</p><a class="btn-primary btn-download" href="/api/file/${id}">Завантажити файл</a></div>`;
         clearInterval(interval);
         refreshRecent();
       } else if (job.status === "error") {
@@ -304,10 +252,6 @@ function renderRow(r) {
     r.status === "finished"
       ? `<a class="dl-download-btn" href="/api/file/${r.id}">завантажити</a>`
       : `<span class="dl-download-btn disabled">завантажити</span>`;
-  const shareBtn =
-    r.status === "finished" && supportsFileShare()
-      ? `<button type="button" class="dl-share-btn btn-share" data-file-id="${r.id}" title="Зберегти в галерею">📱</button>`
-      : "";
   const size = formatSize(r.filesize);
   const title = size ? `${r.title} (${size})` : r.title;
   const sourceLink = r.url
@@ -317,7 +261,6 @@ function renderRow(r) {
     <div class="dl-row" data-id="${r.id}">
       <span class="status-icon status-${r.status}">${statusIcon(r.status)}</span>
       ${btn}
-      ${shareBtn}
       <button type="button" class="dl-title">${escapeHtml(title)}</button>
       ${sourceLink}
     </div>`;
