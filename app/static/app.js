@@ -92,7 +92,7 @@ function renderSubtitleOptions() {
   lastSubtitles.forEach((s) => {
     const opt = document.createElement("option");
     opt.value = s.code;
-    opt.textContent = s.label + (s.auto ? " (авто)" : "");
+    opt.textContent = s.label + (s.auto ? " (авто)" : " (orig)");
     subtitleSelect.appendChild(opt);
   });
 
