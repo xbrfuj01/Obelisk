@@ -45,11 +45,9 @@
         <td>{{ '%.1f МБ'|format(h.filesize / 1048576) if h.filesize else '' }}</td>
         <td>
           {% if h.status == 'finished' %}<a href="/api/file/{{ h.id }}">файл</a>{% endif %}
-          {% if h.filepath %}
           <form method="post" action="/admin/delete/{{ h.id }}" class="inline-form">
             <button type="submit" class="link-btn">видалити</button>
           </form>
-          {% endif %}
         </td>
       </tr>
     {% else %}
@@ -58,6 +56,65 @@
     </tbody>
   </table>
   </div>
+</section>
+
+<section>
+  <h2>Обслуговування</h2>
+  {% if request.query_params.get('cache_cleared') %}<p class="success">Кеш yt-dlp очищено.</p>{% endif %}
+  {% if request.query_params.get('cleanup_ran') %}<p class="success">Очищення застарілих файлів запущено.</p>{% endif %}
+  <div class="card maintenance-actions">
+    <form method="post" action="/admin/clear-ytdlp-cache">
+      <button type="submit">Очистити кеш yt-dlp</button>
+    </form>
+    <form method="post" action="/admin/run-cleanup-now">
+      <button type="submit">Запустити очищення застарілих файлів зараз</button>
+    </form>
+  </div>
+</section>
+
+<section>
+  <h2>Користувачі сайту {% if site_gate_enabled %}<span class="badge badge-finished">вхід увімкнено</span>{% else %}<span class="badge">вхід вимкнено — додайте користувача</span>{% endif %}</h2>
+  {% if request.query_params.get('user_error') == 'empty' %}<p class="error">Заповніть логін і пароль</p>{% endif %}
+  {% if request.query_params.get('user_error') == 'mismatch' %}<p class="error">Паролі не співпадають</p>{% endif %}
+  {% if request.query_params.get('user_error') == 'exists' %}<p class="error">Такий логін вже існує</p>{% endif %}
+  {% if request.query_params.get('user_added') %}<p class="success">Користувача додано.</p>{% endif %}
+
+  <div class="table-wrap card">
+  <table class="table">
+    <thead><tr><th>Логін</th><th>Створено</th><th></th></tr></thead>
+    <tbody>
+    {% for u in users %}
+      <tr>
+        <td>{{ u.username }}</td>
+        <td>{{ u.created_at.strftime('%Y-%m-%d %H:%M') if u.created_at else '' }}</td>
+        <td>
+          <form method="post" action="/admin/users/delete/{{ u.id }}" class="inline-form">
+            <button type="submit" class="link-btn">видалити</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="3">Ще немає користувачів — сайт відкритий для всіх</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <form method="post" action="/admin/users/add" class="card settings-form">
+    <p class="settings-group-title">Додати користувача</p>
+    <div class="grid-2">
+      <label>Логін
+        <input type="text" name="username" required autocomplete="off">
+      </label>
+      <label>Пароль
+        <input type="password" name="password" required autocomplete="new-password">
+      </label>
+    </div>
+    <label>Підтвердження пароля
+      <input type="password" name="password_confirm" required autocomplete="new-password">
+    </label>
+    <button type="submit">Додати</button>
+  </form>
 </section>
 
 <section>
@@ -102,15 +159,6 @@
     <label>Підтвердження нового пароля
       <input type="password" name="new_password_confirm" autocomplete="new-password">
     </label>
-
-    <p class="settings-group-title">Вхід на сайт {% if site_gate_enabled %}<span class="badge badge-finished">увімкнено</span>{% else %}<span class="badge">вимкнено</span>{% endif %}</p>
-    <label>Логін сайту
-      <input type="text" name="new_site_username" value="{{ site_username }}" autocomplete="username">
-    </label>
-    <label>Новий пароль сайту
-      <input type="password" name="new_site_password" autocomplete="new-password" placeholder="{% if site_gate_enabled %}залиште порожнім, щоб не змінювати{% else %}задайте, щоб увімкнути вхід на сайт{% endif %}">
-    </label>
-    <label class="checkbox-row"><input type="checkbox" name="disable_site_password"> <span>Вимкнути вхід на сайт (сайт стане відкритим для всіх)</span></label>
 
     <button type="submit">Зберегти</button>
   </form>

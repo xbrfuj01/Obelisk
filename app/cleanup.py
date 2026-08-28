@@ -8,7 +8,7 @@ from .database import SessionLocal
 from .models import Download
 
 
-def _cleanup_once():
+def run_cleanup_once():
     db = SessionLocal()
     try:
         retention_hours = auth.get_retention_hours(db)
@@ -44,7 +44,7 @@ def _loop():
         finally:
             db.close()
         try:
-            _cleanup_once()
+            run_cleanup_once()
         except Exception:
             pass
         time.sleep(interval_minutes * 60)

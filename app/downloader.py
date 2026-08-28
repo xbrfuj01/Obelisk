@@ -55,6 +55,12 @@ class _ConcurrencyGate:
 _gate = _ConcurrencyGate()
 
 
+def clear_ytdlp_cache():
+    """Wipes yt-dlp's own on-disk cache (extractor artifacts, nsig functions, ...).
+    A common fix when extraction starts failing for reasons unrelated to our code."""
+    yt_dlp.YoutubeDL({"quiet": True}).cache.remove()
+
+
 def _height_filter(quality: str) -> str:
     if not quality or quality == "best":
         return ""

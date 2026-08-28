@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 from .database import init_db, SessionLocal
 from .models import Download
 from . import auth
-from .downloader import submit_job, _source_from_url, probe_qualities, is_url_allowed
-from .cleanup import start_cleanup_thread
+from .downloader import submit_job, _source_from_url, probe_qualities, is_url_allowed, clear_ytdlp_cache
+from .cleanup import start_cleanup_thread, run_cleanup_once
 
 BASE_DIR = os.path.dirname(__file__)
 
@@ -332,7 +332,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(a
     retention_hours = auth.get_retention_hours(db)
     admin_username = auth.get_admin_username(db)
     site_gate_enabled = auth.is_site_gate_enabled(db)
-    site_username = auth.get_site_username(db)
+    users = auth.list_users(db)
     cleanup_interval_minutes = auth.get_cleanup_interval_minutes(db)
     max_concurrent_downloads = auth.get_max_concurrent_downloads(db)
     session_max_age_days = auth.get_session_max_age_days(db)
@@ -344,7 +344,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(a
         {
             "request": request,
             "site_gate_enabled": site_gate_enabled,
-            "site_username": site_username,
+            "users": users,
             "total": total,
             "finished": finished,
             "errors": errors,
@@ -365,19 +365,62 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(a
 @app.post("/admin/delete/{job_id}")
 def admin_delete(job_id: str, db: Session = Depends(get_db), _=Depends(auth.require_admin)):
     job = db.get(Download, job_id)
-    if job and job.filepath and os.path.exists(job.filepath):
-        try:
-            os.remove(job.filepath)
-            parent = os.path.dirname(job.filepath)
-            if os.path.isdir(parent) and not os.listdir(parent):
-                os.rmdir(parent)
-        except OSError:
-            pass
     if job:
-        job.filepath = None
-        job.status = "deleted"
+        if job.filepath and os.path.exists(job.filepath):
+            try:
+                os.remove(job.filepath)
+                parent = os.path.dirname(job.filepath)
+                if os.path.isdir(parent) and not os.listdir(parent):
+                    os.rmdir(parent)
+            except OSError:
+                pass
+        db.delete(job)
         db.commit()
     return RedirectResponse("/admin", status_code=303)
+
+
+@app.post("/admin/users/add")
+def admin_add_user(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    password_confirm: str = Form(...),
+    db: Session = Depends(get_db),
+    _=Depends(auth.require_admin),
+):
+    username = username.strip()
+    if not username or not password:
+        return RedirectResponse("/admin?user_error=empty", status_code=303)
+    if password != password_confirm:
+        return RedirectResponse("/admin?user_error=mismatch", status_code=303)
+    if auth.username_exists(db, username):
+        return RedirectResponse("/admin?user_error=exists", status_code=303)
+    auth.create_user(db, username, password)
+    return RedirectResponse("/admin?user_added=1", status_code=303)
+
+
+@app.post("/admin/users/delete/{user_id}")
+def admin_delete_user(user_id: str, db: Session = Depends(get_db), _=Depends(auth.require_admin)):
+    auth.delete_user(db, user_id)
+    return RedirectResponse("/admin", status_code=303)
+
+
+@app.post("/admin/clear-ytdlp-cache")
+def admin_clear_ytdlp_cache(_=Depends(auth.require_admin)):
+    try:
+        clear_ytdlp_cache()
+    except Exception:
+        pass
+    return RedirectResponse("/admin?cache_cleared=1", status_code=303)
+
+
+@app.post("/admin/run-cleanup-now")
+def admin_run_cleanup_now(_=Depends(auth.require_admin)):
+    try:
+        run_cleanup_once()
+    except Exception:
+        pass
+    return RedirectResponse("/admin?cleanup_ran=1", status_code=303)
 
 
 @app.post("/admin/settings")
@@ -392,9 +435,6 @@ def admin_settings(
     new_username: str = Form(""),
     new_password: str = Form(""),
     new_password_confirm: str = Form(""),
-    new_site_username: str = Form(""),
-    new_site_password: str = Form(""),
-    disable_site_password: bool = Form(False),
     db: Session = Depends(get_db),
     _=Depends(auth.require_admin),
 ):
@@ -413,14 +453,5 @@ def admin_settings(
     new_username = new_username.strip()
     if new_username:
         auth.set_setting(db, "admin_username", new_username)
-
-    if disable_site_password:
-        auth.clear_site_password(db)
-    else:
-        if new_site_password:
-            auth.set_site_password(db, new_site_password)
-        new_site_username = new_site_username.strip()
-        if new_site_username:
-            auth.set_site_username(db, new_site_username)
 
     return RedirectResponse("/admin?saved=1", status_code=303)

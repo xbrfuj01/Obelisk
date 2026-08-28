@@ -7,7 +7,7 @@ from fastapi import Request
 from sqlalchemy.orm import Session
 
 from . import config
-from .models import Setting
+from .models import Setting, User
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -97,36 +97,41 @@ def require_admin(request: Request):
         raise NotAuthenticated()
 
 
-# ---------------- Site-wide login gate ----------------
-# Disabled until an admin explicitly sets a site password from the admin
-# panel — there is no env var seed for it (nothing to configure on deploy).
+# ---------------- Site-wide login gate (multi-user) ----------------
+# Disabled until an admin creates at least one user from the admin panel —
+# there is no env var seed for it (nothing to configure on deploy).
 
 def is_site_gate_enabled(db: Session) -> bool:
-    return bool(get_setting(db, "site_password_hash"))
+    return db.query(User).count() > 0
 
 
-def get_site_username(db: Session) -> str:
-    return get_setting(db, "site_username", config.DEFAULT_SITE_USERNAME)
+def list_users(db: Session):
+    return db.query(User).order_by(User.created_at).all()
+
+
+def username_exists(db: Session, username: str) -> bool:
+    return db.query(User).filter(User.username == username).first() is not None
+
+
+def create_user(db: Session, username: str, password: str) -> User:
+    user = User(username=username, password_hash=pwd_context.hash(password))
+    db.add(user)
+    db.commit()
+    return user
+
+
+def delete_user(db: Session, user_id: str):
+    user = db.get(User, user_id)
+    if user:
+        db.delete(user)
+        db.commit()
 
 
 def verify_site_credentials(db: Session, username: str, password: str) -> bool:
-    expected_username = get_site_username(db)
-    hash_ = get_setting(db, "site_password_hash")
-    if not hash_ or username != expected_username:
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
         return False
-    return pwd_context.verify(password, hash_)
-
-
-def set_site_username(db: Session, username: str):
-    set_setting(db, "site_username", username)
-
-
-def set_site_password(db: Session, password: str):
-    set_setting(db, "site_password_hash", pwd_context.hash(password))
-
-
-def clear_site_password(db: Session):
-    set_setting(db, "site_password_hash", "")
+    return pwd_context.verify(password, user.password_hash)
 
 
 def require_site_access(request: Request, db: Session):

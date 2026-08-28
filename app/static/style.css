@@ -412,6 +412,13 @@ button:active { transform: translateY(1px); }
   border-top: none;
 }
 
+.maintenance-actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.maintenance-actions form { margin: 0; }
+
 .login-page {
   min-height: calc(100vh - 200px);
   display: flex;

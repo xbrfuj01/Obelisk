@@ -41,3 +41,12 @@ class Setting(Base):
 
     key = Column(String, primary_key=True)
     value = Column(Text, nullable=True)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    username = Column(String, unique=True, nullable=False)
+    password_hash = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
