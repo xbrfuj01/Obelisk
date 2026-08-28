@@ -21,4 +21,4 @@ RUN mkdir -p /data /downloads
 
 EXPOSE 30301
 
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-30301}"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-30301} --no-access-log"]
