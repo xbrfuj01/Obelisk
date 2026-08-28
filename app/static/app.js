@@ -312,6 +312,20 @@ const STATUS_LABELS = {
   downloading: "Підготовка",
 };
 
+const DOWNLOAD_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
+
+// Kicks off the browser's own download for the finished file without
+// navigating away from the page, so the user gets it on their device
+// automatically instead of having to click the button themselves.
+function triggerAutoDownload(id) {
+  const a = document.createElement("a");
+  a.href = `/api/file/${id}`;
+  a.download = "";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 function pollStatus(id, estimatedBytes, isClipped) {
   const estimatedSize = formatSize(estimatedBytes);
   const interval = setInterval(async () => {
@@ -320,7 +334,8 @@ function pollStatus(id, estimatedBytes, isClipped) {
       const job = await res.json();
       if (job.status === "finished") {
         const finalSize = formatSize(job.filesize) || estimatedSize;
-        statusBox.innerHTML = `<div class="card status-card"><p class="success">✓ Готово: ${job.title || ""}${finalSize ? ` (${finalSize})` : ""}</p><a class="btn-primary btn-download" href="/api/file/${id}">Завантажити файл</a></div>`;
+        triggerAutoDownload(id);
+        statusBox.innerHTML = `<div class="card status-card"><p class="success">✓ Готово: ${job.title || ""}${finalSize ? ` (${finalSize})` : ""}</p><a class="btn-download" href="/api/file/${id}">${DOWNLOAD_ICON} Завантажити ще раз</a></div>`;
         clearInterval(interval);
         refreshRecent();
       } else if (job.status === "error") {
