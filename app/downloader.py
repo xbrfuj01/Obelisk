@@ -81,6 +81,12 @@ LANG_NAMES = {
     "tw": "Twi", "ty": "Tahitian", "ug": "Uyghur", "ve": "Venda",
     "vo": "Volapük", "wa": "Walloon", "wo": "Wolof", "xh": "Xhosa",
     "yi": "Yiddish", "yo": "Yoruba", "za": "Zhuang", "zu": "Zulu",
+
+    # YouTube-specific/legacy codes not in plain ISO 639-1 (its caption
+    # auto-translate list includes languages with no 2-letter code at all).
+    "bho": "Bhojpuri", "ceb": "Cebuano", "kri": "Krio", "luo": "Luo",
+    "nso": "Northern Sotho", "yue": "Cantonese", "in": "Bahasa Indonesia",
+    "ji": "Yiddish", "mni": "Meitei", "gom": "Konkani", "doi": "Dogri",
 }
 
 PRIORITY_LANG_ORDER = ["uk", "en", "ru"]
