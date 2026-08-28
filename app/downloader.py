@@ -29,18 +29,58 @@ COMMON_LABELS = {
 SKIP_EXT = {".srt", ".vtt", ".json", ".description", ".part", ".ytdl"}
 
 LANG_NAMES = {
+    # Native/autonym names for languages Ukrainian users are most likely to
+    # see; everything else falls back to an English name below rather than
+    # a raw 2-3 letter code — YouTube alone offers 100+ auto-translated
+    # caption languages, most of which will never hit the first list.
     "uk": "Українська", "en": "English", "ru": "Русский", "es": "Español",
     "fr": "Français", "de": "Deutsch", "pl": "Polski", "pt": "Português",
     "it": "Italiano", "ja": "日本語", "ko": "한국어", "zh": "中文", "tr": "Türkçe",
     "ar": "العربية", "hi": "हिन्दी", "id": "Bahasa Indonesia", "vi": "Tiếng Việt",
     "th": "ไทย", "nl": "Nederlands", "sv": "Svenska", "no": "Norsk", "da": "Dansk",
     "fi": "Suomi", "cs": "Čeština", "sk": "Slovenčina", "hu": "Magyar",
-    "ro": "Română", "bg": "Български", "el": "Ελληνικά", "he": "עברית",
+    "ro": "Română", "bg": "Български", "el": "Ελληνικά", "he": "עברית", "iw": "עברית",
     "fa": "فارسی", "ur": "اردو", "bn": "বাংলা", "ta": "தமிழ்", "sr": "Српски",
     "hr": "Hrvatski", "sl": "Slovenščina", "lt": "Lietuvių", "lv": "Latviešu",
     "et": "Eesti", "be": "Беларуская", "ka": "ქართული", "hy": "Հայերեն",
     "az": "Azərbaycan", "kk": "Қазақша", "uz": "Oʻzbekcha", "ms": "Bahasa Melayu",
     "sw": "Kiswahili", "fil": "Filipino", "sq": "Shqip", "mk": "Македонски",
+
+    "aa": "Afar", "ab": "Abkhaz", "ae": "Avestan", "af": "Afrikaans",
+    "ak": "Akan", "am": "Amharic", "an": "Aragonese", "as": "Assamese",
+    "av": "Avar", "ay": "Aymara", "ba": "Bashkir", "bh": "Bihari",
+    "bi": "Bislama", "bm": "Bambara", "bo": "Tibetan", "br": "Breton",
+    "bs": "Bosnian", "ca": "Catalan", "ce": "Chechen", "ch": "Chamorro",
+    "co": "Corsican", "cr": "Cree", "cu": "Church Slavic", "cv": "Chuvash",
+    "cy": "Welsh", "dv": "Divehi", "dz": "Dzongkha", "ee": "Ewe",
+    "eo": "Esperanto", "eu": "Basque", "ff": "Fulah", "fj": "Fijian",
+    "fo": "Faroese", "fy": "Western Frisian", "ga": "Irish",
+    "gd": "Scottish Gaelic", "gl": "Galician", "gn": "Guarani",
+    "gu": "Gujarati", "gv": "Manx", "ha": "Hausa", "haw": "Hawaiian",
+    "hmn": "Hmong", "ho": "Hiri Motu", "hz": "Herero", "ia": "Interlingua",
+    "ie": "Interlingue", "ig": "Igbo", "ii": "Sichuan Yi", "ik": "Inupiaq",
+    "io": "Ido", "is": "Icelandic", "iu": "Inuktitut", "jv": "Javanese",
+    "jw": "Javanese", "kg": "Kongo", "ki": "Kikuyu", "kj": "Kuanyama",
+    "kl": "Kalaallisut", "km": "Khmer", "kn": "Kannada", "kr": "Kanuri",
+    "ks": "Kashmiri", "ku": "Kurdish", "kv": "Komi", "kw": "Cornish",
+    "ky": "Kyrgyz", "la": "Latin", "lb": "Luxembourgish", "lg": "Ganda",
+    "li": "Limburgish", "ln": "Lingala", "lo": "Lao", "lu": "Luba-Katanga",
+    "mg": "Malagasy", "mh": "Marshallese", "mi": "Maori", "ml": "Malayalam",
+    "mn": "Mongolian", "mr": "Marathi", "mt": "Maltese", "my": "Burmese",
+    "na": "Nauru", "nb": "Norwegian Bokmål", "nd": "North Ndebele",
+    "ne": "Nepali", "ng": "Ndonga", "nn": "Norwegian Nynorsk",
+    "nr": "South Ndebele", "nv": "Navajo", "ny": "Chichewa", "oc": "Occitan",
+    "oj": "Ojibwe", "om": "Oromo", "or": "Odia", "os": "Ossetian",
+    "pa": "Punjabi", "pi": "Pali", "ps": "Pashto", "qu": "Quechua",
+    "rm": "Romansh", "rn": "Rundi", "rw": "Kinyarwanda", "sa": "Sanskrit",
+    "sc": "Sardinian", "sd": "Sindhi", "se": "Northern Sami", "sg": "Sango",
+    "si": "Sinhala", "sm": "Samoan", "sn": "Shona", "so": "Somali",
+    "ss": "Swati", "st": "Southern Sotho", "su": "Sundanese", "te": "Telugu",
+    "tg": "Tajik", "ti": "Tigrinya", "tk": "Turkmen", "tl": "Tagalog",
+    "tn": "Tswana", "to": "Tongan", "ts": "Tsonga", "tt": "Tatar",
+    "tw": "Twi", "ty": "Tahitian", "ug": "Uyghur", "ve": "Venda",
+    "vo": "Volapük", "wa": "Walloon", "wo": "Wolof", "xh": "Xhosa",
+    "yi": "Yiddish", "yo": "Yoruba", "za": "Zhuang", "zu": "Zulu",
 }
 
 PRIORITY_LANG_ORDER = ["uk", "en", "ru"]
