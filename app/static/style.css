@@ -228,6 +228,8 @@ input, select, button {
 
 input:hover, select:hover { border-color: var(--border-hover); }
 
+input::placeholder { color: var(--text-dim); opacity: 0.7; }
+
 input:focus, select:focus {
   outline: none;
   border-color: var(--accent);
