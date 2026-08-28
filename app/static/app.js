@@ -53,9 +53,28 @@ function updateClipValidity() {
   return allOk;
 }
 
+const CLIP_PASTE_INPUT_TYPES = new Set(["insertFromPaste", "insertFromPasteAsQuotation", "insertFromDrop"]);
+
+// While the user types digits by hand, auto-insert a colon after every pair
+// (0014 -> 00:14 -> 00:14:4...) so they never have to hit ":" themselves.
+// Pasted/dropped text is left as-is — it's usually already formatted, and
+// reformatting it would just fight the user.
+function autoFormatClipInput(e) {
+  const input = e.target;
+  if (CLIP_PASTE_INPUT_TYPES.has(e.inputType)) {
+    updateClipValidity();
+    return;
+  }
+  const digits = input.value.replace(/\D/g, "").slice(0, 6);
+  const groups = [];
+  for (let i = 0; i < digits.length; i += 2) groups.push(digits.slice(i, i + 2));
+  input.value = groups.join(":");
+  updateClipValidity();
+}
+
 if (clipStartInput && clipEndInput) {
-  clipStartInput.addEventListener("input", updateClipValidity);
-  clipEndInput.addEventListener("input", updateClipValidity);
+  clipStartInput.addEventListener("input", autoFormatClipInput);
+  clipEndInput.addEventListener("input", autoFormatClipInput);
 }
 
 if (advancedToggle) {
