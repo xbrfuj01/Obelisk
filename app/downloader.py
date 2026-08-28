@@ -89,23 +89,36 @@ def probe_qualities(url: str, db):
     # dedupe by height only: several formats (different codecs/bitrates) often
     # share the same height, and the download-side quality filter also caps by height
     by_height = {}
+    best_audio_bytes = 0
     for f in (info or {}).get("formats", []) or []:
         h = f.get("height")
         w = f.get("width")
-        if not h or f.get("vcodec") in (None, "none"):
-            continue
-        h = int(h)
-        if h not in by_height or (w and w > (by_height[h] or 0)):
-            by_height[h] = w
+        vcodec = f.get("vcodec")
+        acodec = f.get("acodec")
+        fsize = f.get("filesize") or f.get("filesize_approx")
+
+        if h and vcodec not in (None, "none"):
+            h = int(h)
+            entry = by_height.get(h)
+            if entry is None or (w and w > (entry["width"] or 0)):
+                by_height[h] = {"width": w, "bytes": fsize}
+        elif (not h) and vcodec in (None, "none") and acodec not in (None, "none") and fsize:
+            best_audio_bytes = max(best_audio_bytes, fsize)
 
     result = []
     for h in sorted(by_height, reverse=True):
-        w = by_height[h]
+        entry = by_height[h]
+        w = entry["width"]
         label = f"{w}×{h}" if w else f"{h}p"
         common = COMMON_LABELS.get(h)
         if common:
             label += f" ({common})"
-        result.append({"value": str(h), "label": label})
+        result.append({
+            "value": str(h),
+            "label": label,
+            "video_bytes": entry["bytes"],
+            "audio_bytes": best_audio_bytes or None,
+        })
     return result
 
 

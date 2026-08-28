@@ -22,11 +22,51 @@ const AUDIO_FORMAT_OPTIONS = [
   { value: "wav", label: "WAV" },
 ];
 
-function updateVisibility() {
+function formatSize(bytes) {
+  if (!bytes) return null;
+  const mb = bytes / 1048576;
+  if (mb >= 1024) return (mb / 1024).toFixed(1) + " ГБ";
+  return Math.round(mb) + " МБ";
+}
+
+function currentMode() {
   const checked = document.querySelector('input[name="mode"]:checked');
-  const mode = checked ? checked.value : "video";
+  return checked ? checked.value : "video";
+}
+
+let lastQualities = [];
+
+function renderQualityOptions() {
+  if (!lastQualities.length) return; // keep the server-rendered fallback list until a probe succeeds
+  const mode = currentMode();
+  const current = qualitySelect.value;
+  qualitySelect.innerHTML = "";
+
+  const bestOpt = document.createElement("option");
+  bestOpt.value = "best";
+  bestOpt.textContent = "Найкраща доступна";
+  qualitySelect.appendChild(bestOpt);
+
+  lastQualities.forEach((q) => {
+    const opt = document.createElement("option");
+    opt.value = q.value;
+    let label = q.label;
+    const bytes = mode === "video_only" ? q.video_bytes : (q.video_bytes && q.audio_bytes ? q.video_bytes + q.audio_bytes : q.video_bytes);
+    const size = formatSize(bytes);
+    if (size) label += ` — ~${size}`;
+    opt.textContent = label;
+    qualitySelect.appendChild(opt);
+  });
+
+  const values = Array.from(qualitySelect.options).map((o) => o.value);
+  qualitySelect.value = values.includes(current) ? current : "best";
+}
+
+function updateVisibility() {
+  const mode = currentMode();
   qualityWrap.style.display = mode === "audio" ? "none" : "";
   if (premiereCompatWrap) premiereCompatWrap.style.display = mode === "audio" ? "none" : "";
+  renderQualityOptions();
 
   const options = mode === "audio" ? AUDIO_FORMAT_OPTIONS : VIDEO_FORMAT_OPTIONS;
   const current = containerSelect.value;
@@ -65,23 +105,8 @@ async function probeQualities() {
       return;
     }
 
-    const current = qualitySelect.value;
-    qualitySelect.innerHTML = "";
-
-    const bestOpt = document.createElement("option");
-    bestOpt.value = "best";
-    bestOpt.textContent = "Найкраща доступна";
-    qualitySelect.appendChild(bestOpt);
-
-    data.qualities.forEach((q) => {
-      const opt = document.createElement("option");
-      opt.value = q.value;
-      opt.textContent = q.label;
-      qualitySelect.appendChild(opt);
-    });
-
-    const values = Array.from(qualitySelect.options).map((o) => o.value);
-    qualitySelect.value = values.includes(current) ? current : "best";
+    lastQualities = data.qualities;
+    renderQualityOptions();
 
     urlStatus.innerHTML = "✓";
     urlStatus.className = "url-status ok";
