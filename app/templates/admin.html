@@ -5,162 +5,204 @@
   <a href="/admin/logout">Вийти</a>
 </div>
 
-<section class="stats-grid">
-  <div class="stat-card"><span class="stat-value">{{ total }}</span><span class="stat-label">Всього завантажень</span></div>
-  <div class="stat-card"><span class="stat-value">{{ finished }}</span><span class="stat-label">Успішних</span></div>
-  <div class="stat-card"><span class="stat-value">{{ errors }}</span><span class="stat-label">Помилок</span></div>
-  <div class="stat-card"><span class="stat-value">{{ "%.1f"|format(total_size / 1048576) }} МБ</span><span class="stat-label">Займано місця</span></div>
-</section>
+<nav class="admin-tabs">
+  <button type="button" class="admin-tab-btn" data-tab="stats">Статистика</button>
+  <button type="button" class="admin-tab-btn" data-tab="users">Користувачі</button>
+  <button type="button" class="admin-tab-btn" data-tab="settings">Налаштування</button>
+  <button type="button" class="admin-tab-btn" data-tab="password">Зміна паролю</button>
+</nav>
 
-<section>
-  <h2>За джерелами</h2>
-  <div class="table-wrap card">
-  <table class="table">
-    <thead><tr><th>Джерело</th><th>Кількість</th></tr></thead>
-    <tbody>
-    {% for source, count in by_source %}
-      <tr><td>{{ source or 'невідомо' }}</td><td>{{ count }}</td></tr>
-    {% else %}
-      <tr><td colspan="2">Немає даних</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  </div>
-</section>
+<div class="tab-panel" data-tab-panel="stats">
+  <section class="stats-grid">
+    <div class="stat-card"><span class="stat-value">{{ total }}</span><span class="stat-label">Всього завантажень</span></div>
+    <div class="stat-card"><span class="stat-value">{{ finished }}</span><span class="stat-label">Успішних</span></div>
+    <div class="stat-card"><span class="stat-value">{{ errors }}</span><span class="stat-label">Помилок</span></div>
+    <div class="stat-card"><span class="stat-value">{{ "%.1f"|format(total_size / 1048576) }} МБ</span><span class="stat-label">Займано місця</span></div>
+  </section>
 
-<section>
-  <h2>Історія завантажень</h2>
-  <div class="table-wrap card">
-  <table class="table">
-    <thead><tr><th>Назва</th><th>Джерело</th><th>Тип</th><th>Статус</th><th>IP</th><th>Дата</th><th>Розмір</th><th></th></tr></thead>
-    <tbody>
-    {% for h in history %}
-      <tr>
-        <td>{{ h.title or h.url }}</td>
-        <td>{{ h.source or '' }}</td>
-        <td>{{ h.mode }}</td>
-        <td><span class="badge badge-{{ h.status }}">{{ h.status }}</span></td>
-        <td>{{ h.client_ip or '' }}</td>
-        <td>{{ h.created_at.strftime('%Y-%m-%d %H:%M') if h.created_at else '' }}</td>
-        <td>{{ '%.1f МБ'|format(h.filesize / 1048576) if h.filesize else '' }}</td>
-        <td>
-          {% if h.status == 'finished' %}<a href="/api/file/{{ h.id }}">файл</a>{% endif %}
-          <form method="post" action="/admin/delete/{{ h.id }}" class="inline-form">
-            <button type="submit" class="link-btn">видалити</button>
-          </form>
-        </td>
-      </tr>
-    {% else %}
-      <tr><td colspan="8">Ще немає завантажень</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  </div>
-</section>
-
-<section>
-  <h2>Обслуговування</h2>
-  {% if request.query_params.get('cache_cleared') %}<p class="success">Кеш yt-dlp очищено.</p>{% endif %}
-  {% if request.query_params.get('cleanup_ran') %}<p class="success">Очищення застарілих файлів запущено.</p>{% endif %}
-  <div class="card maintenance-actions">
-    <form method="post" action="/admin/clear-ytdlp-cache">
-      <button type="submit">Очистити кеш yt-dlp</button>
-    </form>
-    <form method="post" action="/admin/run-cleanup-now">
-      <button type="submit">Запустити очищення застарілих файлів зараз</button>
-    </form>
-  </div>
-</section>
-
-<section>
-  <h2>Користувачі сайту {% if site_gate_enabled %}<span class="badge badge-finished">вхід увімкнено</span>{% else %}<span class="badge">вхід вимкнено — додайте користувача</span>{% endif %}</h2>
-  {% if request.query_params.get('user_error') == 'empty' %}<p class="error">Заповніть логін і пароль</p>{% endif %}
-  {% if request.query_params.get('user_error') == 'mismatch' %}<p class="error">Паролі не співпадають</p>{% endif %}
-  {% if request.query_params.get('user_error') == 'exists' %}<p class="error">Такий логін вже існує</p>{% endif %}
-  {% if request.query_params.get('user_added') %}<p class="success">Користувача додано.</p>{% endif %}
-
-  <div class="table-wrap card">
-  <table class="table">
-    <thead><tr><th>Логін</th><th>Створено</th><th></th></tr></thead>
-    <tbody>
-    {% for u in users %}
-      <tr>
-        <td>{{ u.username }}</td>
-        <td>{{ u.created_at.strftime('%Y-%m-%d %H:%M') if u.created_at else '' }}</td>
-        <td>
-          <form method="post" action="/admin/users/delete/{{ u.id }}" class="inline-form">
-            <button type="submit" class="link-btn">видалити</button>
-          </form>
-        </td>
-      </tr>
-    {% else %}
-      <tr><td colspan="3">Ще немає користувачів — сайт відкритий для всіх</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  </div>
-
-  <form method="post" action="/admin/users/add" class="card settings-form">
-    <p class="settings-group-title">Додати користувача</p>
-    <div class="grid-2">
-      <label>Логін
-        <input type="text" name="username" required autocomplete="off">
-      </label>
-      <label>Пароль
-        <input type="password" name="password" required autocomplete="new-password">
-      </label>
+  <section>
+    <h2>За джерелами</h2>
+    <div class="table-wrap card">
+    <table class="table">
+      <thead><tr><th>Джерело</th><th>Кількість</th></tr></thead>
+      <tbody>
+      {% for source, count in by_source %}
+        <tr><td>{{ source or 'невідомо' }}</td><td>{{ count }}</td></tr>
+      {% else %}
+        <tr><td colspan="2">Немає даних</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
     </div>
-    <label>Підтвердження пароля
-      <input type="password" name="password_confirm" required autocomplete="new-password">
-    </label>
-    <button type="submit">Додати</button>
-  </form>
-</section>
+  </section>
 
-<section>
-  <h2>Налаштування</h2>
-  {% if request.query_params.get('pw_error') %}<p class="error">Паролі не співпадають, пароль не змінено</p>{% endif %}
-  {% if request.query_params.get('saved') %}<p class="success">Збережено.</p>{% endif %}
-  <form method="post" action="/admin/settings" class="card settings-form">
-
-    <p class="settings-group-title">Завантаження</p>
-    <div class="grid-2">
-      <label>Автовидалення файлів через (годин)
-        <input type="number" name="retention_hours" value="{{ retention_hours }}" min="1" required>
-      </label>
-      <label>Перевіряти застарілі файли кожні (хвилин)
-        <input type="number" name="cleanup_interval_minutes" value="{{ cleanup_interval_minutes }}" min="1" required>
-      </label>
+  <section>
+    <h2>Історія завантажень</h2>
+    <div class="table-wrap card">
+    <table class="table">
+      <thead><tr><th>Назва</th><th>Джерело</th><th>Тип</th><th>Статус</th><th>IP</th><th>Дата</th><th>Розмір</th><th></th></tr></thead>
+      <tbody>
+      {% for h in history %}
+        <tr>
+          <td>{{ h.title or h.url }}</td>
+          <td>{{ h.source or '' }}</td>
+          <td>{{ h.mode }}</td>
+          <td><span class="badge badge-{{ h.status }}">{{ h.status }}</span></td>
+          <td>{{ h.client_ip or '' }}</td>
+          <td>{{ h.created_at.strftime('%Y-%m-%d %H:%M') if h.created_at else '' }}</td>
+          <td>{{ '%.1f МБ'|format(h.filesize / 1048576) if h.filesize else '' }}</td>
+          <td>
+            {% if h.status == 'finished' %}<a href="/api/file/{{ h.id }}">файл</a>{% endif %}
+            <form method="post" action="/admin/delete/{{ h.id }}" class="inline-form">
+              <button type="submit" class="link-btn">видалити</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8">Ще немає завантажень</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
     </div>
-    <label>Максимум одночасних завантажень
-      <input type="number" name="max_concurrent_downloads" value="{{ max_concurrent_downloads }}" min="1" required>
-    </label>
+  </section>
+</div>
 
-    <p class="settings-group-title">Сесія</p>
-    <label>Тривалість входу на пристрої (днів) <span class="hint">— застосується після перезапуску контейнера</span>
-      <input type="number" name="session_max_age_days" value="{{ session_max_age_days }}" min="1" required>
-    </label>
+<div class="tab-panel" data-tab-panel="users">
+  <section>
+    <h2>Користувачі сайту {% if site_gate_enabled %}<span class="badge badge-finished">вхід увімкнено</span>{% else %}<span class="badge">вхід вимкнено — додайте користувача</span>{% endif %}</h2>
+    {% if request.query_params.get('user_error') == 'empty' %}<p class="error">Заповніть логін і пароль</p>{% endif %}
+    {% if request.query_params.get('user_error') == 'mismatch' %}<p class="error">Паролі не співпадають</p>{% endif %}
+    {% if request.query_params.get('user_error') == 'exists' %}<p class="error">Такий логін вже існує</p>{% endif %}
+    {% if request.query_params.get('user_added') %}<p class="success">Користувача додано.</p>{% endif %}
 
-    <p class="settings-group-title">Проксі для заблокованих сайтів</p>
-    <label>Адреса проксі (напр. socks5h://user:pass@host:1080)
-      <input type="text" name="proxy_url" value="{{ proxy_url }}" placeholder="залиште порожнім, щоб не використовувати проксі" autocomplete="off">
-    </label>
-    <label>Домени через проксі (через кому)
-      <input type="text" name="proxy_domains" value="{{ proxy_domains }}" autocomplete="off">
-    </label>
+    <div class="table-wrap card">
+    <table class="table">
+      <thead><tr><th>Логін</th><th>Створено</th><th></th></tr></thead>
+      <tbody>
+      {% for u in users %}
+        <tr>
+          <td>{{ u.username }}</td>
+          <td>{{ u.created_at.strftime('%Y-%m-%d %H:%M') if u.created_at else '' }}</td>
+          <td>
+            <form method="post" action="/admin/users/delete/{{ u.id }}" class="inline-form">
+              <button type="submit" class="link-btn">видалити</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="3">Ще немає користувачів — сайт відкритий для всіх</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
 
-    <p class="settings-group-title">Адмін-доступ</p>
-    <label>Логін адміна
-      <input type="text" name="new_username" value="{{ admin_username }}" autocomplete="username">
-    </label>
-    <label>Новий пароль адміна (залиште порожнім, щоб не змінювати)
-      <input type="password" name="new_password" autocomplete="new-password">
-    </label>
-    <label>Підтвердження нового пароля
-      <input type="password" name="new_password_confirm" autocomplete="new-password">
-    </label>
+    <form method="post" action="/admin/users/add" class="card settings-form">
+      <p class="settings-group-title">Додати користувача</p>
+      <div class="grid-2">
+        <label>Логін
+          <input type="text" name="username" required autocomplete="off">
+        </label>
+        <label>Пароль
+          <input type="password" name="password" required autocomplete="new-password">
+        </label>
+      </div>
+      <label>Підтвердження пароля
+        <input type="password" name="password_confirm" required autocomplete="new-password">
+      </label>
+      <button type="submit">Додати</button>
+    </form>
+  </section>
+</div>
 
-    <button type="submit">Зберегти</button>
-  </form>
-</section>
+<div class="tab-panel" data-tab-panel="settings">
+  <section>
+    <h2>Налаштування</h2>
+    {% if request.query_params.get('saved') %}<p class="success">Збережено.</p>{% endif %}
+    <form method="post" action="/admin/settings" class="card settings-form">
+
+      <p class="settings-group-title">Завантаження</p>
+      <div class="grid-2">
+        <label>Автовидалення файлів через (годин)
+          <input type="number" name="retention_hours" value="{{ retention_hours }}" min="1" required>
+        </label>
+        <label>Перевіряти застарілі файли кожні (хвилин)
+          <input type="number" name="cleanup_interval_minutes" value="{{ cleanup_interval_minutes }}" min="1" required>
+        </label>
+      </div>
+      <label>Максимум одночасних завантажень
+        <input type="number" name="max_concurrent_downloads" value="{{ max_concurrent_downloads }}" min="1" required>
+      </label>
+
+      <p class="settings-group-title">Сесія</p>
+      <label>Тривалість входу на пристрої (днів) <span class="hint">— застосується після перезапуску контейнера</span>
+        <input type="number" name="session_max_age_days" value="{{ session_max_age_days }}" min="1" required>
+      </label>
+
+      <p class="settings-group-title">Проксі для заблокованих сайтів</p>
+      <label>Адреса проксі (напр. socks5h://user:pass@host:1080)
+        <input type="text" name="proxy_url" value="{{ proxy_url }}" placeholder="залиште порожнім, щоб не використовувати проксі" autocomplete="off">
+      </label>
+      <label>Домени через проксі (через кому)
+        <input type="text" name="proxy_domains" value="{{ proxy_domains }}" autocomplete="off">
+      </label>
+
+      <button type="submit">Зберегти</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>Обслуговування</h2>
+    {% if request.query_params.get('cache_cleared') %}<p class="success">Кеш yt-dlp очищено.</p>{% endif %}
+    {% if request.query_params.get('cleanup_ran') %}<p class="success">Очищення застарілих файлів запущено.</p>{% endif %}
+    <div class="card maintenance-actions">
+      <form method="post" action="/admin/clear-ytdlp-cache">
+        <button type="submit">Очистити кеш yt-dlp</button>
+      </form>
+      <form method="post" action="/admin/run-cleanup-now">
+        <button type="submit">Запустити очищення застарілих файлів зараз</button>
+      </form>
+    </div>
+  </section>
+</div>
+
+<div class="tab-panel" data-tab-panel="password">
+  <section>
+    <h2>Зміна паролю</h2>
+    {% if request.query_params.get('pw_error') %}<p class="error">Паролі не співпадають, пароль не змінено</p>{% endif %}
+    {% if request.query_params.get('pw_saved') %}<p class="success">Збережено.</p>{% endif %}
+    <form method="post" action="/admin/change-password" class="card settings-form">
+      <label>Логін адміна
+        <input type="text" name="new_username" value="{{ admin_username }}" autocomplete="username">
+      </label>
+      <label>Новий пароль адміна (залиште порожнім, щоб не змінювати)
+        <input type="password" name="new_password" autocomplete="new-password">
+      </label>
+      <label>Підтвердження нового пароля
+        <input type="password" name="new_password_confirm" autocomplete="new-password">
+      </label>
+      <button type="submit">Зберегти</button>
+    </form>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var btns = document.querySelectorAll(".admin-tab-btn");
+  var panels = document.querySelectorAll(".tab-panel");
+
+  function activate(tab) {
+    btns.forEach(function (b) { b.classList.toggle("active", b.dataset.tab === tab); });
+    panels.forEach(function (p) { p.hidden = p.dataset.tabPanel !== tab; });
+  }
+
+  btns.forEach(function (btn) {
+    btn.addEventListener("click", function () { activate(btn.dataset.tab); });
+  });
+
+  var requested = new URLSearchParams(window.location.search).get("tab");
+  var valid = Array.prototype.map.call(btns, function (b) { return b.dataset.tab; });
+  activate(valid.includes(requested) ? requested : "stats");
+})();
+</script>
 {% endblock %}

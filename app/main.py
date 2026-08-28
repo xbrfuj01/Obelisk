@@ -376,7 +376,7 @@ def admin_delete(job_id: str, db: Session = Depends(get_db), _=Depends(auth.requ
                 pass
         db.delete(job)
         db.commit()
-    return RedirectResponse("/admin", status_code=303)
+    return RedirectResponse("/admin?tab=stats", status_code=303)
 
 
 @app.post("/admin/users/add")
@@ -390,19 +390,19 @@ def admin_add_user(
 ):
     username = username.strip()
     if not username or not password:
-        return RedirectResponse("/admin?user_error=empty", status_code=303)
+        return RedirectResponse("/admin?tab=users&user_error=empty", status_code=303)
     if password != password_confirm:
-        return RedirectResponse("/admin?user_error=mismatch", status_code=303)
+        return RedirectResponse("/admin?tab=users&user_error=mismatch", status_code=303)
     if auth.username_exists(db, username):
-        return RedirectResponse("/admin?user_error=exists", status_code=303)
+        return RedirectResponse("/admin?tab=users&user_error=exists", status_code=303)
     auth.create_user(db, username, password)
-    return RedirectResponse("/admin?user_added=1", status_code=303)
+    return RedirectResponse("/admin?tab=users&user_added=1", status_code=303)
 
 
 @app.post("/admin/users/delete/{user_id}")
 def admin_delete_user(user_id: str, db: Session = Depends(get_db), _=Depends(auth.require_admin)):
     auth.delete_user(db, user_id)
-    return RedirectResponse("/admin", status_code=303)
+    return RedirectResponse("/admin?tab=users", status_code=303)
 
 
 @app.post("/admin/clear-ytdlp-cache")
@@ -411,7 +411,7 @@ def admin_clear_ytdlp_cache(_=Depends(auth.require_admin)):
         clear_ytdlp_cache()
     except Exception:
         pass
-    return RedirectResponse("/admin?cache_cleared=1", status_code=303)
+    return RedirectResponse("/admin?tab=settings&cache_cleared=1", status_code=303)
 
 
 @app.post("/admin/run-cleanup-now")
@@ -420,7 +420,28 @@ def admin_run_cleanup_now(_=Depends(auth.require_admin)):
         run_cleanup_once()
     except Exception:
         pass
-    return RedirectResponse("/admin?cleanup_ran=1", status_code=303)
+    return RedirectResponse("/admin?tab=settings&cleanup_ran=1", status_code=303)
+
+
+@app.post("/admin/change-password")
+def admin_change_password(
+    request: Request,
+    new_username: str = Form(""),
+    new_password: str = Form(""),
+    new_password_confirm: str = Form(""),
+    db: Session = Depends(get_db),
+    _=Depends(auth.require_admin),
+):
+    if new_password or new_password_confirm:
+        if new_password != new_password_confirm:
+            return RedirectResponse("/admin?tab=password&pw_error=1", status_code=303)
+        auth.set_setting(db, "admin_password_hash", auth.pwd_context.hash(new_password))
+
+    new_username = new_username.strip()
+    if new_username:
+        auth.set_setting(db, "admin_username", new_username)
+
+    return RedirectResponse("/admin?tab=password&pw_saved=1", status_code=303)
 
 
 @app.post("/admin/settings")
@@ -432,9 +453,6 @@ def admin_settings(
     session_max_age_days: int = Form(...),
     proxy_url: str = Form(""),
     proxy_domains: str = Form(""),
-    new_username: str = Form(""),
-    new_password: str = Form(""),
-    new_password_confirm: str = Form(""),
     db: Session = Depends(get_db),
     _=Depends(auth.require_admin),
 ):
@@ -445,13 +463,4 @@ def admin_settings(
     auth.set_setting(db, "proxy_url", proxy_url.strip())
     auth.set_setting(db, "proxy_domains", proxy_domains.strip())
 
-    if new_password or new_password_confirm:
-        if new_password != new_password_confirm:
-            return RedirectResponse("/admin?pw_error=1", status_code=303)
-        auth.set_setting(db, "admin_password_hash", auth.pwd_context.hash(new_password))
-
-    new_username = new_username.strip()
-    if new_username:
-        auth.set_setting(db, "admin_username", new_username)
-
-    return RedirectResponse("/admin?saved=1", status_code=303)
+    return RedirectResponse("/admin?tab=settings&saved=1", status_code=303)
