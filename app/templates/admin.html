@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="admin-header">
+  <h1>Адмін-панель</h1>
+  <a href="/admin/logout">Вийти</a>
+</div>
+
+<section class="stats-grid">
+  <div class="stat-card"><span class="stat-value">{{ total }}</span><span class="stat-label">Всього завантажень</span></div>
+  <div class="stat-card"><span class="stat-value">{{ finished }}</span><span class="stat-label">Успішних</span></div>
+  <div class="stat-card"><span class="stat-value">{{ errors }}</span><span class="stat-label">Помилок</span></div>
+  <div class="stat-card"><span class="stat-value">{{ "%.1f"|format(total_size / 1048576) }} МБ</span><span class="stat-label">Займано місця</span></div>
+</section>
+
+<section>
+  <h2>За джерелами</h2>
+  <div class="table-wrap card">
+  <table class="table">
+    <thead><tr><th>Джерело</th><th>Кількість</th></tr></thead>
+    <tbody>
+    {% for source, count in by_source %}
+      <tr><td>{{ source or 'невідомо' }}</td><td>{{ count }}</td></tr>
+    {% else %}
+      <tr><td colspan="2">Немає даних</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2>Історія завантажень</h2>
+  <div class="table-wrap card">
+  <table class="table">
+    <thead><tr><th>Назва</th><th>Джерело</th><th>Тип</th><th>Статус</th><th>IP</th><th>Дата</th><th>Розмір</th><th></th></tr></thead>
+    <tbody>
+    {% for h in history %}
+      <tr>
+        <td>{{ h.title or h.url }}</td>
+        <td>{{ h.source or '' }}</td>
+        <td>{{ h.mode }}</td>
+        <td><span class="badge badge-{{ h.status }}">{{ h.status }}</span></td>
+        <td>{{ h.client_ip or '' }}</td>
+        <td>{{ h.created_at.strftime('%Y-%m-%d %H:%M') if h.created_at else '' }}</td>
+        <td>{{ '%.1f МБ'|format(h.filesize / 1048576) if h.filesize else '' }}</td>
+        <td>
+          {% if h.status == 'finished' %}<a href="/api/file/{{ h.id }}">файл</a>{% endif %}
+          {% if h.filepath %}
+          <form method="post" action="/admin/delete/{{ h.id }}" class="inline-form">
+            <button type="submit" class="link-btn">видалити</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8">Ще немає завантажень</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2>Налаштування</h2>
+  {% if request.query_params.get('pw_error') %}<p class="error">Паролі не співпадають, пароль не змінено</p>{% endif %}
+  <form method="post" action="/admin/settings" class="card settings-form">
+    <label>Автовидалення файлів через (годин)
+      <input type="number" name="retention_hours" value="{{ retention_hours }}" min="1" required>
+    </label>
+    <label>Логін адміна
+      <input type="text" name="new_username" value="{{ admin_username }}" autocomplete="username">
+    </label>
+    <label>Новий пароль адміна (залиште порожнім, щоб не змінювати)
+      <input type="password" name="new_password" autocomplete="new-password">
+    </label>
+    <label>Підтвердження нового пароля
+      <input type="password" name="new_password_confirm" autocomplete="new-password">
+    </label>
+
+    <label>Пароль сайту {% if site_gate_enabled %}<span class="badge badge-finished">увімкнено</span>{% else %}<span class="badge">вимкнено</span>{% endif %}
+      <input type="password" name="new_site_password" autocomplete="new-password" placeholder="{% if site_gate_enabled %}залиште порожнім, щоб не змінювати{% else %}задайте, щоб увімкнути пароль на весь сайт{% endif %}">
+    </label>
+    <label class="checkbox-row"><input type="checkbox" name="disable_site_password"> <span>Вимкнути пароль сайту (сайт стане відкритим для всіх)</span></label>
+
+    <button type="submit">Зберегти</button>
+  </form>
+</section>
+{% endblock %}

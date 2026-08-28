@@ -1,0 +1,23 @@
+services:
+  video-downloader:
+    image: ghcr.io/xbrfuj01/video-downloader:latest
+    pull_policy: always
+    container_name: video-downloader
+    ports:
+      - "30301:30301"
+    environment:
+      - PORT=30301
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - SECRET_KEY=${SECRET_KEY:-please-change-this-secret-key}
+      - SITE_PASSWORD=${SITE_PASSWORD:-}
+      - SESSION_MAX_AGE_DAYS=${SESSION_MAX_AGE_DAYS:-30}
+      - MAX_CONCURRENT_DOWNLOADS=${MAX_CONCURRENT_DOWNLOADS:-2}
+      - CLEANUP_HOURS=${CLEANUP_HOURS:-24}
+      - CLEANUP_INTERVAL_MINUTES=${CLEANUP_INTERVAL_MINUTES:-30}
+      - PROXY_URL=${PROXY_URL:-}
+      - PROXY_DOMAINS=${PROXY_DOMAINS:-vk.com,vk.ru,vkvideo.ru,ok.ru,rutube.ru,mail.ru}
+    volumes:
+      - /mnt/vault/video_downloader/data:/data
+      - /mnt/vault/video_downloader/downloads:/downloads
+    restart: unless-stopped

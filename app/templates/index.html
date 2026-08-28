@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="hero">
+  <h1>Завантажити відео</h1>
+  <p class="hero-sub">Встав посилання з YouTube, Instagram, VK, TikTok та інших сайтів — обери формат і завантаж.</p>
+</div>
+
+<form id="download-form" class="card">
+  <label>Посилання
+    <div class="input-with-status">
+      <input type="url" name="url" id="url-input" placeholder="https://..." required autocomplete="off">
+      <span id="url-status" class="url-status"></span>
+    </div>
+  </label>
+
+  <div class="field-group">
+    <span class="field-label">Тип завантаження</span>
+    <div class="segmented" id="mode-segmented">
+      <label class="segment"><input type="radio" name="mode" value="video" checked><span>Відео + аудіо</span></label>
+      <label class="segment"><input type="radio" name="mode" value="video_only"><span>Лише відео</span></label>
+      <label class="segment"><input type="radio" name="mode" value="audio"><span>Лише аудіо (mp3)</span></label>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div id="quality-wrap" class="field-group">
+      <span class="field-label">Якість</span>
+      <select name="quality" id="quality-select">
+        <option value="best">Найкраща доступна</option>
+        <option value="1080">1080p (Full HD)</option>
+        <option value="720">720p (HD)</option>
+        <option value="480">480p</option>
+        <option value="360">360p</option>
+      </select>
+      <span class="hint" id="quality-hint">Встав посилання, щоб побачити реальні доступні роздільні здатності (в т.ч. 4K/8K)</span>
+    </div>
+
+    <div id="container-wrap" class="field-group">
+      <span class="field-label">Формат файлу</span>
+      <select name="container" id="container-select">
+        <option value="mp4">MP4</option>
+        <option value="webm">WebM</option>
+        <option value="mkv">MKV</option>
+      </select>
+    </div>
+  </div>
+
+  <label class="checkbox-row"><input type="checkbox" name="subtitles"> <span>Завантажити субтитри (якщо є)</span></label>
+
+  <button type="submit" class="btn-primary">Завантажити</button>
+</form>
+
+<div id="status-box"></div>
+
+<h2>Останні завантаження</h2>
+<div class="card dl-list" id="recent-list">
+{% for r in recent %}
+  <div class="dl-row" data-id="{{ r.id }}">
+    <span class="status-icon status-{{ r.status }}">{% if r.status == 'finished' %}✓{% elif r.status == 'error' %}✕{% elif r.status == 'downloading' %}<span class="spinner"></span>{% elif r.status == 'queued' %}⏳{% else %}–{% endif %}</span>
+    {% if r.status == 'finished' %}
+      <a class="dl-download-btn" href="/api/file/{{ r.id }}">завантажити</a>
+    {% else %}
+      <span class="dl-download-btn disabled">завантажити</span>
+    {% endif %}
+    <button type="button" class="dl-title">{{ r.title or r.url }}</button>
+  </div>
+{% else %}
+  <p class="empty-hint">Ще немає завантажень</p>
+{% endfor %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/app.js"></script>
+{% endblock %}
