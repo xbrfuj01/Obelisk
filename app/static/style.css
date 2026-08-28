@@ -233,6 +233,12 @@ input[type="checkbox"], input[type="radio"] {
   accent-color: var(--accent);
 }
 
+input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
 .checkbox-row {
   flex-direction: row;
   align-items: center;
