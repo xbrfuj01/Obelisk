@@ -53,7 +53,7 @@ function estimatedBytesForSelection() {
 }
 
 function renderQualityOptions() {
-  if (!lastQualities.length) return; // keep the server-rendered fallback list until a probe succeeds
+  if (!lastQualities.length) return; // stay on just "Найкраща доступна" until a probe succeeds
   const mode = currentMode();
   const current = qualitySelect.value;
   qualitySelect.innerHTML = "";
