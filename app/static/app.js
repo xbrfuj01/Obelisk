@@ -306,6 +306,11 @@ form.addEventListener("submit", async (e) => {
   }
 });
 
+const STATUS_LABELS = {
+  queued: "У черзі",
+  downloading: "Підготовка",
+};
+
 function pollStatus(id, estimatedBytes) {
   const estimatedSize = formatSize(estimatedBytes);
   const interval = setInterval(async () => {
@@ -323,8 +328,9 @@ function pollStatus(id, estimatedBytes) {
         refreshRecent();
       } else {
         const progress = job.progress || 0;
+        const label = STATUS_LABELS[job.status] || job.status;
         statusBox.innerHTML = `<div class="card status-card">
-          <p>Статус: ${job.status} (${progress}%)${estimatedSize ? ` — орієнтовно ~${estimatedSize}` : ""}</p>
+          <p>Статус: ${label} (${progress}%)${estimatedSize ? ` — орієнтовно ~${estimatedSize}` : ""}</p>
           <div class="progress"><div class="progress-bar" style="width:${progress}%"></div></div>
         </div>`;
       }

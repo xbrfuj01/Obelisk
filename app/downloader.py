@@ -349,25 +349,33 @@ def _progress_hook(job_id, d, state):
                 state["leg_active"] = True
                 state["leg"] += 1
                 state["ticks"] = 0
+                print(f"[clip-debug] job={job_id} leg={state['leg']} start keys={sorted(d.keys())} "
+                      f"downloaded={d.get('downloaded_bytes')} total={d.get('total_bytes')} "
+                      f"total_est={d.get('total_bytes_estimate')} frag={d.get('fragment_index')}/{d.get('fragment_count')}",
+                      flush=True)
             total = d.get("total_bytes") or d.get("total_bytes_estimate")
             downloaded = d.get("downloaded_bytes", 0)
+            state["ticks"] += 1
             if total:
                 leg_pct = downloaded / total * 100
             else:
                 # Timecode-clipped downloads go through yt-dlp's ffmpeg-based
                 # range downloader, which never reports a total size — without
                 # this the bar would sit frozen at 0% for the whole download.
-                state["ticks"] += 1
                 leg_pct = min(95, state["ticks"] * 3)
+            if state["ticks"] % 10 == 1:
+                print(f"[clip-debug] job={job_id} leg={state['leg']} tick={state['ticks']} "
+                      f"downloaded={downloaded} total={total} leg_pct={leg_pct:.1f}", flush=True)
             job.progress = _combine_leg_progress(state["leg"], leg_pct)
             job.status = "downloading"
             db.commit()
         elif status == "finished":
             state["leg_active"] = False
+            print(f"[clip-debug] job={job_id} leg={state['leg']} finished", flush=True)
             job.progress = _combine_leg_progress(state["leg"], 100)
             db.commit()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[clip-debug] job={job_id} hook exception: {e!r}", flush=True)
     finally:
         db.close()
 
@@ -410,6 +418,7 @@ def _run_job(job_id: str):
             end = job.clip_end if job.clip_end is not None else float("inf")
             ydl_opts["download_ranges"] = download_range_func([], [(start, end)])
             ydl_opts["force_keyframes_at_cuts"] = True
+            print(f"[clip-debug] job={job_id} range=({start}, {end})", flush=True)
 
         if job.mode == "audio":
             audio_codec = job.container if job.container in AUDIO_FORMATS else "mp3"
@@ -460,8 +469,13 @@ def _run_job(job_id: str):
             })
             ydl_opts["postprocessors"].append({"key": "FFmpegEmbedSubtitle"})
 
+        clipped = job.clip_start is not None or job.clip_end is not None
+        if clipped:
+            print(f"[clip-debug] job={job_id} extract_info starting", flush=True)
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(job.url, download=True)
+        if clipped:
+            print(f"[clip-debug] job={job_id} extract_info returned", flush=True)
 
         title = (info or {}).get("title") or "video"
         filepath = _find_main_file(out_dir)
