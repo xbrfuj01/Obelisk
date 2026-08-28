@@ -40,7 +40,7 @@
     <h2>Історія завантажень</h2>
     <div class="table-wrap card">
     <table class="table">
-      <thead><tr><th>Назва</th><th>Джерело</th><th>Тип</th><th>Статус</th><th>IP</th><th>Дата</th><th>Розмір</th><th></th></tr></thead>
+      <thead><tr><th>Назва</th><th>Джерело</th><th>Тип</th><th>Статус</th><th>Користувач</th><th>Дата</th><th>Розмір</th><th></th></tr></thead>
       <tbody>
       {% for h in history %}
         <tr>
@@ -48,7 +48,7 @@
           <td>{{ h.source or '' }}</td>
           <td>{{ h.mode }}</td>
           <td><span class="badge badge-{{ h.status }}">{{ h.status }}</span></td>
-          <td>{{ h.client_ip or '' }}</td>
+          <td>{{ h.username or '—' }}</td>
           <td>{{ h.created_at.strftime('%Y-%m-%d %H:%M') if h.created_at else '' }}</td>
           <td>{{ '%.1f МБ'|format(h.filesize / 1048576) if h.filesize else '' }}</td>
           <td>

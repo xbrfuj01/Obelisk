@@ -39,6 +39,19 @@ function currentMode() {
 
 let lastQualities = [];
 
+function qualityBytes(q, mode) {
+  if (mode === "video_only") return q.video_bytes;
+  if (q.video_bytes && q.audio_bytes) return q.video_bytes + q.audio_bytes;
+  return q.video_bytes;
+}
+
+function estimatedBytesForSelection() {
+  const mode = currentMode();
+  if (mode === "audio") return null;
+  const q = lastQualities.find((q) => q.value === qualitySelect.value);
+  return q ? qualityBytes(q, mode) : null;
+}
+
 function renderQualityOptions() {
   if (!lastQualities.length) return; // keep the server-rendered fallback list until a probe succeeds
   const mode = currentMode();
@@ -54,8 +67,7 @@ function renderQualityOptions() {
     const opt = document.createElement("option");
     opt.value = q.value;
     let label = q.label;
-    const bytes = mode === "video_only" ? q.video_bytes : (q.video_bytes && q.audio_bytes ? q.video_bytes + q.audio_bytes : q.video_bytes);
-    const size = formatSize(bytes);
+    const size = formatSize(qualityBytes(q, mode));
     if (size) label += ` — ~${size}`;
     opt.textContent = label;
     qualitySelect.appendChild(opt);
@@ -177,6 +189,7 @@ urlInput.addEventListener("keydown", (e) => {
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
+  const estimatedBytes = estimatedBytesForSelection();
   const fd = new FormData(form);
   statusBox.innerHTML = '<div class="card status-card"><p>Додаємо у чергу...</p></div>';
   try {
@@ -186,19 +199,21 @@ form.addEventListener("submit", async (e) => {
       statusBox.innerHTML = `<div class="card status-card"><p class="error">${data.error}</p></div>`;
       return;
     }
-    pollStatus(data.id);
+    pollStatus(data.id, estimatedBytes);
   } catch (err) {
     statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка з'єднання</p></div>`;
   }
 });
 
-function pollStatus(id) {
+function pollStatus(id, estimatedBytes) {
+  const estimatedSize = formatSize(estimatedBytes);
   const interval = setInterval(async () => {
     try {
       const res = await fetch(`/api/status/${id}`);
       const job = await res.json();
       if (job.status === "finished") {
-        statusBox.innerHTML = `<div class="card status-card"><p class="success">✓ Готово: ${job.title || ""}</p><a class="btn-primary btn-download" href="/api/file/${id}">Завантажити файл</a></div>`;
+        const finalSize = formatSize(job.filesize) || estimatedSize;
+        statusBox.innerHTML = `<div class="card status-card"><p class="success">✓ Готово: ${job.title || ""}${finalSize ? ` (${finalSize})` : ""}</p><a class="btn-primary btn-download" href="/api/file/${id}">Завантажити файл</a></div>`;
         clearInterval(interval);
         refreshRecent();
       } else if (job.status === "error") {
@@ -208,7 +223,7 @@ function pollStatus(id) {
       } else {
         const progress = job.progress || 0;
         statusBox.innerHTML = `<div class="card status-card">
-          <p>Статус: ${job.status} (${progress}%)</p>
+          <p>Статус: ${job.status} (${progress}%)${estimatedSize ? ` — орієнтовно ~${estimatedSize}` : ""}</p>
           <div class="progress"><div class="progress-bar" style="width:${progress}%"></div></div>
         </div>`;
       }
@@ -231,11 +246,13 @@ function renderRow(r) {
     r.status === "finished"
       ? `<a class="dl-download-btn" href="/api/file/${r.id}">завантажити</a>`
       : `<span class="dl-download-btn disabled">завантажити</span>`;
+  const size = formatSize(r.filesize);
+  const title = size ? `${r.title} (${size})` : r.title;
   return `
     <div class="dl-row" data-id="${r.id}">
       <span class="status-icon status-${r.status}">${statusIcon(r.status)}</span>
       ${btn}
-      <button type="button" class="dl-title">${r.title}</button>
+      <button type="button" class="dl-title">${title}</button>
     </div>`;
 }
 

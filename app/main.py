@@ -155,6 +155,7 @@ def create_download(
         status="queued",
         client_ip=request.client.host if request.client else None,
         client_id=client_id,
+        username=request.session.get("site_username"),
     )
     db.add(job)
     db.commit()
@@ -175,6 +176,7 @@ def job_status(job_id: str, db: Session = Depends(get_db), _=Depends(require_sit
         "progress": job.progress,
         "title": job.title,
         "error": job.error_message,
+        "filesize": job.filesize,
     }
 
 
@@ -214,6 +216,7 @@ def recent_jobs(
             "progress": r.progress,
             "source": r.source,
             "mode": r.mode,
+            "filesize": r.filesize,
         }
         for r in rows
     ]
@@ -257,6 +260,7 @@ def site_login(
     if auth.verify_site_credentials(db, username, password):
         auth.register_successful_attempt(key)
         request.session["site_access"] = True
+        request.session["site_username"] = username
         return RedirectResponse("/", status_code=303)
     auth.register_failed_attempt(key)
     return templates.TemplateResponse(
@@ -267,6 +271,7 @@ def site_login(
 @app.get("/site-logout")
 def site_logout(request: Request):
     request.session.pop("site_access", None)
+    request.session.pop("site_username", None)
     return RedirectResponse("/site-login", status_code=303)
 
 

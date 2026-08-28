@@ -33,6 +33,7 @@ class Download(Base):
 
     client_ip = Column(String, nullable=True)
     client_id = Column(String, nullable=True, index=True)
+    username = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     finished_at = Column(DateTime, nullable=True)
 
