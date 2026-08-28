@@ -32,7 +32,23 @@ LANG_NAMES = {
     "uk": "Українська", "en": "English", "ru": "Русский", "es": "Español",
     "fr": "Français", "de": "Deutsch", "pl": "Polski", "pt": "Português",
     "it": "Italiano", "ja": "日本語", "ko": "한국어", "zh": "中文", "tr": "Türkçe",
+    "ar": "العربية", "hi": "हिन्दी", "id": "Bahasa Indonesia", "vi": "Tiếng Việt",
+    "th": "ไทย", "nl": "Nederlands", "sv": "Svenska", "no": "Norsk", "da": "Dansk",
+    "fi": "Suomi", "cs": "Čeština", "sk": "Slovenčina", "hu": "Magyar",
+    "ro": "Română", "bg": "Български", "el": "Ελληνικά", "he": "עברית",
+    "fa": "فارسی", "ur": "اردو", "bn": "বাংলা", "ta": "தமிழ்", "sr": "Српски",
+    "hr": "Hrvatski", "sl": "Slovenščina", "lt": "Lietuvių", "lv": "Latviešu",
+    "et": "Eesti", "be": "Беларуская", "ka": "ქართული", "hy": "Հայերեն",
+    "az": "Azərbaycan", "kk": "Қазақша", "uz": "Oʻzbekcha", "ms": "Bahasa Melayu",
+    "sw": "Kiswahili", "fil": "Filipino", "sq": "Shqip", "mk": "Македонски",
 }
+
+PRIORITY_LANG_ORDER = ["uk", "en", "ru"]
+
+
+def _lang_label(code):
+    return LANG_NAMES.get(code) or LANG_NAMES.get(code.split("-")[0]) or code
+
 
 EMBEDDABLE_SUBTITLE_CONTAINERS = {"mp4", "mkv"}
 
@@ -88,12 +104,20 @@ def _subtitle_options(info):
         if code in seen:
             continue
         seen.add(code)
-        result.append({"code": code, "label": LANG_NAMES.get(code, code), "auto": False})
+        result.append({"code": code, "label": _lang_label(code), "auto": False})
     for code in auto:
         if code in seen:
             continue
         seen.add(code)
-        result.append({"code": code, "label": LANG_NAMES.get(code, code), "auto": True})
+        result.append({"code": code, "label": _lang_label(code), "auto": True})
+
+    def sort_key(item):
+        base = item["code"].split("-")[0]
+        if base in PRIORITY_LANG_ORDER:
+            return (0, PRIORITY_LANG_ORDER.index(base))
+        return (1, 0)
+
+    result.sort(key=sort_key)
     return result
 
 
@@ -125,9 +149,14 @@ def probe_qualities(url: str, db):
 
         if h and vcodec not in (None, "none"):
             h = int(h)
-            entry = by_height.get(h)
-            if entry is None or (w and w > (entry["width"] or 0)):
-                by_height[h] = {"width": w, "bytes": fsize}
+            entry = by_height.setdefault(h, {"width": None, "bytes": None})
+            # width and filesize are tracked independently: the widest variant
+            # at a given height doesn't always carry filesize info, so picking
+            # only its size would lose data another format at the same height has.
+            if w and w > (entry["width"] or 0):
+                entry["width"] = w
+            if fsize and fsize > (entry["bytes"] or 0):
+                entry["bytes"] = fsize
         elif (not h) and vcodec in (None, "none") and acodec not in (None, "none") and fsize:
             best_audio_bytes = max(best_audio_bytes, fsize)
 

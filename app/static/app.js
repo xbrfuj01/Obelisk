@@ -6,6 +6,7 @@ const containerWrap = document.getElementById("container-wrap");
 const containerSelect = document.getElementById("container-select");
 const urlInput = document.getElementById("url-input");
 const urlStatus = document.getElementById("url-status");
+const urlClearBtn = document.getElementById("url-clear-btn");
 const qualitySelect = document.getElementById("quality-select");
 const qualityHint = document.getElementById("quality-hint");
 const premiereCompatWrap = document.getElementById("premiere-compat-wrap");
@@ -186,6 +187,29 @@ urlInput.addEventListener("keydown", (e) => {
     probeQualities();
   }
 });
+
+function updateUrlClearButton() {
+  if (urlClearBtn) urlClearBtn.hidden = !urlInput.value;
+}
+urlInput.addEventListener("input", updateUrlClearButton);
+updateUrlClearButton();
+
+if (urlClearBtn) {
+  urlClearBtn.addEventListener("click", () => {
+    urlInput.value = "";
+    lastProbedUrl = "";
+    lastQualities = [];
+    lastSubtitles = [];
+    qualitySelect.innerHTML = '<option value="best">Найкраща доступна</option>';
+    renderSubtitleOptions();
+    updateSubtitleAvailability();
+    urlStatus.innerHTML = "";
+    urlStatus.className = "url-status";
+    qualityHint.textContent = "Встав посилання, щоб побачити реальні доступні роздільні здатності (в т.ч. 4K/8K)";
+    updateUrlClearButton();
+    urlInput.focus();
+  });
+}
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
