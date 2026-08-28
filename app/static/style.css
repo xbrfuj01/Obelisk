@@ -646,9 +646,9 @@ a.tool-card:hover {
 
   .card { padding: 16px; gap: 14px; }
 
-  .segmented { flex-wrap: wrap; }
-  .segment { flex: 1 1 45%; }
-  .segment span { padding: 8px; font-size: 0.8rem; }
+  .segmented { flex-direction: column; }
+  .segment { flex: 1 1 auto; }
+  .segment span { padding: 10px 8px; font-size: 0.8rem; }
 
   .table th, .table td { padding: 10px 12px; font-size: 0.82rem; }
 
