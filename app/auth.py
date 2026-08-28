@@ -1,3 +1,4 @@
+import secrets
 import threading
 from datetime import datetime, timedelta
 
@@ -36,13 +37,22 @@ def set_setting(db: Session, key: str, value: str):
 
 def ensure_admin_credentials(db: Session):
     if not get_setting(db, "admin_username"):
-        set_setting(db, "admin_username", config.ADMIN_USERNAME)
+        set_setting(db, "admin_username", config.DEFAULT_ADMIN_USERNAME)
     if not get_setting(db, "admin_password_hash"):
-        set_setting(db, "admin_password_hash", pwd_context.hash(config.ADMIN_PASSWORD))
+        set_setting(db, "admin_password_hash", pwd_context.hash(config.DEFAULT_ADMIN_PASSWORD))
 
 
 def get_admin_username(db: Session) -> str:
-    return get_setting(db, "admin_username", config.ADMIN_USERNAME)
+    return get_setting(db, "admin_username", config.DEFAULT_ADMIN_USERNAME)
+
+
+def ensure_secret_key(db: Session):
+    if not get_setting(db, "secret_key"):
+        set_setting(db, "secret_key", secrets.token_hex(32))
+
+
+def get_secret_key(db: Session) -> str:
+    return get_setting(db, "secret_key")
 
 
 def verify_admin_credentials(db: Session, username: str, password: str) -> bool:
@@ -58,25 +68,45 @@ def get_retention_hours(db: Session) -> int:
     return int(val) if val else config.DEFAULT_CLEANUP_HOURS
 
 
+def get_cleanup_interval_minutes(db: Session) -> int:
+    val = get_setting(db, "cleanup_interval_minutes")
+    return int(val) if val else config.DEFAULT_CLEANUP_INTERVAL_MINUTES
+
+
+def get_max_concurrent_downloads(db: Session) -> int:
+    val = get_setting(db, "max_concurrent_downloads")
+    return int(val) if val else config.DEFAULT_MAX_CONCURRENT_DOWNLOADS
+
+
+def get_session_max_age_days(db: Session) -> int:
+    val = get_setting(db, "session_max_age_days")
+    return int(val) if val else config.DEFAULT_SESSION_MAX_AGE_DAYS
+
+
+def get_proxy_url(db: Session) -> str:
+    return get_setting(db, "proxy_url", "") or ""
+
+
+def get_proxy_domains(db: Session) -> list:
+    raw = get_setting(db, "proxy_domains", config.DEFAULT_PROXY_DOMAINS) or ""
+    return [d.strip().lower() for d in raw.split(",") if d.strip()]
+
+
 def require_admin(request: Request):
     if not request.session.get("admin"):
         raise NotAuthenticated()
 
 
 # ---------------- Site-wide login gate ----------------
-
-def ensure_site_password(db: Session):
-    if config.SITE_PASSWORD and not get_setting(db, "site_password_hash"):
-        set_setting(db, "site_username", config.SITE_USERNAME)
-        set_setting(db, "site_password_hash", pwd_context.hash(config.SITE_PASSWORD))
-
+# Disabled until an admin explicitly sets a site password from the admin
+# panel — there is no env var seed for it (nothing to configure on deploy).
 
 def is_site_gate_enabled(db: Session) -> bool:
     return bool(get_setting(db, "site_password_hash"))
 
 
 def get_site_username(db: Session) -> str:
-    return get_setting(db, "site_username", config.SITE_USERNAME)
+    return get_setting(db, "site_username", config.DEFAULT_SITE_USERNAME)
 
 
 def verify_site_credentials(db: Session, username: str, password: str) -> bool:

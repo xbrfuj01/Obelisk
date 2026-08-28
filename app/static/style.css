@@ -395,6 +395,23 @@ button:active { transform: translateY(1px); }
 .stat-value { font-size: 1.7rem; font-weight: 800; letter-spacing: -0.02em; }
 .stat-label { color: var(--text-dim); font-size: 0.82rem; }
 
+.settings-group-title {
+  margin: 10px 0 -6px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.settings-group-title:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
 .login-page {
   min-height: calc(100vh - 200px);
   display: flex;

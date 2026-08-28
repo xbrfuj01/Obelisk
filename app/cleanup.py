@@ -3,7 +3,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 
-from . import config, auth
+from . import auth
 from .database import SessionLocal
 from .models import Download
 
@@ -38,11 +38,16 @@ def _cleanup_once():
 
 def _loop():
     while True:
+        db = SessionLocal()
+        try:
+            interval_minutes = auth.get_cleanup_interval_minutes(db)
+        finally:
+            db.close()
         try:
             _cleanup_once()
         except Exception:
             pass
-        time.sleep(config.CLEANUP_INTERVAL_MINUTES * 60)
+        time.sleep(interval_minutes * 60)
 
 
 def start_cleanup_thread():

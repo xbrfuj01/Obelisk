@@ -9,7 +9,6 @@ from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from . import config
 from .database import init_db, SessionLocal
 from .models import Download
 from . import auth
@@ -18,12 +17,25 @@ from .cleanup import start_cleanup_thread
 
 BASE_DIR = os.path.dirname(__file__)
 
+# The session cookie needs a secret key and max_age before the app object
+# even exists, so the DB is bootstrapped here rather than in a startup
+# event — that also means the app never needs an env var for any of this.
+init_db()
+_bootstrap_db = SessionLocal()
+try:
+    auth.ensure_admin_credentials(_bootstrap_db)
+    auth.ensure_secret_key(_bootstrap_db)
+    _secret_key = auth.get_secret_key(_bootstrap_db)
+    _session_max_age_days = auth.get_session_max_age_days(_bootstrap_db)
+finally:
+    _bootstrap_db.close()
+
 app = FastAPI(title="Obelisk")
 app.add_middleware(
     SessionMiddleware,
-    secret_key=config.SECRET_KEY,
+    secret_key=_secret_key,
     session_cookie="vd_session",
-    max_age=config.SESSION_MAX_AGE_DAYS * 86400,
+    max_age=_session_max_age_days * 86400,
 )
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
@@ -72,13 +84,6 @@ def require_site_access_api(request: Request, db: Session = Depends(get_db)):
 
 @app.on_event("startup")
 def on_startup():
-    init_db()
-    db = SessionLocal()
-    try:
-        auth.ensure_admin_credentials(db)
-        auth.ensure_site_password(db)
-    finally:
-        db.close()
     start_cleanup_thread()
 
 
@@ -129,7 +134,7 @@ def create_download(
     url = url.strip()
     if not url.startswith(("http://", "https://")):
         return JSONResponse({"error": "Некоректне посилання"}, status_code=400)
-    if not is_url_allowed(url):
+    if not is_url_allowed(url, db):
         return JSONResponse({"error": "Це посилання вказує на заборонену адресу"}, status_code=400)
     if not auth.check_download_rate_limit(f"dl:{ip}"):
         return JSONResponse(
@@ -176,10 +181,10 @@ def get_formats(url: str, db: Session = Depends(get_db), _=Depends(require_site_
     url = url.strip()
     if not url.startswith(("http://", "https://")):
         return JSONResponse({"error": "Некоректне посилання"}, status_code=400)
-    if not is_url_allowed(url):
+    if not is_url_allowed(url, db):
         return JSONResponse({"error": "Це посилання вказує на заборонену адресу"}, status_code=400)
     try:
-        qualities = probe_qualities(url)
+        qualities = probe_qualities(url, db)
     except Exception as e:
         return JSONResponse({"error": str(e)[:300]}, status_code=400)
     return {"qualities": qualities}
@@ -328,6 +333,11 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(a
     admin_username = auth.get_admin_username(db)
     site_gate_enabled = auth.is_site_gate_enabled(db)
     site_username = auth.get_site_username(db)
+    cleanup_interval_minutes = auth.get_cleanup_interval_minutes(db)
+    max_concurrent_downloads = auth.get_max_concurrent_downloads(db)
+    session_max_age_days = auth.get_session_max_age_days(db)
+    proxy_url = auth.get_proxy_url(db)
+    proxy_domains = ",".join(auth.get_proxy_domains(db))
 
     return templates.TemplateResponse(
         "admin.html",
@@ -343,6 +353,11 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(a
             "history": history,
             "retention_hours": retention_hours,
             "admin_username": admin_username,
+            "cleanup_interval_minutes": cleanup_interval_minutes,
+            "max_concurrent_downloads": max_concurrent_downloads,
+            "session_max_age_days": session_max_age_days,
+            "proxy_url": proxy_url,
+            "proxy_domains": proxy_domains,
         },
     )
 
@@ -369,6 +384,11 @@ def admin_delete(job_id: str, db: Session = Depends(get_db), _=Depends(auth.requ
 def admin_settings(
     request: Request,
     retention_hours: int = Form(...),
+    cleanup_interval_minutes: int = Form(...),
+    max_concurrent_downloads: int = Form(...),
+    session_max_age_days: int = Form(...),
+    proxy_url: str = Form(""),
+    proxy_domains: str = Form(""),
     new_username: str = Form(""),
     new_password: str = Form(""),
     new_password_confirm: str = Form(""),
@@ -379,6 +399,11 @@ def admin_settings(
     _=Depends(auth.require_admin),
 ):
     auth.set_setting(db, "cleanup_hours", str(retention_hours))
+    auth.set_setting(db, "cleanup_interval_minutes", str(cleanup_interval_minutes))
+    auth.set_setting(db, "max_concurrent_downloads", str(max_concurrent_downloads))
+    auth.set_setting(db, "session_max_age_days", str(session_max_age_days))
+    auth.set_setting(db, "proxy_url", proxy_url.strip())
+    auth.set_setting(db, "proxy_domains", proxy_domains.strip())
 
     if new_password or new_password_confirm:
         if new_password != new_password_confirm:
@@ -398,4 +423,4 @@ def admin_settings(
         if new_site_username:
             auth.set_site_username(db, new_site_username)
 
-    return RedirectResponse("/admin", status_code=303)
+    return RedirectResponse("/admin?saved=1", status_code=303)

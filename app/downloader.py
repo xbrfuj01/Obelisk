@@ -2,17 +2,21 @@ import ipaddress
 import os
 import re
 import socket
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from urllib.parse import urlparse
 
 import yt_dlp
 
-from . import config
+from . import auth, config
 from .database import SessionLocal
 from .models import Download
 
-_executor = ThreadPoolExecutor(max_workers=config.MAX_CONCURRENT_DOWNLOADS)
+# Sized generously and fixed — the actual concurrency cap is admin-configurable
+# (max_concurrent_downloads, stored in the DB) and enforced by _ConcurrencyGate
+# below, not by this pool's size.
+_executor = ThreadPoolExecutor(max_workers=16)
 
 COMMON_LABELS = {
     4320: "8K",
@@ -28,6 +32,29 @@ VIDEO_FORMATS = {"mp4", "webm", "mkv"}
 AUDIO_FORMATS = {"mp3", "m4a", "opus", "wav"}
 
 
+class _ConcurrencyGate:
+    """Caps how many downloads actually run at once, against a limit that
+    can change at runtime (read fresh from the DB on every acquire)."""
+
+    def __init__(self):
+        self._cv = threading.Condition()
+        self._active = 0
+
+    def acquire(self, limit: int):
+        with self._cv:
+            while self._active >= limit:
+                self._cv.wait()
+            self._active += 1
+
+    def release(self):
+        with self._cv:
+            self._active -= 1
+            self._cv.notify()
+
+
+_gate = _ConcurrencyGate()
+
+
 def _height_filter(quality: str) -> str:
     if not quality or quality == "best":
         return ""
@@ -38,9 +65,9 @@ def _height_filter(quality: str) -> str:
     return f"[height<={height}]"
 
 
-def probe_qualities(url: str):
+def probe_qualities(url: str, db):
     """Fetch the real (width x height) resolutions actually available for this URL."""
-    if not is_url_allowed(url):
+    if not is_url_allowed(url, db):
         raise RuntimeError("Це посилання вказує на заборонену адресу")
     ydl_opts = {
         "quiet": True,
@@ -48,8 +75,8 @@ def probe_qualities(url: str):
         "noplaylist": True,
         "skip_download": True,
     }
-    if _should_use_proxy(url):
-        ydl_opts["proxy"] = config.PROXY_URL
+    if _should_use_proxy(url, db):
+        ydl_opts["proxy"] = auth.get_proxy_url(db)
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
 
@@ -84,13 +111,15 @@ def _source_from_url(url: str) -> str:
         return "unknown"
 
 
-def _should_use_proxy(url: str) -> bool:
-    if not config.PROXY_URL:
+def _should_use_proxy(url: str, db) -> bool:
+    proxy_url = auth.get_proxy_url(db)
+    if not proxy_url:
         return False
-    if not config.PROXY_DOMAINS:
+    domains = auth.get_proxy_domains(db)
+    if not domains:
         return True
     source = _source_from_url(url)
-    return any(d in source for d in config.PROXY_DOMAINS)
+    return any(d in source for d in domains)
 
 
 def _is_safe_direct_url(url: str) -> bool:
@@ -112,11 +141,11 @@ def _is_safe_direct_url(url: str) -> bool:
         return False
 
 
-def is_url_allowed(url: str) -> bool:
+def is_url_allowed(url: str, db) -> bool:
     # Proxied domains are a small admin-curated allowlist (not attacker
     # controlled) and are resolved remotely by the proxy anyway, so the
     # local SSRF check doesn't apply to them.
-    if _should_use_proxy(url):
+    if _should_use_proxy(url, db):
         return True
     return _is_safe_direct_url(url)
 
@@ -170,8 +199,11 @@ def _run_job(job_id: str):
     if not job:
         db.close()
         return
+
+    limit = auth.get_max_concurrent_downloads(db)
+    _gate.acquire(limit)
     try:
-        if not is_url_allowed(job.url):
+        if not is_url_allowed(job.url, db):
             raise RuntimeError("Це посилання вказує на заборонену адресу")
 
         _update(db, job, status="downloading")
@@ -189,8 +221,8 @@ def _run_job(job_id: str):
             "no_warnings": True,
             "progress_hooks": [lambda d: _progress_hook(job_id, d)],
         }
-        if _should_use_proxy(job.url):
-            ydl_opts["proxy"] = config.PROXY_URL
+        if _should_use_proxy(job.url, db):
+            ydl_opts["proxy"] = auth.get_proxy_url(db)
 
         if job.mode == "audio":
             audio_codec = job.container if job.container in AUDIO_FORMATS else "mp3"
@@ -245,4 +277,5 @@ def _run_job(job_id: str):
     except Exception as e:
         _update(db, job, status="error", error_message=str(e)[:500], finished_at=datetime.utcnow())
     finally:
+        _gate.release()
         db.close()
