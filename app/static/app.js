@@ -292,6 +292,7 @@ form.addEventListener("submit", async (e) => {
   const clipEnd = clipEndInput.value.trim();
   fd.set("clip_start", clipStart === CLIP_START_DEFAULT ? "" : clipStart);
   fd.set("clip_end", clipEnd === CLIP_END_DEFAULT ? "" : clipEnd);
+  const isClipped = Boolean(fd.get("clip_start")) || Boolean(fd.get("clip_end"));
   statusBox.innerHTML = '<div class="card status-card"><p>Додаємо у чергу...</p></div>';
   try {
     const res = await fetch("/api/download", { method: "POST", body: fd });
@@ -300,7 +301,7 @@ form.addEventListener("submit", async (e) => {
       statusBox.innerHTML = `<div class="card status-card"><p class="error">${data.error}</p></div>`;
       return;
     }
-    pollStatus(data.id, estimatedBytes);
+    pollStatus(data.id, estimatedBytes, isClipped);
   } catch (err) {
     statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка з'єднання</p></div>`;
   }
@@ -311,7 +312,7 @@ const STATUS_LABELS = {
   downloading: "Підготовка",
 };
 
-function pollStatus(id, estimatedBytes) {
+function pollStatus(id, estimatedBytes, isClipped) {
   const estimatedSize = formatSize(estimatedBytes);
   const interval = setInterval(async () => {
     try {
@@ -326,6 +327,14 @@ function pollStatus(id, estimatedBytes) {
         statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка завантаження: ${job.error || "невідома помилка"}</p></div>`;
         clearInterval(interval);
         refreshRecent();
+      } else if (isClipped) {
+        // yt-dlp never reports incremental progress while cutting a clip —
+        // only a single event once it's fully done — so a real percentage
+        // would just sit frozen. Show an indeterminate bar instead.
+        statusBox.innerHTML = `<div class="card status-card">
+          <p>Статус: Підготовка фрагмента... (це може тривати довше за звичайне завантаження)</p>
+          <div class="progress"><div class="progress-bar indeterminate"></div></div>
+        </div>`;
       } else {
         const progress = job.progress || 0;
         const label = STATUS_LABELS[job.status] || job.status;

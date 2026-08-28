@@ -371,6 +371,16 @@ button:active { transform: translateY(1px); }
   transition: width 0.3s;
 }
 
+.progress-bar.indeterminate {
+  width: 40% !important;
+  animation: progress-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
 .success { color: var(--success); margin: 0; font-weight: 500; }
 .error { color: var(--error); margin: 0; font-weight: 500; }
 
