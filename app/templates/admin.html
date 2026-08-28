@@ -49,7 +49,7 @@
           <td>{{ h.mode }}</td>
           <td><span class="badge badge-{{ h.status }}">{{ h.status }}</span></td>
           <td>{{ h.username or '—' }}</td>
-          <td>{{ h.created_at.strftime('%Y-%m-%d %H:%M') if h.created_at else '' }}</td>
+          <td>{{ format_dt(h.created_at, timezone) }}</td>
           <td>{{ '%.1f МБ'|format(h.filesize / 1048576) if h.filesize else '' }}</td>
           <td>
             {% if h.status == 'finished' %}<a href="/api/file/{{ h.id }}">файл</a>{% endif %}
@@ -84,8 +84,8 @@
       {% for u in users %}
         <tr>
           <td>{{ u.username }}</td>
-          <td>{{ u.last_login.strftime('%Y-%m-%d %H:%M') if u.last_login else '—' }}</td>
-          <td>{{ u.created_at.strftime('%Y-%m-%d %H:%M') if u.created_at else '' }}</td>
+          <td>{{ format_dt(u.last_login, timezone) if u.last_login else '—' }}</td>
+          <td>{{ format_dt(u.created_at, timezone) }}</td>
           <td>
             <form method="post" action="/admin/users/reset-password/{{ u.id }}" class="inline-form">
               <input type="password" name="new_password" class="mini-input" placeholder="новий пароль" required autocomplete="new-password">
@@ -138,6 +138,15 @@
       </div>
       <label>Максимум одночасних завантажень
         <input type="number" name="max_concurrent_downloads" value="{{ max_concurrent_downloads }}" min="1" required>
+      </label>
+
+      <p class="settings-group-title">Часовий пояс</p>
+      <label>Часовий пояс для відображення дат/часу
+        <select name="timezone">
+          {% for tz in timezones %}
+            <option value="{{ tz }}" {% if tz == timezone %}selected{% endif %}>{{ tz }}</option>
+          {% endfor %}
+        </select>
       </label>
 
       <p class="settings-group-title">Сесія</p>

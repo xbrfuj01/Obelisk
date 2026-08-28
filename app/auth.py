@@ -92,6 +92,10 @@ def get_proxy_domains(db: Session) -> list:
     return [d.strip().lower() for d in raw.split(",") if d.strip()]
 
 
+def get_timezone(db: Session) -> str:
+    return get_setting(db, "timezone", config.DEFAULT_TIMEZONE)
+
+
 def require_admin(request: Request):
     if not request.session.get("admin"):
         raise NotAuthenticated()

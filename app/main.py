@@ -14,6 +14,7 @@ from .models import Download
 from . import auth
 from .downloader import submit_job, _source_from_url, probe_qualities, is_url_allowed, clear_ytdlp_cache
 from .cleanup import start_cleanup_thread, run_cleanup_once
+from . import timeutil
 
 BASE_DIR = os.path.dirname(__file__)
 
@@ -39,6 +40,7 @@ app.add_middleware(
 )
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
+templates.env.globals["format_dt"] = timeutil.format_local
 
 
 @app.exception_handler(auth.NotAuthenticated)
@@ -346,6 +348,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(a
     session_max_age_days = auth.get_session_max_age_days(db)
     proxy_url = auth.get_proxy_url(db)
     proxy_domains = ",".join(auth.get_proxy_domains(db))
+    timezone = auth.get_timezone(db)
 
     return templates.TemplateResponse(
         "admin.html",
@@ -366,6 +369,8 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(a
             "session_max_age_days": session_max_age_days,
             "proxy_url": proxy_url,
             "proxy_domains": proxy_domains,
+            "timezone": timezone,
+            "timezones": timeutil.COMMON_TIMEZONES,
         },
     )
 
@@ -474,6 +479,7 @@ def admin_settings(
     session_max_age_days: int = Form(...),
     proxy_url: str = Form(""),
     proxy_domains: str = Form(""),
+    timezone: str = Form(""),
     db: Session = Depends(get_db),
     _=Depends(auth.require_admin),
 ):
@@ -483,5 +489,7 @@ def admin_settings(
     auth.set_setting(db, "session_max_age_days", str(session_max_age_days))
     auth.set_setting(db, "proxy_url", proxy_url.strip())
     auth.set_setting(db, "proxy_domains", proxy_domains.strip())
+    if timeutil.is_valid_timezone(timezone):
+        auth.set_setting(db, "timezone", timezone)
 
     return RedirectResponse("/admin?tab=settings&saved=1", status_code=303)
