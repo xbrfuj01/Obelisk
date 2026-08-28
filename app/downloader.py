@@ -99,16 +99,18 @@ def _subtitle_options(info):
     manual = (info or {}).get("subtitles") or {}
     auto = (info or {}).get("automatic_captions") or {}
     result = []
-    seen = set()
+    seen_bases = set()
     for code in manual:
-        if code in seen:
+        base = code.split("-")[0]
+        if base in seen_bases:
             continue
-        seen.add(code)
+        seen_bases.add(base)
         result.append({"code": code, "label": _lang_label(code), "auto": False})
     for code in auto:
-        if code in seen:
+        base = code.split("-")[0]
+        if base in seen_bases:
             continue
-        seen.add(code)
+        seen_bases.add(base)
         result.append({"code": code, "label": _lang_label(code), "auto": True})
 
     def sort_key(item):
