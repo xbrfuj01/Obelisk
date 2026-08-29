@@ -43,7 +43,13 @@ def read_metadata(path):
     just omitting it. Returns None if the file can't be read at all."""
     try:
         result = subprocess.run(
-            ["exiftool", "-j", "-G1", "-a", path],
+            # -u: also show "Unknown" tags - without it, ExifTool hides the
+            # low-level structural fields (Item0, Pad, Hash, Alg, ...) that
+            # C2PA/JUMBF content-credential manifests are actually made of,
+            # so a file could carry a full C2PA manifest and this tool
+            # would report zero AI-related metadata just because ExifTool
+            # never surfaced it in the first place.
+            ["exiftool", "-j", "-G1", "-a", "-u", path],
             capture_output=True, text=True, timeout=60,
         )
     except (OSError, subprocess.SubprocessError):
@@ -79,6 +85,13 @@ def read_metadata(path):
     return result_tags
 
 
+# Group-name substrings that mean "this entire group is a C2PA/content-
+# credentials manifest" - the single most reliable signal, since a real
+# C2PA manifest is dozens of low-level fields (Item0, Pad, Hash, Alg,
+# ExclusionsLength, ...) that don't individually look AI-related by name
+# or value at all. Checked against the ExifTool -G1 group label.
+AI_GROUP_KEYWORDS = ("c2pa", "jumbf", "jumd", "cbor")
+
 # Tag-name and value substrings (all lowercase) that flag a still-present,
 # non-removable field as coming from an AI generator/editor's provenance
 # metadata specifically, rather than just an ordinary structural field
@@ -92,13 +105,19 @@ AI_VALUE_KEYWORDS = (
     "synthid", "midjourney", "dall-e", "dalle", "stable diffusion",
     "firefly", "gemini", "imagen", "runway", "leonardo.ai", "openai",
     "made with ai", "trainedalgorithmicmedia", "google ai", "generative ai",
-    "ai-generated", "compositewithtrainedalgorithmicmedia",
+    "ai-generated", "compositewithtrainedalgorithmicmedia", "c2pa", "jumbf",
 )
 
 
-def _looks_ai_related(tag_name, value):
-    lname = tag_name.lower()
-    if any(k in lname for k in AI_TAG_KEYWORDS):
+def _looks_ai_related(full_key, value):
+    group, _, tag_name = full_key.partition(":")
+    if not tag_name:
+        tag_name, group = group, ""
+    lgroup = group.lower()
+    ltag = tag_name.lower()
+    if any(k in lgroup for k in AI_GROUP_KEYWORDS):
+        return True
+    if any(k in ltag for k in AI_TAG_KEYWORDS):
         return True
     if value:
         lvalue = str(value).lower()
@@ -132,7 +151,7 @@ def classify_metadata(before, after):
         if before_value in (None, ""):
             status = "absent"
         elif base_key in after_by_base:
-            status = "protected_ai" if _looks_ai_related(base_key, before_value) else "protected"
+            status = "protected_ai" if _looks_ai_related(key, before_value) else "protected"
         else:
             status = "removable"
         classified[key] = {"value": before_value, "status": status}
