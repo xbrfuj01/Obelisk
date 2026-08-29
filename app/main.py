@@ -234,7 +234,12 @@ def job_status(job_id: str, db: Session = Depends(get_db), _=Depends(require_sit
 
 
 @app.get("/api/formats")
-def get_formats(url: str, db: Session = Depends(get_db), _=Depends(require_site_access_api)):
+def get_formats(request: Request, url: str, db: Session = Depends(get_db), _=Depends(require_site_access_api)):
+    ip = request.client.host if request.client else "unknown"
+    if not auth.check_download_rate_limit(f"fmt:{ip}"):
+        return JSONResponse(
+            {"error": "Забагато запитів поспіль. Спробуйте пізніше."}, status_code=429
+        )
     url = url.strip()
     if not url.startswith(("http://", "https://")):
         return JSONResponse({"error": "Некоректне посилання"}, status_code=400)
@@ -388,6 +393,8 @@ def create_conversion_from_download(
 ):
     src = db.get(Download, download_id)
     if not src or src.status != "finished" or not src.filepath or not os.path.exists(src.filepath):
+        return JSONResponse({"error": "Вихідний файл недоступний"}, status_code=404)
+    if src.client_id != get_client_id(request, response):
         return JSONResponse({"error": "Вихідний файл недоступний"}, status_code=404)
 
     ip = request.client.host if request.client else "unknown"

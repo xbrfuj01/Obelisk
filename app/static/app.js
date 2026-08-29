@@ -338,7 +338,7 @@ function pollStatus(id, estimatedBytes, isClipped) {
         triggerAutoDownload(id);
         const convertHref = `/converter?from_download=${id}&filename=${encodeURIComponent(job.title || "")}`;
         statusBox.innerHTML = `<div class="card status-card">
-          <p class="success">✓ Готово: ${job.title || ""}${finalSize ? ` (${finalSize})` : ""}</p>
+          <p class="success">✓ Готово: ${escapeHtml(job.title || "")}${finalSize ? ` (${finalSize})` : ""}</p>
           <div class="status-actions">
             <a class="btn-download" href="/api/file/${id}">${DOWNLOAD_ICON} Завантажити ще раз</a>
             <a class="btn-convert" href="${convertHref}">${CONVERT_ICON} Конвертувати для Premiere</a>
@@ -347,7 +347,7 @@ function pollStatus(id, estimatedBytes, isClipped) {
         clearInterval(interval);
         refreshRecent();
       } else if (job.status === "error") {
-        statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка завантаження: ${job.error || "невідома помилка"}</p></div>`;
+        statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка завантаження: ${escapeHtml(job.error || "невідома помилка")}</p></div>`;
         clearInterval(interval);
         refreshRecent();
       } else if (isClipped) {

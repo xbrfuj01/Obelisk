@@ -165,12 +165,33 @@ def _build_ffmpeg_cmd(input_path, output_path, quality, audio_option, fps, has_a
     return cmd
 
 
+# A hard ceiling on a single encode, regardless of file size. Without this a
+# hung ffmpeg process (a malformed/adversarial input can make some codecs
+# wait forever) would sit in its concurrency-gate slot permanently - with
+# the default limit of 1 concurrent conversion, that's a full outage of the
+# converter feature until the container restarts.
+FFMPEG_TIMEOUT_SECONDS = 3 * 3600
+
+
 def _run_ffmpeg(cmd, job_id, duration):
     db = SessionLocal()
     log_tail = []
     last_commit = 0.0
+    timed_out = False
+    proc = None
+    watchdog = None
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+
+        def _kill_on_timeout():
+            nonlocal timed_out
+            timed_out = True
+            proc.kill()
+
+        watchdog = threading.Timer(FFMPEG_TIMEOUT_SECONDS, _kill_on_timeout)
+        watchdog.daemon = True
+        watchdog.start()
+
         for raw_line in proc.stdout:
             line = raw_line.strip()
             if not line:
@@ -194,8 +215,13 @@ def _run_ffmpeg(cmd, job_id, duration):
                 log_tail.append(line)
                 del log_tail[:-20]
         proc.wait()
+        if timed_out:
+            log_tail.append(f"ffmpeg перевищив ліміт часу ({FFMPEG_TIMEOUT_SECONDS // 3600} год) і був примусово зупинений")
+            return 1, "\n".join(log_tail)
         return proc.returncode, "\n".join(log_tail)
     finally:
+        if watchdog:
+            watchdog.cancel()
         db.close()
 
 
