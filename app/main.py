@@ -291,6 +291,42 @@ CONVERT_QUALITIES = {"high", "medium", "low"}
 CONVERT_AUDIO_OPTIONS = {"aac", "original", "none"}
 
 
+def _finalize_conversion(db, request, response, job_id, input_path, original_name, quality, audio_option):
+    """Shared by /api/convert (browser upload) and /api/convert/from-download
+    (reuses an already-downloaded file): probes the file already sitting at
+    input_path, creates the Conversion row, and kicks off the background
+    job. Returns (json_result, None) on success or (None, error_response)."""
+    job_dir = os.path.dirname(input_path)
+    if quality not in CONVERT_QUALITIES:
+        quality = "high"
+    if audio_option not in CONVERT_AUDIO_OPTIONS:
+        audio_option = "original"
+
+    info = converter.probe_input(input_path)
+    if not info:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        return None, JSONResponse({"error": "Не вдалося розпізнати відеофайл"}, status_code=400)
+
+    client_id = get_client_id(request, response)
+    job = Conversion(
+        id=job_id,
+        original_filename=original_name,
+        input_summary=info["summary"],
+        duration_seconds=info["duration"],
+        quality=quality,
+        audio_option=audio_option,
+        status="queued",
+        client_ip=request.client.host if request.client else None,
+        client_id=client_id,
+        username=request.session.get("site_username"),
+    )
+    db.add(job)
+    db.commit()
+
+    converter.submit_job(job_id, input_path, info)
+    return {"id": job.id, "input_summary": job.input_summary, "duration_seconds": job.duration_seconds}, None
+
+
 @app.post("/api/convert")
 async def create_conversion(
     request: Request,
@@ -306,12 +342,6 @@ async def create_conversion(
         return JSONResponse(
             {"error": "Забагато конвертацій поспіль. Спробуйте пізніше."}, status_code=429
         )
-
-    client_id = get_client_id(request, response)
-    if quality not in CONVERT_QUALITIES:
-        quality = "high"
-    if audio_option not in CONVERT_AUDIO_OPTIONS:
-        audio_option = "original"
 
     job_id = uuid.uuid4().hex
     job_dir = os.path.join(config.DOWNLOAD_DIR, "converts", job_id)
@@ -340,28 +370,45 @@ async def create_conversion(
             {"error": f"Файл перевищує ліміт {auth.get_max_upload_mb(db)} МБ"}, status_code=413
         )
 
-    info = converter.probe_input(input_path)
-    if not info:
-        shutil.rmtree(job_dir, ignore_errors=True)
-        return JSONResponse({"error": "Не вдалося розпізнати відеофайл"}, status_code=400)
-
-    job = Conversion(
-        id=job_id,
-        original_filename=original_name,
-        input_summary=info["summary"],
-        duration_seconds=info["duration"],
-        quality=quality,
-        audio_option=audio_option,
-        status="queued",
-        client_ip=request.client.host if request.client else None,
-        client_id=client_id,
-        username=request.session.get("site_username"),
+    result, error_resp = _finalize_conversion(
+        db, request, response, job_id, input_path, original_name, quality, audio_option
     )
-    db.add(job)
-    db.commit()
+    return error_resp if error_resp else result
 
-    converter.submit_job(job_id, input_path, info)
-    return {"id": job.id, "input_summary": job.input_summary, "duration_seconds": job.duration_seconds}
+
+@app.post("/api/convert/from-download/{download_id}")
+def create_conversion_from_download(
+    download_id: str,
+    request: Request,
+    response: Response,
+    quality: str = Form("high"),
+    audio_option: str = Form("original"),
+    db: Session = Depends(get_db),
+    _=Depends(require_site_access_api),
+):
+    src = db.get(Download, download_id)
+    if not src or src.status != "finished" or not src.filepath or not os.path.exists(src.filepath):
+        return JSONResponse({"error": "Вихідний файл недоступний"}, status_code=404)
+
+    ip = request.client.host if request.client else "unknown"
+    if not auth.check_download_rate_limit(f"cv:{ip}"):
+        return JSONResponse(
+            {"error": "Забагато конвертацій поспіль. Спробуйте пізніше."}, status_code=429
+        )
+
+    job_id = uuid.uuid4().hex
+    job_dir = os.path.join(config.DOWNLOAD_DIR, "converts", job_id)
+    os.makedirs(job_dir, exist_ok=True)
+
+    original_name = os.path.basename(src.filepath)
+    ext = os.path.splitext(original_name)[1][:10] or ".bin"
+    input_path = os.path.join(job_dir, f"input{ext}")
+    shutil.copyfile(src.filepath, input_path)
+
+    result, error_resp = _finalize_conversion(
+        db, request, response, job_id, input_path, original_name, quality, audio_option
+    )
+    return error_resp if error_resp else result
 
 
 @app.get("/api/convert/status/{job_id}")

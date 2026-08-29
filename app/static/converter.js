@@ -13,7 +13,20 @@ if (advancedToggle) {
 }
 
 fileChooseBtn.addEventListener("click", () => fileInput.click());
+
+// Arriving via "Конвертувати" on an already-downloaded file: skip the
+// picker entirely and pre-fill the file field with that download instead
+// of a real browser File — the server just copies its own file, no upload.
+const _params = new URLSearchParams(window.location.search);
+let sourceDownloadId = _params.get("from_download");
+const sourceFilename = _params.get("filename");
+if (sourceDownloadId) {
+  fileInput.required = false;
+  fileNameEl.textContent = sourceFilename ? `${sourceFilename} (із завантажень)` : "Файл із завантажень";
+}
+
 fileInput.addEventListener("change", () => {
+  sourceDownloadId = null; // picking a file manually overrides the download source
   fileNameEl.textContent = fileInput.files[0] ? fileInput.files[0].name : "Файл не обрано";
 });
 
@@ -46,8 +59,31 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+async function submitFromDownload(downloadId) {
+  const fd = new FormData(form);
+  statusBox.innerHTML = `<div class="card status-card">
+    <p>Готуємо файл із завантажень...</p>
+    <div class="progress"><div class="progress-bar indeterminate"></div></div>
+  </div>`;
+  try {
+    const res = await fetch(`/api/convert/from-download/${downloadId}`, { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      statusBox.innerHTML = `<div class="card status-card"><p class="error">${data.error || "Помилка"}</p></div>`;
+      return;
+    }
+    pollConvertStatus(data.id, data.duration_seconds, data.input_summary);
+  } catch (err) {
+    statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка з'єднання</p></div>`;
+  }
+}
+
 form.addEventListener("submit", (e) => {
   e.preventDefault();
+  if (sourceDownloadId) {
+    submitFromDownload(sourceDownloadId);
+    return;
+  }
   if (!fileInput.files[0]) return;
 
   const fd = new FormData(form);

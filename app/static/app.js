@@ -313,6 +313,7 @@ const STATUS_LABELS = {
 };
 
 const DOWNLOAD_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
+const CONVERT_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h11l-3.5-3.5"/><path d="M17 17H6l3.5 3.5"/></svg>';
 
 // Kicks off the browser's own download for the finished file without
 // navigating away from the page, so the user gets it on their device
@@ -335,7 +336,14 @@ function pollStatus(id, estimatedBytes, isClipped) {
       if (job.status === "finished") {
         const finalSize = formatSize(job.filesize) || estimatedSize;
         triggerAutoDownload(id);
-        statusBox.innerHTML = `<div class="card status-card"><p class="success">✓ Готово: ${job.title || ""}${finalSize ? ` (${finalSize})` : ""}</p><a class="btn-download" href="/api/file/${id}">${DOWNLOAD_ICON} Завантажити ще раз</a></div>`;
+        const convertHref = `/converter?from_download=${id}&filename=${encodeURIComponent(job.title || "")}`;
+        statusBox.innerHTML = `<div class="card status-card">
+          <p class="success">✓ Готово: ${job.title || ""}${finalSize ? ` (${finalSize})` : ""}</p>
+          <div class="status-actions">
+            <a class="btn-download" href="/api/file/${id}">${DOWNLOAD_ICON} Завантажити ще раз</a>
+            <a class="btn-convert" href="${convertHref}">${CONVERT_ICON} Конвертувати для Premiere</a>
+          </div>
+        </div>`;
         clearInterval(interval);
         refreshRecent();
       } else if (job.status === "error") {
@@ -379,10 +387,14 @@ function escapeHtml(str) {
 }
 
 function renderRow(r) {
-  const btn =
-    r.status === "finished"
-      ? `<a class="dl-download-btn" href="/api/file/${r.id}" title="Завантажити">${DOWNLOAD_ICON}</a>`
-      : `<span class="dl-download-btn disabled" title="Ще не готово">${DOWNLOAD_ICON}</span>`;
+  let btn;
+  if (r.status === "finished") {
+    const convertHref = `/converter?from_download=${r.id}&filename=${encodeURIComponent(r.title || "")}`;
+    btn = `<a class="dl-convert-btn" href="${convertHref}" title="Конвертувати для Premiere">${CONVERT_ICON}</a>
+      <a class="dl-download-btn" href="/api/file/${r.id}" title="Завантажити">${DOWNLOAD_ICON}</a>`;
+  } else {
+    btn = `<span class="dl-download-btn disabled" title="Ще не готово">${DOWNLOAD_ICON}</span>`;
+  }
   const size = formatSize(r.filesize);
   const title = size ? `${r.title} (${size})` : r.title;
   const sourceLink = r.url
