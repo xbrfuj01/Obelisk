@@ -199,26 +199,18 @@
     <p class="hint">Показники самого сервера (TrueNAS), а не лише контейнера — оскільки Obelisk єдиний процес у своєму контейнері, мережевий трафік нижче фактично і є трафіком сервісу. Деякі значення можуть бути недоступні залежно від того, що Docker відкриває контейнеру.</p>
     <div class="stats-grid">
       <div class="stat-card">
-        <span class="stat-value">{{ "%.1f°C"|format(sys_info.cpu_temp) if sys_info.cpu_temp is not none else "—" }}</span>
+        <span class="stat-value" id="sysinfo-cpu-temp">{{ "%.1f°C"|format(sys_info.cpu_temp) if sys_info.cpu_temp is not none else "—" }}</span>
         <span class="stat-label">Температура CPU</span>
-      </div>
-      <div class="stat-card">
-        <span class="stat-value">{{ sys_info.cpu_count if sys_info.cpu_count is not none else "—" }}</span>
-        <span class="stat-label">Ядер CPU</span>
-      </div>
-      <div class="stat-card">
-        <span class="stat-value">{{ "%.2f"|format(sys_info.load_avg[0]) if sys_info.load_avg else "—" }}</span>
-        <span class="stat-label">Навантаження (1 хв)</span>
       </div>
     </div>
 
     <h3>Пам'ять</h3>
     {% if sys_info.memory %}
     <div class="stats-grid">
-      <div class="stat-card"><span class="stat-value">{{ format_bytes(sys_info.memory.total) }}</span><span class="stat-label">Всього RAM</span></div>
-      <div class="stat-card"><span class="stat-value">{{ format_bytes(sys_info.memory.used) }}</span><span class="stat-label">Використано</span></div>
-      <div class="stat-card"><span class="stat-value">{{ format_bytes(sys_info.memory.cached) }}</span><span class="stat-label">Кеш/буфери</span></div>
-      <div class="stat-card"><span class="stat-value">{{ format_bytes(sys_info.memory.available) }}</span><span class="stat-label">Доступно</span></div>
+      <div class="stat-card"><span class="stat-value" id="sysinfo-mem-total">{{ format_bytes(sys_info.memory.total) }}</span><span class="stat-label">Всього RAM</span></div>
+      <div class="stat-card"><span class="stat-value" id="sysinfo-mem-used">{{ format_bytes(sys_info.memory.used) }}</span><span class="stat-label">Використано</span></div>
+      <div class="stat-card"><span class="stat-value" id="sysinfo-mem-cached">{{ format_bytes(sys_info.memory.cached) }}</span><span class="stat-label">Кеш/буфери</span></div>
+      <div class="stat-card"><span class="stat-value" id="sysinfo-mem-available">{{ format_bytes(sys_info.memory.available) }}</span><span class="stat-label">Доступно</span></div>
     </div>
     {% else %}
     <p class="hint">Інформація про пам'ять недоступна в цьому середовищі.</p>
@@ -227,8 +219,8 @@
     <h3>Мережа (з моменту старту контейнера)</h3>
     {% if sys_info.network %}
     <div class="stats-grid">
-      <div class="stat-card"><span class="stat-value">{{ format_bytes(sys_info.network.rx_bytes) }}</span><span class="stat-label">Отримано</span></div>
-      <div class="stat-card"><span class="stat-value">{{ format_bytes(sys_info.network.tx_bytes) }}</span><span class="stat-label">Надіслано</span></div>
+      <div class="stat-card"><span class="stat-value" id="sysinfo-net-rx">{{ format_bytes(sys_info.network.rx_bytes) }}</span><span class="stat-label">Отримано</span></div>
+      <div class="stat-card"><span class="stat-value" id="sysinfo-net-tx">{{ format_bytes(sys_info.network.tx_bytes) }}</span><span class="stat-label">Надіслано</span></div>
     </div>
     {% else %}
     <p class="hint">Інформація про мережу недоступна в цьому середовищі.</p>
@@ -337,13 +329,68 @@
     panels.forEach(function (p) { p.hidden = p.dataset.tabPanel !== tab; });
   }
 
+  function formatBytes(n) {
+    if (n === null || n === undefined) return "—";
+    n = Number(n);
+    if (n < 1024) return Math.round(n) + " Б";
+    var units = ["КБ", "МБ", "ГБ", "ТБ"];
+    var i = 0;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    return n.toFixed(1) + " " + units[i];
+  }
+
+  var sysinfoTimer = null;
+
+  function setText(id, text) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = text;
+  }
+
+  async function refreshSysinfo() {
+    try {
+      const res = await fetch("/admin/api/sysinfo");
+      const data = await res.json();
+      setText("sysinfo-cpu-temp", data.cpu_temp != null ? data.cpu_temp.toFixed(1) + "°C" : "—");
+      if (data.memory) {
+        setText("sysinfo-mem-total", formatBytes(data.memory.total));
+        setText("sysinfo-mem-used", formatBytes(data.memory.used));
+        setText("sysinfo-mem-cached", formatBytes(data.memory.cached));
+        setText("sysinfo-mem-available", formatBytes(data.memory.available));
+      }
+      if (data.network) {
+        setText("sysinfo-net-rx", formatBytes(data.network.rx_bytes));
+        setText("sysinfo-net-tx", formatBytes(data.network.tx_bytes));
+      }
+    } catch (err) {
+      // ignore — keep showing the last known values
+    }
+  }
+
+  function startSysinfoPolling() {
+    if (sysinfoTimer) return;
+    refreshSysinfo();
+    sysinfoTimer = setInterval(refreshSysinfo, 1000);
+  }
+
+  function stopSysinfoPolling() {
+    if (!sysinfoTimer) return;
+    clearInterval(sysinfoTimer);
+    sysinfoTimer = null;
+  }
+
   btns.forEach(function (btn) {
-    btn.addEventListener("click", function () { activate(btn.dataset.tab); });
+    btn.addEventListener("click", function () {
+      activate(btn.dataset.tab);
+      if (btn.dataset.tab === "system") startSysinfoPolling();
+      else stopSysinfoPolling();
+    });
   });
 
   var requested = new URLSearchParams(window.location.search).get("tab");
   var valid = Array.prototype.map.call(btns, function (b) { return b.dataset.tab; });
-  activate(valid.includes(requested) ? requested : "stats");
+  var initialTab = valid.includes(requested) ? requested : "stats";
+  activate(initialTab);
+  if (initialTab === "system") startSysinfoPolling();
 
   var periodBtns = document.querySelectorAll(".period-tab-btn");
   var periodPanels = document.querySelectorAll(".period-panel");

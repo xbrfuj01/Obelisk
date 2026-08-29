@@ -98,14 +98,3 @@ def get_network_stats():
         except ValueError:
             continue
     return {"rx_bytes": rx_total, "tx_bytes": tx_total} if found else None
-
-
-def get_cpu_count():
-    return os.cpu_count()
-
-
-def get_load_average():
-    try:
-        return os.getloadavg()
-    except (OSError, AttributeError):
-        return None

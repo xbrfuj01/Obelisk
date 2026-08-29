@@ -539,8 +539,6 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(a
         "memory": sysinfo.get_memory_stats(),
         "cpu_temp": sysinfo.get_cpu_temperature(),
         "network": sysinfo.get_network_stats(),
-        "cpu_count": sysinfo.get_cpu_count(),
-        "load_avg": sysinfo.get_load_average(),
     }
 
     retention_hours = auth.get_retention_hours(db)
@@ -589,6 +587,15 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(a
             "timezones": timeutil.COMMON_TIMEZONES,
         },
     )
+
+
+@app.get("/admin/api/sysinfo")
+def admin_sysinfo(_=Depends(auth.require_admin)):
+    return {
+        "memory": sysinfo.get_memory_stats(),
+        "cpu_temp": sysinfo.get_cpu_temperature(),
+        "network": sysinfo.get_network_stats(),
+    }
 
 
 @app.post("/admin/delete/{job_id}")
