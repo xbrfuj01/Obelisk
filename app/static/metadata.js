@@ -47,9 +47,10 @@ function renderResult(data) {
       <p class="hint">Червоним — дані, які будуть видалені. Прочерк — поле відсутнє у файлі.</p>`
     : `<p class="hint">Метаданих не знайдено — файл і так чистий.</p>`;
 
+  const totalCount = entries.length;
   resultBox.innerHTML = `
     <div class="card status-card">
-      <p class="success">✓ Знайдено ${data.tag_count} поле(-ів) метаданих у «${escapeHtml(data.filename)}»</p>
+      <p class="success">✓ Знайдено ${totalCount} значень. ${data.tag_count} значень готові до видалення.</p>
       <a class="btn-download" id="metadata-download-btn" href="/api/metadata/download/${data.token}">${DOWNLOAD_ICON} Завантажити файл без метаданих</a>
       <p class="hint">Файл зберігається на сервері лише до першого завантаження.</p>
     </div>

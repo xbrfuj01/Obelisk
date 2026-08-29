@@ -10,13 +10,12 @@
   <label>Файл
     <div class="file-input-row">
       <button type="button" class="file-choose-btn" id="file-choose-btn">Обрати файл</button>
+      <button type="submit" class="btn-primary">Прочитати метадані</button>
       <span class="file-name" id="file-name">Файл не обрано</span>
       <input type="file" name="file" id="file-input" required hidden>
     </div>
-    <span class="hint">Максимальний розмір файлу: {{ max_upload_mb }} МБ. Файл не зберігається — обробка відбувається одразу, історія не ведеться.</span>
+    <span class="hint">Максимальний розмір файлу: {{ max_upload_mb }} МБ.</span>
   </label>
-
-  <button type="submit" class="btn-primary">Прочитати метадані</button>
 </form>
 
 <div id="status-box"></div>
