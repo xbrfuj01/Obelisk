@@ -104,6 +104,16 @@ body {
 
 .hero { margin-bottom: 28px; }
 
+.hero-title-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 6px;
+}
+
+.hero-title-row .back-link { margin-bottom: 0; flex-shrink: 0; }
+.hero-title-row h1 { margin: 0; }
+
 h1 {
   font-size: 1.8rem;
   font-weight: 800;
