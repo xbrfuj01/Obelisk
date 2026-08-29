@@ -79,13 +79,45 @@ def read_metadata(path):
     return result_tags
 
 
+# Tag-name and value substrings (all lowercase) that flag a still-present,
+# non-removable field as coming from an AI generator/editor's provenance
+# metadata specifically, rather than just an ordinary structural field
+# ExifTool can't touch. Not exhaustive - new tools and tag conventions show
+# up constantly - just the well-known ones as of when this was written.
+AI_TAG_KEYWORDS = (
+    "c2pa", "jumbf", "digitalsourcetype", "claimgenerator", "manifeststore",
+    "aigenerated", "syntheticmedia", "trainedalgorithmic",
+)
+AI_VALUE_KEYWORDS = (
+    "synthid", "midjourney", "dall-e", "dalle", "stable diffusion",
+    "firefly", "gemini", "imagen", "runway", "leonardo.ai", "openai",
+    "made with ai", "trainedalgorithmicmedia", "google ai", "generative ai",
+    "ai-generated", "compositewithtrainedalgorithmicmedia",
+)
+
+
+def _looks_ai_related(tag_name, value):
+    lname = tag_name.lower()
+    if any(k in lname for k in AI_TAG_KEYWORDS):
+        return True
+    if value:
+        lvalue = str(value).lower()
+        if any(k in lvalue for k in AI_VALUE_KEYWORDS):
+            return True
+    return False
+
+
 def classify_metadata(before, after):
     """Classifies each field from a before-strip read_metadata() result
     against an after-strip one (read from the cleaned output file) as:
       - "removable": had a value before, gone after - genuinely stripped.
-      - "protected": had a value before AND still has one after - ExifTool
-        can't remove it for this format, or it's a derived/composite value
-        (e.g. image dimensions) that gets recomputed regardless.
+      - "protected_ai": had a value before, still has one after, AND looks
+        like AI-generator/editor provenance metadata (C2PA, DigitalSource-
+        Type, a known AI tool name, ...) - present and stuck there.
+      - "protected": had a value before AND still has one after, but isn't
+        AI-related - ExifTool can't remove it for this format, or it's a
+        derived/composite value (e.g. image dimensions) recomputed
+        regardless of what gets stripped.
       - "absent": no value either way.
     Matched by base tag name (ignoring group), since ExifTool's group1
     label for the same tag can occasionally differ between two runs."""
@@ -96,10 +128,11 @@ def classify_metadata(before, after):
 
     classified = {}
     for key, before_value in before.items():
+        base_key = key.split(":", 1)[-1]
         if before_value in (None, ""):
             status = "absent"
-        elif key.split(":", 1)[-1] in after_by_base:
-            status = "protected"
+        elif base_key in after_by_base:
+            status = "protected_ai" if _looks_ai_related(base_key, before_value) else "protected"
         else:
             status = "removable"
         classified[key] = {"value": before_value, "status": status}

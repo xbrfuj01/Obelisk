@@ -11,6 +11,7 @@
   --accent-hover: #7291ff;
   --success: #3ecf8e;
   --error: #ff6b7d;
+  --warning: #e8b339;
   --radius: 14px;
   --radius-sm: 9px;
 }
@@ -498,6 +499,12 @@ button:active { transform: translateY(1px); }
 .metadata-table td.removable {
   background: rgba(255, 107, 125, 0.12);
   color: var(--error);
+  font-weight: 500;
+}
+
+.metadata-table td.protected-ai {
+  background: rgba(232, 179, 57, 0.15);
+  color: var(--warning);
   font-weight: 500;
 }
 

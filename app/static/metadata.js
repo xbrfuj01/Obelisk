@@ -18,8 +18,8 @@ function escapeHtml(str) {
 
 const DOWNLOAD_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
 
-const STATUS_ORDER = { removable: 0, protected: 1, absent: 2 };
-const STATUS_CLASS = { removable: "removable", protected: "protected", absent: "empty" };
+const STATUS_ORDER = { removable: 0, protected_ai: 1, protected: 2, absent: 3 };
+const STATUS_CLASS = { removable: "removable", protected_ai: "protected-ai", protected: "protected", absent: "empty" };
 
 function renderResult(data) {
   const entries = Object.entries(data.metadata || {}).map(([key, field]) => {
@@ -49,7 +49,7 @@ function renderResult(data) {
           <tbody>${rows}</tbody>
         </table>
       </div>
-      <p class="hint">Червоним — дані, які буде видалено. Зеленим — дані, які видалити неможливо. Сірим — поле відсутнє у файлі.</p>`
+      <p class="hint">Червоним — дані, які буде видалено. Жовтим — мітки від AI-інструментів (C2PA тощо), які видалити неможливо. Зеленим — інші дані, які видалити неможливо. Сірим — поле відсутнє у файлі.</p>`
     : `<p class="hint">Метаданих не знайдено — файл і так чистий.</p>`;
 
   resultBox.innerHTML = `
