@@ -171,7 +171,21 @@ def strip_metadata(input_path, output_path):
     success or (False, error_text) if this format isn't writable."""
     try:
         result = subprocess.run(
-            ["exiftool", "-all=", "-o", output_path, input_path],
+            [
+                "exiftool", "-all=",
+                # -all= clears tags at ExifTool's parsed/interpreted level,
+                # but C2PA/JUMBF manifests (Google/OpenAI provenance,
+                # SynthID declarations, ...) live in a raw JPEG APP11
+                # segment that -all= alone was verified (against a real
+                # third-party C2PA validator) to leave physically intact -
+                # ExifTool just stops being able to re-parse it afterward,
+                # which made our own before/after check falsely report it
+                # as removed. Deleting the APP11 segment directly forces
+                # the actual bytes out. Harmless no-op on formats/files
+                # that don't have one.
+                "-APP11=",
+                "-o", output_path, input_path,
+            ],
             capture_output=True, text=True, timeout=120,
         )
     except subprocess.TimeoutExpired:
