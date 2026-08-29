@@ -116,10 +116,20 @@ body {
 .hero-title-row .back-link {
   position: fixed;
   top: 96px;
-  left: 24px;
+  /* Sit just outside the centered 880px .container's left edge (half its
+     width is 440px) rather than pinned to the viewport edge, so it stays
+     close to the content instead of drifting away on wide screens. */
+  left: calc(50% - 500px);
   margin-bottom: 0;
   flex-shrink: 0;
   z-index: 5;
+}
+
+@media (max-width: 1000px) {
+  /* Below this the .container no longer sits at its full 880px width, so
+     the calc() above would push the button off-screen - fall back to
+     inline next to the title instead. */
+  .hero-title-row .back-link { position: static; }
 }
 
 h1 {
@@ -894,10 +904,6 @@ a.tool-card:hover {
   .brand { font-size: 0.95rem; }
   .brand-icon { width: 24px; height: 24px; font-size: 0.8rem; }
   .topbar nav a { margin-left: 14px; font-size: 0.86rem; }
-
-  /* No room in the gutter on narrow screens for a fixed left-floating
-     button - fall back to sitting inline next to the title. */
-  .hero-title-row .back-link { position: static; }
 
   .container { padding: 22px 14px 60px; }
 
