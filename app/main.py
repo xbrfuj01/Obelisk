@@ -545,7 +545,8 @@ async def process_metadata(
             {"error": "Не вдалося видалити метадані з цього формату файлу"}, status_code=400
         )
 
-    return {"token": token, "filename": clean_name, "metadata": metadata, "tag_count": len(metadata)}
+    tag_count = sum(1 for v in metadata.values() if v is not None)
+    return {"token": token, "filename": clean_name, "metadata": metadata, "tag_count": tag_count}
 
 
 @app.get("/api/metadata/download/{token}")

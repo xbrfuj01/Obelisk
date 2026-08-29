@@ -13,12 +13,34 @@ EXCLUDED_TAGS = {
     "ExifToolVersion", "Warning", "Error",
 }
 
+# Always shown, present or not - the common fields people actually care
+# about (device/authorship/location/dates), so a "clean" file still shows
+# the full shape of what could be there instead of just an empty list.
+# Matched by base tag name only (not group), since ExifTool's exact group1
+# label for a given tag can vary by file format. Anything ExifTool finds
+# beyond this list (exotic MakerNotes, C2PA/JUMBF fields, unusual XMP
+# namespaces, ...) is still included - this list only controls what gets
+# force-shown as absent, never what gets hidden.
+MASTER_TAGS = [
+    "Make", "Model", "Software", "LensModel", "SerialNumber",
+    "DateTimeOriginal", "CreateDate", "ModifyDate",
+    "ExposureTime", "FNumber", "ISO", "FocalLength", "Flash", "WhiteBalance",
+    "ImageWidth", "ImageHeight", "Orientation", "ColorSpace",
+    "GPSLatitude", "GPSLongitude", "GPSAltitude", "GPSDateTime",
+    "Artist", "Creator", "Copyright", "CopyrightNotice", "Rights", "By-line",
+    "ImageDescription", "Description", "Title", "Caption-Abstract",
+    "Keywords", "Subject", "UserComment",
+    "Author", "Producer", "Company",
+]
+
 
 def read_metadata(path):
-    """Returns a {"Group:Tag": value} dict of every metadata field ExifTool
-    can find - EXIF, XMP, IPTC, ICC, maker notes, C2PA/JUMBF content
-    credentials where the installed ExifTool version supports it, and so
-    on - or None if the file can't be read at all."""
+    """Returns a {"Group:Tag": value|None} dict covering every metadata
+    field ExifTool actually found (EXIF, XMP, IPTC, ICC, maker notes,
+    C2PA/JUMBF content credentials where the installed ExifTool version
+    supports them, ...) plus every MASTER_TAGS field that wasn't found,
+    with a value of None so the caller can render it as absent rather than
+    just omitting it. Returns None if the file can't be read at all."""
     try:
         result = subprocess.run(
             ["exiftool", "-j", "-G1", "-a", path],
@@ -35,14 +57,26 @@ def read_metadata(path):
     if not data:
         return None
 
-    tags = data[0]
-    cleaned = {}
-    for key, value in tags.items():
+    found = {}  # base tag name -> (full "Group:Tag" key, value)
+    for key, value in data[0].items():
         base_key = key.split(":", 1)[-1]
         if base_key in EXCLUDED_TAGS:
             continue
-        cleaned[key] = value
-    return cleaned
+        found[base_key] = (key, value)
+
+    result_tags = {}
+    for tag_name in MASTER_TAGS:
+        if tag_name in found:
+            full_key, value = found[tag_name]
+            result_tags[full_key] = value
+        else:
+            result_tags[tag_name] = None
+
+    for base_key, (full_key, value) in found.items():
+        if base_key not in MASTER_TAGS:
+            result_tags[full_key] = value
+
+    return result_tags
 
 
 def strip_metadata(input_path, output_path):

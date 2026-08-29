@@ -28,9 +28,13 @@ function renderResult(data) {
   entries.sort((a, b) => a.category.localeCompare(b.category) || a.tag.localeCompare(b.tag));
 
   const rows = entries
-    .map(
-      (e) => `<tr><td>${escapeHtml(e.category)}</td><td>${escapeHtml(e.tag)}</td><td>${escapeHtml(e.value)}</td></tr>`
-    )
+    .map((e) => {
+      const hasValue = e.value !== null && e.value !== undefined && e.value !== "";
+      const valueCell = hasValue
+        ? `<td class="removable">${escapeHtml(e.value)}</td>`
+        : `<td class="empty">—</td>`;
+      return `<tr><td>${escapeHtml(e.category)}</td><td>${escapeHtml(e.tag)}</td>${valueCell}</tr>`;
+    })
     .join("");
 
   const table = entries.length
@@ -39,7 +43,8 @@ function renderResult(data) {
           <thead><tr><th>Категорія</th><th>Тег</th><th>Значення</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
-      </div>`
+      </div>
+      <p class="hint">Червоним — дані, які будуть видалені. Прочерк — поле відсутнє у файлі.</p>`
     : `<p class="hint">Метаданих не знайдено — файл і так чистий.</p>`;
 
   resultBox.innerHTML = `
