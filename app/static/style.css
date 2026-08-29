@@ -501,6 +501,12 @@ button:active { transform: translateY(1px); }
   font-weight: 500;
 }
 
+.metadata-table td.protected {
+  background: rgba(62, 207, 142, 0.12);
+  color: var(--success);
+  font-weight: 500;
+}
+
 .metadata-table td.empty {
   color: var(--text-dim);
   opacity: 0.6;

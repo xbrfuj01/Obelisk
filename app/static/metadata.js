@@ -18,22 +18,27 @@ function escapeHtml(str) {
 
 const DOWNLOAD_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
 
+const STATUS_ORDER = { removable: 0, protected: 1, absent: 2 };
+const STATUS_CLASS = { removable: "removable", protected: "protected", absent: "empty" };
+
 function renderResult(data) {
-  const entries = Object.entries(data.metadata || {}).map(([key, value]) => {
+  const entries = Object.entries(data.metadata || {}).map(([key, field]) => {
     const [group, ...rest] = key.split(":");
     const tag = rest.length ? rest.join(":") : group;
     const category = rest.length ? group : "";
-    return { category, tag, value };
+    return { category, tag, value: field.value, status: field.status };
   });
-  entries.sort((a, b) => a.category.localeCompare(b.category) || a.tag.localeCompare(b.tag));
+  entries.sort(
+    (a, b) =>
+      STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
+      a.category.localeCompare(b.category) ||
+      a.tag.localeCompare(b.tag)
+  );
 
   const rows = entries
     .map((e) => {
-      const hasValue = e.value !== null && e.value !== undefined && e.value !== "";
-      const valueCell = hasValue
-        ? `<td class="removable">${escapeHtml(e.value)}</td>`
-        : `<td class="empty">—</td>`;
-      return `<tr><td>${escapeHtml(e.category)}</td><td>${escapeHtml(e.tag)}</td>${valueCell}</tr>`;
+      const display = e.status === "absent" ? "—" : escapeHtml(e.value);
+      return `<tr><td>${escapeHtml(e.category)}</td><td>${escapeHtml(e.tag)}</td><td class="${STATUS_CLASS[e.status]}">${display}</td></tr>`;
     })
     .join("");
 
@@ -44,13 +49,12 @@ function renderResult(data) {
           <tbody>${rows}</tbody>
         </table>
       </div>
-      <p class="hint">Червоним — дані, які будуть видалені. Прочерк — поле відсутнє у файлі.</p>`
+      <p class="hint">Червоним — дані, які буде видалено. Зеленим — дані, які видалити неможливо. Сірим — поле відсутнє у файлі.</p>`
     : `<p class="hint">Метаданих не знайдено — файл і так чистий.</p>`;
 
-  const totalCount = entries.length;
   resultBox.innerHTML = `
     <div class="card status-card">
-      <p class="success">✓ Знайдено ${totalCount} значень. ${data.tag_count} значень готові до видалення.</p>
+      <p class="success">✓ Знайдено ${data.found_count} значень. ${data.removable_count} значень готові до видалення.</p>
       <a class="btn-download" id="metadata-download-btn" href="/api/metadata/download/${data.token}">${DOWNLOAD_ICON} Завантажити файл без метаданих</a>
       <p class="hint">Файл зберігається на сервері лише до першого завантаження.</p>
     </div>

@@ -79,6 +79,33 @@ def read_metadata(path):
     return result_tags
 
 
+def classify_metadata(before, after):
+    """Classifies each field from a before-strip read_metadata() result
+    against an after-strip one (read from the cleaned output file) as:
+      - "removable": had a value before, gone after - genuinely stripped.
+      - "protected": had a value before AND still has one after - ExifTool
+        can't remove it for this format, or it's a derived/composite value
+        (e.g. image dimensions) that gets recomputed regardless.
+      - "absent": no value either way.
+    Matched by base tag name (ignoring group), since ExifTool's group1
+    label for the same tag can occasionally differ between two runs."""
+    after_by_base = {}
+    for key, value in (after or {}).items():
+        if value not in (None, ""):
+            after_by_base[key.split(":", 1)[-1]] = value
+
+    classified = {}
+    for key, before_value in before.items():
+        if before_value in (None, ""):
+            status = "absent"
+        elif key.split(":", 1)[-1] in after_by_base:
+            status = "protected"
+        else:
+            status = "removable"
+        classified[key] = {"value": before_value, "status": status}
+    return classified
+
+
 def strip_metadata(input_path, output_path):
     """Writes a copy of input_path to output_path with every metadata tag
     ExifTool knows how to remove stripped out. Returns (True, None) on

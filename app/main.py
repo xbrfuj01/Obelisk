@@ -545,8 +545,17 @@ async def process_metadata(
             {"error": "Не вдалося видалити метадані з цього формату файлу"}, status_code=400
         )
 
-    tag_count = sum(1 for v in metadata.values() if v is not None)
-    return {"token": token, "filename": clean_name, "metadata": metadata, "tag_count": tag_count}
+    after = metadata_tool.read_metadata(output_path) or {}
+    classified = metadata_tool.classify_metadata(metadata, after)
+    found_count = sum(1 for c in classified.values() if c["status"] != "absent")
+    removable_count = sum(1 for c in classified.values() if c["status"] == "removable")
+    return {
+        "token": token,
+        "filename": clean_name,
+        "metadata": classified,
+        "found_count": found_count,
+        "removable_count": removable_count,
+    }
 
 
 @app.get("/api/metadata/download/{token}")
