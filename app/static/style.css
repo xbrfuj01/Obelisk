@@ -83,6 +83,18 @@ body {
 
 .topbar nav a:hover { color: var(--text); }
 
+.topbar nav a.admin-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  margin-left: 0;
+}
+
+.admin-link:hover { background: var(--bg-card); color: var(--text); }
+
 .container {
   max-width: 880px;
   margin: 0 auto;
@@ -762,14 +774,20 @@ section h3 { margin: 22px 0 4px; font-size: 1rem; }
 }
 
 .back-link {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   color: var(--text-dim);
   text-decoration: none;
-  font-size: 0.86rem;
   margin-bottom: 18px;
 }
 
-.back-link:hover { color: var(--text); }
+.back-link:hover { color: var(--text); border-color: var(--border-hover); }
 
 .tool-grid {
   display: grid;
