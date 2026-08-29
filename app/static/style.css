@@ -116,10 +116,10 @@ body {
 .hero-title-row .back-link {
   position: fixed;
   top: 96px;
-  /* Sit just outside the centered 880px .container's left edge (half its
+  /* Sit just outside the centered 880px .container's right edge (half its
      width is 440px) rather than pinned to the viewport edge, so it stays
      close to the content instead of drifting away on wide screens. */
-  left: calc(50% - 500px);
+  left: calc(50% + 454px);
   margin-bottom: 0;
   flex-shrink: 0;
   z-index: 5;
@@ -127,9 +127,10 @@ body {
 
 @media (max-width: 1000px) {
   /* Below this the .container no longer sits at its full 880px width, so
-     the calc() above would push the button off-screen - fall back to
-     inline next to the title instead. */
-  .hero-title-row .back-link { position: static; }
+     the calc() above would push the button off-screen, and there's no
+     room for it beside the content anyway - just hide it (the topbar's
+     Obelisk logo still links home). */
+  .hero-title-row .back-link { display: none; }
 }
 
 h1 {
