@@ -489,6 +489,12 @@ button:active { transform: translateY(1px); }
 .table tr:last-child td { border-bottom: none; }
 .table tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
 
+.metadata-table td:last-child {
+  white-space: normal;
+  word-break: break-word;
+  max-width: 480px;
+}
+
 .table th {
   color: var(--text-dim);
   font-weight: 600;

@@ -1,8 +1,11 @@
 import os
+import re
 import shutil
 import uuid
 
-from fastapi import FastAPI, File, Request, Response, Form, Depends, HTTPException, UploadFile
+from fastapi import (
+    BackgroundTasks, FastAPI, File, Request, Response, Form, Depends, HTTPException, UploadFile,
+)
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -15,6 +18,7 @@ from .database import init_db, SessionLocal
 from .models import Conversion, Download
 from . import auth
 from . import converter
+from . import metadata_tool
 from .downloader import (
     submit_job,
     _source_from_url,
@@ -154,6 +158,13 @@ def converter_page(request: Request, db: Session = Depends(get_db), _=Depends(re
             CLIENT_ID_COOKIE, client_id, max_age=CLIENT_ID_MAX_AGE, httponly=True, samesite="lax"
         )
     return resp
+
+
+@app.get("/metadata", response_class=HTMLResponse)
+def metadata_page(request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_page)):
+    return templates.TemplateResponse(
+        "metadata.html", {"request": request, "max_upload_mb": auth.get_max_upload_mb(db)}
+    )
 
 
 @app.post("/api/download")
@@ -468,6 +479,91 @@ def conversion_file(job_id: str, db: Session = Depends(get_db), _=Depends(requir
         return JSONResponse({"error": "Файл недоступний"}, status_code=404)
     filename = os.path.basename(job.filepath)
     return FileResponse(job.filepath, filename=filename)
+
+
+# ---------------- Metadata editor ----------------
+# No DB history here on purpose (unlike downloads/conversions) - this is a
+# quick read-then-strip operation, not a background job. The cleaned file
+# sits in a token-named temp dir just long enough to be downloaded once,
+# cleaned up right after via a background task, with cleanup.py sweeping
+# any abandoned ones (user never came back for the download) as a backstop.
+
+METADATA_TOKEN_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+@app.post("/api/metadata/process")
+async def process_metadata(
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_site_access_api),
+):
+    ip = request.client.host if request.client else "unknown"
+    if not auth.check_download_rate_limit(f"md:{ip}"):
+        return JSONResponse(
+            {"error": "Забагато запитів поспіль. Спробуйте пізніше."}, status_code=429
+        )
+
+    token = uuid.uuid4().hex
+    job_dir = os.path.join(config.DOWNLOAD_DIR, "metadata", token)
+    os.makedirs(job_dir, exist_ok=True)
+
+    original_name = file.filename or "file"
+    ext = os.path.splitext(original_name)[1][:15] or ".bin"
+    input_path = os.path.join(job_dir, f"input{ext}")
+
+    max_bytes = auth.get_max_upload_mb(db) * 1024 * 1024
+    total = 0
+    too_large = False
+    with open(input_path, "wb") as out:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                too_large = True
+                break
+            out.write(chunk)
+    if too_large:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        return JSONResponse(
+            {"error": f"Файл перевищує ліміт {auth.get_max_upload_mb(db)} МБ"}, status_code=413
+        )
+
+    metadata = metadata_tool.read_metadata(input_path)
+    if metadata is None:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        return JSONResponse({"error": "Не вдалося прочитати цей файл"}, status_code=400)
+
+    clean_name = re.sub(r"[^\w\-. ]", "_", os.path.basename(original_name)).strip(" .") or "file"
+    output_path = os.path.join(job_dir, f"clean_{clean_name}")
+    ok, _err = metadata_tool.strip_metadata(input_path, output_path)
+    if not ok:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        return JSONResponse(
+            {"error": "Не вдалося видалити метадані з цього формату файлу"}, status_code=400
+        )
+
+    return {"token": token, "filename": clean_name, "metadata": metadata, "tag_count": len(metadata)}
+
+
+@app.get("/api/metadata/download/{token}")
+def download_clean_file(
+    token: str, background_tasks: BackgroundTasks, _=Depends(require_site_access_api)
+):
+    if not METADATA_TOKEN_RE.match(token):
+        return JSONResponse({"error": "Файл недоступний"}, status_code=404)
+    job_dir = os.path.join(config.DOWNLOAD_DIR, "metadata", token)
+    if not os.path.isdir(job_dir):
+        return JSONResponse({"error": "Файл недоступний"}, status_code=404)
+    candidates = [f for f in os.listdir(job_dir) if f.startswith("clean_")]
+    if not candidates:
+        return JSONResponse({"error": "Файл недоступний"}, status_code=404)
+    filepath = os.path.join(job_dir, candidates[0])
+    filename = candidates[0][len("clean_"):]
+    background_tasks.add_task(shutil.rmtree, job_dir, ignore_errors=True)
+    return FileResponse(filepath, filename=filename)
 
 
 # ---------------- Site gate ----------------
