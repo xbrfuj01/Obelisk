@@ -79,6 +79,36 @@ def _run_ffprobe(path):
         return None
 
 
+def _int_or_none(value):
+    try:
+        return int(value) if value else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _estimate_video_bitrate(fmt, video, audio, filesize, duration):
+    """Bits/sec for the source video stream, used to match the output's
+    bitrate to the original instead of targeting a fixed quality level.
+    Falls back progressively: the video stream's own bit_rate, then the
+    container's overall bitrate minus the audio track's, then a plain
+    filesize/duration estimate."""
+    direct = _int_or_none(video.get("bit_rate"))
+    if direct:
+        return direct
+
+    total = _int_or_none(fmt.get("bit_rate"))
+    if total:
+        audio_bitrate = _int_or_none(audio.get("bit_rate")) if audio else 0
+        estimate = total - (audio_bitrate or 0)
+        if estimate > 0:
+            return estimate
+
+    if filesize and duration:
+        return int(filesize * 8 / duration)
+
+    return None
+
+
 def probe_input(path):
     """Reads container/codec/resolution info via ffprobe. Returns None if
     ffprobe can't read the file or it has no video stream at all."""
@@ -123,15 +153,23 @@ def probe_input(path):
         h, m = divmod(m, 60)
         parts.append(f"{h:02d}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}")
 
+    filesize = None
+    try:
+        filesize = os.path.getsize(path)
+    except OSError:
+        pass
+    video_bitrate = _estimate_video_bitrate(fmt, video, audio, filesize, duration)
+
     return {
         "summary": " · ".join(parts),
         "duration": duration,
         "fps": fps,
         "has_audio": audio is not None,
+        "video_bitrate": video_bitrate,
     }
 
 
-def _build_ffmpeg_cmd(input_path, output_path, quality, audio_option, fps, has_audio):
+def _build_ffmpeg_cmd(input_path, output_path, quality, audio_option, fps, has_audio, video_bitrate=None):
     preset = QUALITY_PRESETS.get(quality, QUALITY_PRESETS["medium"])
     # A keyframe roughly every second (rather than the long GOPs typical of
     # camera/phone/web footage) is what actually makes H.264 smooth to
@@ -139,12 +177,26 @@ def _build_ffmpeg_cmd(input_path, output_path, quality, audio_option, fps, has_a
     # compatibility" as the codec choice itself.
     gop = max(1, round(fps)) if fps else 30
 
-    cmd = [
-        "ffmpeg", "-y", "-i", input_path,
-        "-map", "0:v:0",
-        "-c:v", "libx264",
-        "-preset", preset["preset"],
-        "-crf", str(preset["crf"]),
+    cmd = ["ffmpeg", "-y", "-i", input_path, "-map", "0:v:0", "-c:v", "libx264"]
+
+    if quality == "high" and video_bitrate:
+        # "Оригінальна якість" means matching the source's own bitrate, not
+        # re-encoding at a fixed high CRF - CRF targets a quality level, so
+        # feeding it an already-compressed source just re-encodes existing
+        # compression artifacts at huge expense in size for no real quality
+        # gain. Capped VBR around the source bitrate keeps the output in
+        # the same size ballpark; only the container/profile/GOP change.
+        kbps = max(200, video_bitrate // 1000)
+        cmd += [
+            "-preset", "slow",
+            "-b:v", f"{kbps}k",
+            "-maxrate", f"{int(kbps * 1.5)}k",
+            "-bufsize", f"{kbps * 2}k",
+        ]
+    else:
+        cmd += ["-preset", preset["preset"], "-crf", str(preset["crf"])]
+
+    cmd += [
         "-pix_fmt", "yuv420p",
         "-profile:v", "high",
         "-level", "4.2",
@@ -246,8 +298,9 @@ def _run_job(job_id: str, input_path: str, info: dict):
         has_audio = info.get("has_audio", True)
         fps = info.get("fps")
         duration = info.get("duration")
+        video_bitrate = info.get("video_bitrate")
 
-        cmd = _build_ffmpeg_cmd(input_path, output_path, job.quality, job.audio_option, fps, has_audio)
+        cmd = _build_ffmpeg_cmd(input_path, output_path, job.quality, job.audio_option, fps, has_audio, video_bitrate)
         returncode, log_tail = _run_ffmpeg(cmd, job_id, duration)
 
         if returncode != 0 and job.audio_option == "original":
@@ -255,7 +308,7 @@ def _run_job(job_id: str, input_path: str, info: dict):
             # outright for codecs MP4 can't hold (e.g. Vorbis/Opus from a
             # webm source) - fall back to a real AAC re-encode once instead
             # of just surfacing an error for something we can recover from.
-            cmd = _build_ffmpeg_cmd(input_path, output_path, job.quality, "aac", fps, has_audio)
+            cmd = _build_ffmpeg_cmd(input_path, output_path, job.quality, "aac", fps, has_audio, video_bitrate)
             returncode, log_tail = _run_ffmpeg(cmd, job_id, duration)
 
         if returncode != 0 or not os.path.exists(output_path):
