@@ -126,20 +126,27 @@ def _looks_ai_related(full_key, value):
     return False
 
 
-def classify_metadata(before, after):
+def classify_metadata(before, after, verified=True):
     """Classifies each field from a before-strip read_metadata() result
     against an after-strip one (read from the cleaned output file) as:
       - "removable": had a value before, gone after - genuinely stripped.
-      - "protected_ai": had a value before, still has one after, AND looks
-        like AI-generator/editor provenance metadata (C2PA, DigitalSource-
-        Type, a known AI tool name, ...) - present and stuck there.
+      - "protected_ai": had a value before, still has one after (or removal
+        couldn't be verified - see `verified`), AND looks like AI-
+        generator/editor provenance metadata (C2PA, DigitalSourceType, a
+        known AI tool name, ...) - present and stuck there.
       - "protected": had a value before AND still has one after, but isn't
         AI-related - ExifTool can't remove it for this format, or it's a
         derived/composite value (e.g. image dimensions) recomputed
         regardless of what gets stripped.
       - "absent": no value either way.
     Matched by base tag name (ignoring group), since ExifTool's group1
-    label for the same tag can occasionally differ between two runs."""
+    label for the same tag can occasionally differ between two runs.
+
+    `verified` must be False when the after-strip read itself failed
+    (read_metadata returned None) rather than genuinely finding nothing -
+    otherwise every single field would be misreported as "removable" just
+    because we have no after-data to compare against, which is a false
+    "yes it's gone" claim for a tool whose entire point is that claim."""
     after_by_base = {}
     for key, value in (after or {}).items():
         if value not in (None, ""):
@@ -150,7 +157,7 @@ def classify_metadata(before, after):
         base_key = key.split(":", 1)[-1]
         if before_value in (None, ""):
             status = "absent"
-        elif base_key in after_by_base:
+        elif not verified or base_key in after_by_base:
             status = "protected_ai" if _looks_ai_related(key, before_value) else "protected"
         else:
             status = "removable"

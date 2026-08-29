@@ -545,8 +545,9 @@ async def process_metadata(
             {"error": "Не вдалося видалити метадані з цього формату файлу"}, status_code=400
         )
 
-    after = metadata_tool.read_metadata(output_path) or {}
-    classified = metadata_tool.classify_metadata(metadata, after)
+    after = metadata_tool.read_metadata(output_path)
+    verified = after is not None
+    classified = metadata_tool.classify_metadata(metadata, after, verified=verified)
     found_count = sum(1 for c in classified.values() if c["status"] != "absent")
     removable_count = sum(1 for c in classified.values() if c["status"] == "removable")
     return {
@@ -555,6 +556,7 @@ async def process_metadata(
         "metadata": classified,
         "found_count": found_count,
         "removable_count": removable_count,
+        "verified": verified,
     }
 
 

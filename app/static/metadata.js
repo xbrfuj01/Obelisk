@@ -52,9 +52,14 @@ function renderResult(data) {
       <p class="hint">Червоним — дані, які буде видалено. Жовтим — мітки від AI-інструментів (C2PA тощо), які видалити неможливо. Зеленим — інші дані, які видалити неможливо. Сірим — поле відсутнє у файлі.</p>`
     : `<p class="hint">Метаданих не знайдено — файл і так чистий.</p>`;
 
+  const unverifiedWarning = data.verified
+    ? ""
+    : `<p class="error">⚠ Не вдалося перевірити результат очищення файлу — кольори нижче можуть бути неточними.</p>`;
+
   resultBox.innerHTML = `
     <div class="card status-card">
       <p class="success">✓ Знайдено ${data.found_count} значень. ${data.removable_count} значень готові до видалення.</p>
+      ${unverifiedWarning}
       <a class="btn-download" id="metadata-download-btn" href="/api/metadata/download/${data.token}">${DOWNLOAD_ICON} Завантажити файл без метаданих</a>
       <p class="hint">Файл зберігається на сервері лише до першого завантаження.</p>
     </div>
