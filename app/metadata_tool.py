@@ -49,7 +49,10 @@ def read_metadata(path):
             # so a file could carry a full C2PA manifest and this tool
             # would report zero AI-related metadata just because ExifTool
             # never surfaced it in the first place.
-            ["exiftool", "-j", "-G1", "-a", "-u", path],
+            # -b: return actual binary values (base64-encoded in JSON) -
+            # e.g. C2PA hashes/signatures, embedded thumbnails, ICC
+            # profiles - instead of a "(Binary data N bytes...)" stub.
+            ["exiftool", "-j", "-G1", "-a", "-u", "-b", path],
             capture_output=True, text=True, timeout=60,
         )
     except (OSError, subprocess.SubprocessError):
@@ -63,24 +66,23 @@ def read_metadata(path):
     if not data:
         return None
 
-    found = {}  # base tag name -> (full "Group:Tag" key, value)
+    # Keep every distinct "Group:Tag" entry ExifTool returned, unfiltered -
+    # a tag name can legitimately appear under more than one group (e.g.
+    # "Keywords" in both IPTC and XMP-dc, with different values), and
+    # collapsing those down to one per base name would silently drop real,
+    # distinct metadata instead of showing all of it.
+    result_tags = {}
+    present_base_names = set()
     for key, value in data[0].items():
         base_key = key.split(":", 1)[-1]
         if base_key in EXCLUDED_TAGS:
             continue
-        found[base_key] = (key, value)
+        result_tags[key] = value
+        present_base_names.add(base_key)
 
-    result_tags = {}
     for tag_name in MASTER_TAGS:
-        if tag_name in found:
-            full_key, value = found[tag_name]
-            result_tags[full_key] = value
-        else:
-            result_tags[tag_name] = None
-
-    for base_key, (full_key, value) in found.items():
-        if base_key not in MASTER_TAGS:
-            result_tags[full_key] = value
+        if tag_name not in present_base_names:
+            result_tags.setdefault(tag_name, None)
 
     return result_tags
 
