@@ -111,8 +111,16 @@ body {
   margin-bottom: 6px;
 }
 
-.hero-title-row .back-link { margin-bottom: 0; flex-shrink: 0; }
 .hero-title-row h1 { margin: 0; }
+
+.hero-title-row .back-link {
+  position: fixed;
+  top: 96px;
+  left: 24px;
+  margin-bottom: 0;
+  flex-shrink: 0;
+  z-index: 5;
+}
 
 h1 {
   font-size: 1.8rem;
@@ -886,6 +894,10 @@ a.tool-card:hover {
   .brand { font-size: 0.95rem; }
   .brand-icon { width: 24px; height: 24px; font-size: 0.8rem; }
   .topbar nav a { margin-left: 14px; font-size: 0.86rem; }
+
+  /* No room in the gutter on narrow screens for a fixed left-floating
+     button - fall back to sitting inline next to the title. */
+  .hero-title-row .back-link { position: static; }
 
   .container { padding: 22px 14px 60px; }
 
