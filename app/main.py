@@ -7,7 +7,7 @@ from fastapi import (
     BackgroundTasks, FastAPI, File, Request, Response, Form, Depends, HTTPException, UploadFile,
 )
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from starlette.staticfiles import StaticFiles as _StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import func
@@ -33,6 +33,21 @@ from . import stats as stats_module
 from . import sysinfo
 
 BASE_DIR = os.path.dirname(__file__)
+
+
+class StaticFiles(_StaticFiles):
+    """Forces browsers to revalidate static assets (JS/CSS) on every load
+    instead of serving a stale cached copy after a deploy. The image gets
+    fully rebuilt on every push, so file mtimes/ETags always change - the
+    browser will get a fast 304 when nothing changed and the real new file
+    the moment something did, rather than silently running old JS until
+    someone thinks to hard-refresh."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
 
 # The session cookie needs a secret key and max_age before the app object
 # even exists, so the DB is bootstrapped here rather than in a startup
