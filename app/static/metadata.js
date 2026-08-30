@@ -10,6 +10,35 @@ fileInput.addEventListener("change", () => {
   fileNameEl.textContent = fileInput.files[0] ? fileInput.files[0].name : "Файл не обрано";
 });
 
+// Prevent the browser's default "navigate to the dropped file" behavior
+// for drops that land outside the drop zone.
+window.addEventListener("dragover", (e) => e.preventDefault());
+window.addEventListener("drop", (e) => e.preventDefault());
+
+const dropZone = document.getElementById("file-drop-zone");
+if (dropZone) {
+  ["dragenter", "dragover"].forEach((evt) =>
+    dropZone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      dropZone.classList.add("dragover");
+    })
+  );
+  ["dragleave", "dragend", "drop"].forEach((evt) =>
+    dropZone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      dropZone.classList.remove("dragover");
+    })
+  );
+  dropZone.addEventListener("drop", (e) => {
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!file) return;
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    fileInput.files = dt.files;
+    fileInput.dispatchEvent(new Event("change"));
+  });
+}
+
 function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str == null ? "" : String(str);

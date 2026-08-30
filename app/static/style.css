@@ -200,6 +200,15 @@ label {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+  padding: 10px;
+  border: 1.5px dashed transparent;
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.file-input-row.dragover {
+  border-color: var(--accent);
+  background: rgba(91, 124, 255, 0.08);
 }
 
 .file-choose-btn {
