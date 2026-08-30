@@ -334,8 +334,11 @@
     n = Number(n);
     if (n < 1024) return Math.round(n) + " Б";
     var units = ["КБ", "МБ", "ГБ", "ТБ"];
-    var i = 0;
-    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    var i = -1;
+    do {
+      n /= 1024;
+      i++;
+    } while (n >= 1024 && i < units.length - 1);
     return n.toFixed(1) + " " + units[i];
   }
 
