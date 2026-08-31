@@ -75,6 +75,20 @@ templates.env.globals["format_dt"] = timeutil.format_local
 templates.env.globals["format_bytes"] = sysinfo.format_bytes
 
 
+def _is_admin_request(request: Request) -> bool:
+    """Jinja global so base.html can decide whether to show the admin
+    entry-point icon without every single page route needing to pass it
+    through their template context explicitly."""
+    db = SessionLocal()
+    try:
+        return auth.is_admin_session(request, db)
+    finally:
+        db.close()
+
+
+templates.env.globals["is_admin_request"] = _is_admin_request
+
+
 @app.exception_handler(auth.NotAuthenticated)
 async def not_authenticated_handler(request: Request, exc: auth.NotAuthenticated):
     return RedirectResponse("/admin/login", status_code=303)
@@ -114,6 +128,10 @@ def require_site_access_page(request: Request, db: Session = Depends(get_db)):
 def require_site_access_api(request: Request, db: Session = Depends(get_db)):
     if auth.is_site_gate_enabled(db) and not request.session.get("site_access"):
         raise HTTPException(status_code=401, detail="Потрібен пароль сайту")
+
+
+def require_admin_dep(request: Request, db: Session = Depends(get_db)):
+    auth.require_admin(request, db)
 
 
 @app.on_event("startup")
@@ -679,7 +697,7 @@ def admin_logout(request: Request):
 
 
 @app.get("/admin", response_class=HTMLResponse)
-def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(auth.require_admin)):
+def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(require_admin_dep)):
     total = db.query(func.count(Download.id)).scalar()
     finished = db.query(func.count(Download.id)).filter(Download.status == "finished").scalar()
     errors = db.query(func.count(Download.id)).filter(Download.status == "error").scalar()
@@ -722,6 +740,8 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(a
     admin_username = auth.get_admin_username(db)
     site_gate_enabled = auth.is_site_gate_enabled(db)
     users = auth.list_users(db)
+    legacy_admin_enabled = auth.legacy_admin_enabled(db)
+    any_user_is_admin = auth.any_user_is_admin(db)
     cleanup_interval_minutes = auth.get_cleanup_interval_minutes(db)
     max_concurrent_downloads = auth.get_max_concurrent_downloads(db)
     max_concurrent_conversions = auth.get_max_concurrent_conversions(db)
@@ -737,6 +757,8 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(a
             "request": request,
             "site_gate_enabled": site_gate_enabled,
             "users": users,
+            "legacy_admin_enabled": legacy_admin_enabled,
+            "any_user_is_admin": any_user_is_admin,
             "total": total,
             "finished": finished,
             "errors": errors,
@@ -767,7 +789,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(a
 
 
 @app.get("/admin/api/sysinfo")
-def admin_sysinfo(_=Depends(auth.require_admin)):
+def admin_sysinfo(_=Depends(require_admin_dep)):
     return {
         "memory": sysinfo.get_memory_stats(),
         "cpu_temp": sysinfo.get_cpu_temperature(),
@@ -776,7 +798,7 @@ def admin_sysinfo(_=Depends(auth.require_admin)):
 
 
 @app.post("/admin/delete/{job_id}")
-def admin_delete(job_id: str, db: Session = Depends(get_db), _=Depends(auth.require_admin)):
+def admin_delete(job_id: str, db: Session = Depends(get_db), _=Depends(require_admin_dep)):
     job = db.get(Download, job_id)
     if job:
         if job.filepath and os.path.exists(job.filepath):
@@ -793,7 +815,7 @@ def admin_delete(job_id: str, db: Session = Depends(get_db), _=Depends(auth.requ
 
 
 @app.post("/admin/delete-conversion/{job_id}")
-def admin_delete_conversion(job_id: str, db: Session = Depends(get_db), _=Depends(auth.require_admin)):
+def admin_delete_conversion(job_id: str, db: Session = Depends(get_db), _=Depends(require_admin_dep)):
     job = db.get(Conversion, job_id)
     if job:
         if job.filepath and os.path.exists(job.filepath):
@@ -816,7 +838,7 @@ def admin_add_user(
     password: str = Form(...),
     password_confirm: str = Form(...),
     db: Session = Depends(get_db),
-    _=Depends(auth.require_admin),
+    _=Depends(require_admin_dep),
 ):
     username = username.strip()
     if not username or not password:
@@ -830,7 +852,7 @@ def admin_add_user(
 
 
 @app.post("/admin/users/delete/{user_id}")
-def admin_delete_user(user_id: str, db: Session = Depends(get_db), _=Depends(auth.require_admin)):
+def admin_delete_user(user_id: str, db: Session = Depends(get_db), _=Depends(require_admin_dep)):
     auth.delete_user(db, user_id)
     return RedirectResponse("/admin?tab=users", status_code=303)
 
@@ -840,7 +862,7 @@ def admin_reset_user_password(
     user_id: str,
     new_password: str = Form(...),
     db: Session = Depends(get_db),
-    _=Depends(auth.require_admin),
+    _=Depends(require_admin_dep),
 ):
     if not new_password:
         return RedirectResponse("/admin?tab=users&user_error=empty", status_code=303)
@@ -848,8 +870,33 @@ def admin_reset_user_password(
     return RedirectResponse("/admin?tab=users&pw_reset=1", status_code=303)
 
 
+@app.post("/admin/users/set-admin/{user_id}")
+def admin_set_user_admin(
+    user_id: str,
+    make_admin: bool = Form(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_dep),
+):
+    auth.set_user_admin(db, user_id, make_admin)
+    return RedirectResponse("/admin?tab=users", status_code=303)
+
+
+@app.post("/admin/delete-legacy-admin")
+def admin_delete_legacy_admin(
+    request: Request, db: Session = Depends(get_db), _=Depends(require_admin_dep)
+):
+    ok = auth.delete_legacy_admin_credentials(db)
+    if not ok:
+        return RedirectResponse("/admin?tab=password&legacy_admin_error=1", status_code=303)
+    # This session's own "admin" flag (if it got in via the legacy login)
+    # is now meaningless — drop it so the page correctly reflects reality
+    # instead of only fixing itself on the next login.
+    request.session.pop("admin", None)
+    return RedirectResponse("/admin?tab=password&legacy_admin_deleted=1", status_code=303)
+
+
 @app.post("/admin/clear-ytdlp-cache")
-def admin_clear_ytdlp_cache(_=Depends(auth.require_admin)):
+def admin_clear_ytdlp_cache(_=Depends(require_admin_dep)):
     try:
         clear_ytdlp_cache()
     except Exception:
@@ -858,7 +905,7 @@ def admin_clear_ytdlp_cache(_=Depends(auth.require_admin)):
 
 
 @app.post("/admin/run-cleanup-now")
-def admin_run_cleanup_now(_=Depends(auth.require_admin)):
+def admin_run_cleanup_now(_=Depends(require_admin_dep)):
     try:
         run_cleanup_once()
     except Exception:
@@ -873,7 +920,7 @@ def admin_change_password(
     new_password: str = Form(""),
     new_password_confirm: str = Form(""),
     db: Session = Depends(get_db),
-    _=Depends(auth.require_admin),
+    _=Depends(require_admin_dep),
 ):
     if new_password or new_password_confirm:
         if new_password != new_password_confirm:
@@ -900,7 +947,7 @@ def admin_settings(
     proxy_domains: str = Form(""),
     timezone: str = Form(""),
     db: Session = Depends(get_db),
-    _=Depends(auth.require_admin),
+    _=Depends(require_admin_dep),
 ):
     auth.set_setting(db, "cleanup_hours", str(retention_hours))
     auth.set_setting(db, "cleanup_interval_minutes", str(cleanup_interval_minutes))

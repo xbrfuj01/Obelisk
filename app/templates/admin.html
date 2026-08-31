@@ -151,14 +151,21 @@
 
     <div class="table-wrap card">
     <table class="table">
-      <thead><tr><th>Логін</th><th>Останній вхід</th><th>Створено</th><th></th></tr></thead>
+      <thead><tr><th>Логін</th><th>Права</th><th>Останній вхід</th><th>Створено</th><th></th></tr></thead>
       <tbody>
       {% for u in users %}
         <tr>
           <td>{{ u.username }}</td>
+          <td>
+            {% if u.is_admin %}<span class="badge badge-finished">адмін</span>{% else %}<span class="badge">користувач</span>{% endif %}
+          </td>
           <td>{{ format_dt(u.last_login, timezone) if u.last_login else '—' }}</td>
           <td>{{ format_dt(u.created_at, timezone) }}</td>
           <td>
+            <form method="post" action="/admin/users/set-admin/{{ u.id }}" class="inline-form">
+              <input type="hidden" name="make_admin" value="{{ 'false' if u.is_admin else 'true' }}">
+              <button type="submit" class="link-btn">{{ 'прибрати права адміна' if u.is_admin else 'надати права адміна' }}</button>
+            </form>
             <form method="post" action="/admin/users/reset-password/{{ u.id }}" class="inline-form">
               <input type="password" name="new_password" class="mini-input" placeholder="новий пароль" required autocomplete="new-password">
               <button type="submit" class="link-btn">змінити пароль</button>
@@ -169,7 +176,7 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="4">Ще немає користувачів — сайт відкритий для всіх</td></tr>
+        <tr><td colspan="5">Ще немає користувачів — сайт відкритий для всіх</td></tr>
       {% endfor %}
       </tbody>
     </table>
@@ -299,6 +306,7 @@
 </div>
 
 <div class="tab-panel" data-tab-panel="password">
+  {% if legacy_admin_enabled %}
   <section>
     <h2>Зміна паролю</h2>
     {% if request.query_params.get('pw_error') %}<p class="error">Паролі не співпадають, пароль не змінено</p>{% endif %}
@@ -316,6 +324,22 @@
       <button type="submit">Зберегти</button>
     </form>
   </section>
+
+  <section>
+    <h2>Старий адмінський логін</h2>
+    {% if request.query_params.get('legacy_admin_error') %}<p class="error">Неможливо видалити — спершу надайте права адміна хоча б одному користувачу сайту (вкладка «Користувачі»).</p>{% endif %}
+    <p class="hint">Якщо хоча б один зареєстрований користувач сайту має права адміна, цей окремий логін/пароль можна прибрати повністю — доступ до адмінки й надалі працюватиме через звичайний вхід на сайт тим користувачем. Дію не можна скасувати.</p>
+    <form method="post" action="/admin/delete-legacy-admin" class="card maintenance-actions" onsubmit="return confirm('Видалити старий адмінський логін? Це незворотно — надалі вхід в адмінку буде лише через акаунти користувачів із правами адміна.');">
+      <button type="submit" {% if not any_user_is_admin %}disabled title="Спершу надайте права адміна хоча б одному користувачу"{% endif %}>Видалити старий адмінський логін</button>
+    </form>
+  </section>
+  {% else %}
+  <section>
+    <h2>Старий адмінський логін</h2>
+    <p class="success">Старий адмінський логін вимкнено. Доступ до адмінки тепер лише через акаунти користувачів із правами адміна (вкладка «Користувачі»).</p>
+    {% if request.query_params.get('legacy_admin_deleted') %}<p class="hint">Видалено щойно.</p>{% endif %}
+  </section>
+  {% endif %}
 </div>
 {% endblock %}
 {% block scripts %}

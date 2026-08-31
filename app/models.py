@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, String, Float, DateTime, Integer, Text
+from sqlalchemy import Boolean, Column, String, Float, DateTime, Integer, Text
 
 from .database import Base
 
@@ -78,5 +78,6 @@ class User(Base):
     id = Column(String, primary_key=True, default=gen_id)
     username = Column(String, unique=True, nullable=False)
     password_hash = Column(String, nullable=False)
+    is_admin = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
