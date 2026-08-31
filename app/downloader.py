@@ -215,7 +215,7 @@ def probe_qualities(url: str, db):
     # dedupe by height only: several formats (different codecs/bitrates) often
     # share the same height, and the download-side quality filter also caps by height
     by_height = {}
-    best_audio_bytes = 0
+    best_audio_bytes = None
     for f in (info or {}).get("formats", []) or []:
         h = f.get("height")
         w = f.get("width")
@@ -227,17 +227,16 @@ def probe_qualities(url: str, db):
         fsize = f.get("filesize") or f.get("filesize_approx")
 
         if h and vcodec not in (None, "none"):
-            h = int(h)
-            entry = by_height.setdefault(h, {"width": None, "bytes": None})
-            # width and filesize are tracked independently: the widest variant
-            # at a given height doesn't always carry filesize info, so picking
-            # only its size would lose data another format at the same height has.
-            if w and w > (entry["width"] or 0):
-                entry["width"] = w
-            if fsize and fsize > (entry["bytes"] or 0):
-                entry["bytes"] = fsize
-        elif (not h) and vcodec in (None, "none") and acodec not in (None, "none") and fsize:
-            best_audio_bytes = max(best_audio_bytes, fsize)
+            # yt-dlp's own "bestvideo"/"bestaudio" selectors pick the LAST
+            # matching entry in this list — it comes back pre-sorted
+            # worst-to-best by yt-dlp's own preference — so mirror that
+            # instead of picking whichever codec variant happens to have the
+            # biggest file at this height. Otherwise the shown estimate can
+            # be a completely different (larger) codec than what a real
+            # download actually selects.
+            by_height[int(h)] = {"width": w, "bytes": fsize}
+        elif (not h) and vcodec in (None, "none") and acodec not in (None, "none"):
+            best_audio_bytes = fsize
 
     result = []
     for h in sorted(by_height, reverse=True):

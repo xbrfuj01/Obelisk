@@ -81,6 +81,7 @@ function formatSize(bytes) {
   if (!bytes) return null;
   const mb = bytes / 1048576;
   if (mb >= 1024) return (mb / 1024).toFixed(1) + " ГБ";
+  if (mb < 1) return mb.toFixed(1) + " МБ"; // avoid rounding a real, small file down to "0 МБ"
   return Math.round(mb) + " МБ";
 }
 

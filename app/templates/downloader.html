@@ -83,7 +83,7 @@
 {% for r in recent %}
   <div class="dl-row" data-id="{{ r.id }}">
     <span class="status-icon status-{{ r.status }}">{% if r.status == 'finished' %}✓{% elif r.status == 'error' %}✕{% elif r.status == 'downloading' %}<span class="spinner"></span>{% elif r.status == 'queued' %}⏳{% else %}–{% endif %}</span>
-    <button type="button" class="dl-title">{{ r.title or r.url }}{% if r.filesize %} ({{ '%.0f МБ'|format(r.filesize / 1048576) }}){% endif %}</button>
+    <button type="button" class="dl-title">{{ r.title or r.url }}{% if r.filesize %} ({{ '%.1f МБ'|format(r.filesize / 1048576) if r.filesize < 1048576 else '%.0f МБ'|format(r.filesize / 1048576) }}){% endif %}</button>
     {% if r.url %}<a class="dl-source-btn" href="{{ r.url }}" target="_blank" rel="noopener noreferrer" title="Відкрити оригінал">🔍</a>{% endif %}
     {% if r.status == 'finished' %}
       <a class="dl-convert-btn" href="/converter?from_download={{ r.id }}&filename={{ (r.title or r.url)|urlencode }}" title="Конвертувати для Premiere"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h11l-3.5-3.5"/><path d="M17 17H6l3.5 3.5"/></svg></a>
