@@ -594,6 +594,36 @@ button:active { transform: translateY(1px); }
   opacity: 0.6;
 }
 
+.metadata-value-wrap { display: flex; flex-direction: column; gap: 4px; }
+
+.metadata-value-collapsed {
+  max-height: 4.4em;
+  overflow: hidden;
+}
+
+/* Fades the text itself to transparent rather than overlaying a solid
+   gradient - the cell's background color varies by status (red/amber/
+   green tint), so a color-matched overlay would need one per status. */
+.metadata-value-collapsed:not(.expanded) {
+  mask-image: linear-gradient(180deg, #000 70%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, #000 70%, transparent 100%);
+}
+
+.metadata-value-collapsed.expanded { max-height: none; }
+
+.metadata-value-toggle {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  box-shadow: none;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .table th {
   color: var(--text-dim);
   font-weight: 600;

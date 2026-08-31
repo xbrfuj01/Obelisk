@@ -63,6 +63,21 @@ const DOWNLOAD_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="non
 const STATUS_ORDER = { removable: 0, protected_ai: 1, protected: 2, absent: 3 };
 const STATUS_CLASS = { removable: "removable", protected_ai: "protected-ai", protected: "protected", absent: "empty" };
 
+// Some tags (QuickTime:MediaData and similar raw dumps) can carry
+// megabytes of text in a single value, which would otherwise blow the
+// table row up to the same height - collapse anything past this length
+// behind a toggle instead.
+const LONG_VALUE_THRESHOLD = 300;
+
+function renderValueCell(value) {
+  const text = escapeHtml(value);
+  if (String(value).length <= LONG_VALUE_THRESHOLD) return text;
+  return `<div class="metadata-value-wrap">
+    <div class="metadata-value-collapsed">${text}</div>
+    <button type="button" class="metadata-value-toggle">Показати більше</button>
+  </div>`;
+}
+
 function renderResult(data) {
   const entries = Object.entries(data.metadata || {}).map(([key, field]) => {
     const [group, ...rest] = key.split(":");
@@ -79,7 +94,7 @@ function renderResult(data) {
 
   const rows = entries
     .map((e) => {
-      const display = e.status === "absent" ? "—" : escapeHtml(e.value);
+      const display = e.status === "absent" ? "—" : renderValueCell(e.value);
       return `<tr><td>${escapeHtml(e.category)}</td><td>${escapeHtml(e.tag)}</td><td class="${STATUS_CLASS[e.status]}">${display}</td></tr>`;
     })
     .join("");
@@ -166,4 +181,12 @@ form.addEventListener("submit", (e) => {
     statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка з'єднання</p></div>`;
   };
   xhr.send(fd);
+});
+
+document.addEventListener("click", (e) => {
+  const toggle = e.target.closest(".metadata-value-toggle");
+  if (!toggle) return;
+  const collapsed = toggle.previousElementSibling;
+  const expanded = collapsed.classList.toggle("expanded");
+  toggle.textContent = expanded ? "Згорнути" : "Показати більше";
 });
