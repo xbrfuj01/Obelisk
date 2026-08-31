@@ -711,7 +711,7 @@ button:active { transform: translateY(1px); }
 
 .stats-columns {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr auto;
   gap: 0 24px;
   align-items: start;
 }
