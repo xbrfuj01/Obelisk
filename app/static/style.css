@@ -116,20 +116,16 @@ body {
 .hero-title-row .back-link {
   position: fixed;
   top: 96px;
-  /* Sit just outside the centered 880px .container's right edge (half its
-     width is 440px) rather than pinned to the viewport edge, so it stays
-     close to the content instead of drifting away on wide screens. */
-  left: calc(50% + 454px);
+  right: 24px;
   margin-bottom: 0;
   flex-shrink: 0;
   z-index: 5;
 }
 
 @media (max-width: 1000px) {
-  /* Below this the .container no longer sits at its full 880px width, so
-     the calc() above would push the button off-screen, and there's no
-     room for it beside the content anyway - just hide it (the topbar's
-     Obelisk logo still links home). */
+  /* No room for a floating corner button once the content column takes up
+     most of the viewport - just hide it (the topbar's Obelisk logo still
+     links home). */
   .hero-title-row .back-link { display: none; }
 }
 
