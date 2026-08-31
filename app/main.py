@@ -829,11 +829,14 @@ def admin_delete_user(user_id: str, db: Session = Depends(get_db), _=Depends(req
 def admin_reset_user_password(
     user_id: str,
     new_password: str = Form(...),
+    new_password_confirm: str = Form(""),
     db: Session = Depends(get_db),
     _=Depends(require_admin_dep),
 ):
     if not new_password:
         return RedirectResponse("/admin?tab=users&user_error=empty", status_code=303)
+    if new_password != new_password_confirm:
+        return RedirectResponse("/admin?tab=users&user_error=mismatch", status_code=303)
     auth.reset_user_password(db, user_id, new_password)
     return RedirectResponse("/admin?tab=users&pw_reset=1", status_code=303)
 

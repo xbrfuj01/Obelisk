@@ -483,12 +483,6 @@ button:active { transform: translateY(1px); }
 
 .inline-form { display: inline; margin-left: 10px; }
 
-.mini-input {
-  width: 130px;
-  padding: 6px 10px;
-  font-size: 0.82rem;
-}
-
 #status-box { margin-top: 18px; }
 
 .status-card { padding: 18px 22px; }
@@ -917,6 +911,124 @@ a.tool-card:hover {
 
 .tool-name { font-size: 1.05rem; font-weight: 700; }
 .tool-desc { font-size: 0.85rem; color: var(--text-dim); }
+
+/* Modal dialog */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 6, 10, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 20px;
+}
+
+.modal-overlay[hidden] { display: none; }
+
+.modal-box {
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 24px 24px;
+  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: modal-in 0.15s ease-out;
+}
+
+.modal-box h3 { margin: 0; font-size: 1.15rem; }
+.modal-box form { display: flex; flex-direction: column; gap: 14px; }
+
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  width: auto;
+  box-shadow: none;
+}
+
+.modal-close:hover { color: var(--text); }
+
+@keyframes modal-in {
+  from { transform: translateY(10px) scale(0.98); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+/* Toast notifications */
+
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 300;
+  max-width: min(340px, calc(100vw - 48px));
+}
+
+.toast {
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid rgba(62, 207, 142, 0.35);
+  border-radius: var(--radius-sm);
+  padding: 14px 34px 16px 16px;
+  box-shadow: 0 14px 34px -14px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  animation: toast-in 0.2s ease-out;
+}
+
+.toast p { margin: 0; font-size: 0.86rem; color: var(--text); }
+
+.toast-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  width: auto;
+  box-shadow: none;
+}
+
+.toast-close:hover { color: var(--text); }
+
+.toast-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: var(--success);
+  width: 100%;
+  animation: toast-shrink linear forwards;
+}
+
+@keyframes toast-in {
+  from { transform: translateX(-16px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes toast-shrink {
+  from { width: 100%; }
+  to { width: 0%; }
+}
 
 /* Mobile */
 

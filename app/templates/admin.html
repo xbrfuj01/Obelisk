@@ -146,8 +146,6 @@
     {% if request.query_params.get('user_error') == 'mismatch' %}<p class="error">Паролі не співпадають</p>{% endif %}
     {% if request.query_params.get('user_error') == 'exists' %}<p class="error">Такий логін вже існує</p>{% endif %}
     {% if request.query_params.get('user_error') == 'last_admin' %}<p class="error">Не можна прибрати права в останнього адміна — спершу надайте права комусь іншому.</p>{% endif %}
-    {% if request.query_params.get('user_added') %}<p class="success">Користувача додано.</p>{% endif %}
-    {% if request.query_params.get('pw_reset') %}<p class="success">Пароль користувача змінено.</p>{% endif %}
 
     <div class="table-wrap card">
     <table class="table">
@@ -170,10 +168,7 @@
               <button type="submit" class="link-btn link-btn-sm">надати права адміна</button>
               {% endif %}
             </form>
-            <form method="post" action="/admin/users/reset-password/{{ u.id }}" class="inline-form">
-              <input type="password" name="new_password" class="mini-input" placeholder="новий пароль" required autocomplete="new-password">
-              <button type="submit" class="link-btn">змінити пароль</button>
-            </form>
+            <button type="button" class="link-btn inline-form open-password-modal" data-user-id="{{ u.id }}" data-username="{{ u.username }}">змінити пароль</button>
             <form method="post" action="/admin/users/delete/{{ u.id }}" class="inline-form">
               <button type="submit" class="link-btn" {% if u.is_admin and admin_user_count <= 1 %}disabled title="Це останній адмін — спершу надайте права комусь іншому"{% endif %}>видалити</button>
             </form>
@@ -242,7 +237,6 @@
 <div class="tab-panel" data-tab-panel="settings">
   <section>
     <h2>Налаштування</h2>
-    {% if request.query_params.get('saved') %}<p class="success">Збережено.</p>{% endif %}
     <form method="post" action="/admin/settings" class="card settings-form">
 
       <p class="settings-group-title">Завантаження</p>
@@ -296,8 +290,6 @@
 
   <section>
     <h2>Обслуговування</h2>
-    {% if request.query_params.get('cache_cleared') %}<p class="success">Кеш yt-dlp очищено.</p>{% endif %}
-    {% if request.query_params.get('cleanup_ran') %}<p class="success">Очищення застарілих файлів запущено.</p>{% endif %}
     <div class="card maintenance-actions">
       <form method="post" action="/admin/clear-ytdlp-cache">
         <button type="submit">Очистити кеш yt-dlp</button>
@@ -307,6 +299,24 @@
       </form>
     </div>
   </section>
+</div>
+
+<div class="modal-overlay" id="password-modal" hidden>
+  <div class="modal-box">
+    <button type="button" class="modal-close" id="password-modal-close" aria-label="Закрити">&times;</button>
+    <h3>Змінити пароль</h3>
+    <p class="hint" id="password-modal-username"></p>
+    <form method="post" id="password-modal-form">
+      <label>Новий пароль
+        <input type="password" name="new_password" id="password-modal-new" required autocomplete="new-password" minlength="1">
+      </label>
+      <label>Підтвердження пароля
+        <input type="password" name="new_password_confirm" id="password-modal-confirm" required autocomplete="new-password">
+      </label>
+      <p class="error" id="password-modal-error" hidden>Паролі не співпадають</p>
+      <button type="submit" class="btn-primary">Змінити</button>
+    </form>
+  </div>
 </div>
 
 {% endblock %}
@@ -400,6 +410,110 @@
   });
 
   if (periodBtns.length) activatePeriod(periodBtns[0].dataset.period);
+
+  // ---------------- Toasts ----------------
+
+  var TOAST_DURATION = 4000;
+
+  function showToast(message) {
+    var container = document.getElementById("toast-container");
+    if (!container) {
+      container = document.createElement("div");
+      container.id = "toast-container";
+      container.className = "toast-container";
+      document.body.appendChild(container);
+    }
+    var toast = document.createElement("div");
+    toast.className = "toast";
+
+    var closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "toast-close";
+    closeBtn.setAttribute("aria-label", "Закрити");
+    closeBtn.textContent = "×";
+
+    var text = document.createElement("p");
+    text.textContent = message;
+
+    var progress = document.createElement("div");
+    progress.className = "toast-progress";
+    progress.style.animationDuration = TOAST_DURATION + "ms";
+
+    toast.appendChild(closeBtn);
+    toast.appendChild(text);
+    toast.appendChild(progress);
+    container.appendChild(toast);
+
+    var timer = setTimeout(function () { toast.remove(); }, TOAST_DURATION);
+    closeBtn.addEventListener("click", function () {
+      clearTimeout(timer);
+      toast.remove();
+    });
+  }
+
+  // Success confirmations arrive as a query param on the post-redirect
+  // page load (the app doesn't submit these forms via fetch) - fire a
+  // toast for whichever ones are present, then strip them from the URL
+  // so refreshing the page doesn't replay the notification.
+  var TOAST_MESSAGES = {
+    saved: "Налаштування збережено.",
+    cache_cleared: "Кеш yt-dlp очищено.",
+    cleanup_ran: "Очищення застарілих файлів запущено.",
+    user_added: "Користувача додано.",
+    pw_reset: "Пароль користувача змінено."
+  };
+  var currentParams = new URLSearchParams(window.location.search);
+  var firedAny = false;
+  Object.keys(TOAST_MESSAGES).forEach(function (key) {
+    if (currentParams.get(key)) {
+      showToast(TOAST_MESSAGES[key]);
+      firedAny = true;
+    }
+  });
+  if (firedAny) {
+    var cleanUrl = new URL(window.location.href);
+    Object.keys(TOAST_MESSAGES).forEach(function (key) { cleanUrl.searchParams.delete(key); });
+    window.history.replaceState({}, "", cleanUrl);
+  }
+
+  // ---------------- Password change modal ----------------
+
+  var passwordModal = document.getElementById("password-modal");
+  var passwordForm = document.getElementById("password-modal-form");
+  var passwordNew = document.getElementById("password-modal-new");
+  var passwordConfirm = document.getElementById("password-modal-confirm");
+  var passwordError = document.getElementById("password-modal-error");
+  var passwordUsername = document.getElementById("password-modal-username");
+
+  function closePasswordModal() {
+    passwordModal.hidden = true;
+  }
+
+  document.querySelectorAll(".open-password-modal").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      passwordForm.action = "/admin/users/reset-password/" + btn.dataset.userId;
+      passwordUsername.textContent = "Користувач: " + btn.dataset.username;
+      passwordNew.value = "";
+      passwordConfirm.value = "";
+      passwordError.hidden = true;
+      passwordModal.hidden = false;
+      passwordNew.focus();
+    });
+  });
+
+  document.getElementById("password-modal-close").addEventListener("click", closePasswordModal);
+  passwordModal.addEventListener("click", function (e) {
+    if (e.target === passwordModal) closePasswordModal();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !passwordModal.hidden) closePasswordModal();
+  });
+  passwordForm.addEventListener("submit", function (e) {
+    if (passwordNew.value !== passwordConfirm.value) {
+      e.preventDefault();
+      passwordError.hidden = false;
+    }
+  });
 })();
 </script>
 {% endblock %}
