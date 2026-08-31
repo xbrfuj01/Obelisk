@@ -182,11 +182,10 @@
 
 <div class="tab-panel" data-tab-panel="users">
   <section>
-    <h2>Користувачі сайту {% if site_gate_enabled %}<span class="badge badge-finished">вхід увімкнено</span>{% else %}<span class="badge">вхід вимкнено — додайте користувача</span>{% endif %}</h2>
-    {% if request.query_params.get('user_error') == 'empty' %}<p class="error">Заповніть логін і пароль</p>{% endif %}
-    {% if request.query_params.get('user_error') == 'mismatch' %}<p class="error">Паролі не співпадають</p>{% endif %}
-    {% if request.query_params.get('user_error') == 'exists' %}<p class="error">Такий логін вже існує</p>{% endif %}
+    <h2>Користувачі сайту <button type="button" class="btn-add-user open-add-user-modal" aria-label="Додати користувача" title="Додати користувача"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Додати користувача</button></h2>
     {% if request.query_params.get('user_error') == 'last_admin' %}<p class="error">Не можна прибрати права в останнього адміна — спершу надайте права комусь іншому.</p>{% endif %}
+    {% if request.query_params.get('user_error') == 'empty' %}<p class="error">Заповніть новий пароль</p>{% endif %}
+    {% if request.query_params.get('user_error') == 'mismatch' %}<p class="error">Паролі не співпадають</p>{% endif %}
 
     <div class="table-wrap card">
     <table class="table">
@@ -239,21 +238,6 @@
     </table>
     </div>
 
-    <form method="post" action="/admin/users/add" class="card settings-form">
-      <p class="settings-group-title">Додати користувача</p>
-      <div class="grid-2">
-        <label>Логін
-          <input type="text" name="username" required autocomplete="off">
-        </label>
-        <label>Пароль
-          <input type="password" name="password" required autocomplete="new-password">
-        </label>
-      </div>
-      <label>Підтвердження пароля
-        <input type="password" name="password_confirm" required autocomplete="new-password">
-      </label>
-      <button type="submit">Додати</button>
-    </form>
   </section>
 </div>
 
@@ -386,6 +370,28 @@
       <button type="button" class="btn-secondary" id="confirm-modal-cancel">Скасувати</button>
       <button type="button" class="btn-primary" id="confirm-modal-ok">Підтвердити</button>
     </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="add-user-modal" hidden>
+  <div class="modal-box">
+    <button type="button" class="modal-close" id="add-user-modal-close" aria-label="Закрити">&times;</button>
+    <h3>Додати користувача</h3>
+    {% if request.query_params.get('add_user_error') == 'empty' %}<p class="error">Заповніть логін і пароль</p>{% endif %}
+    {% if request.query_params.get('add_user_error') == 'mismatch' %}<p class="error">Паролі не співпадають</p>{% endif %}
+    {% if request.query_params.get('add_user_error') == 'exists' %}<p class="error">Такий логін вже існує</p>{% endif %}
+    <form method="post" action="/admin/users/add">
+      <label>Логін
+        <input type="text" name="username" required autocomplete="off">
+      </label>
+      <label>Пароль
+        <input type="password" name="password" required autocomplete="new-password">
+      </label>
+      <label>Підтвердження пароля
+        <input type="password" name="password_confirm" required autocomplete="new-password">
+      </label>
+      <button type="submit" class="btn-primary">Додати</button>
+    </form>
   </div>
 </div>
 
@@ -594,6 +600,31 @@
       passwordError.hidden = false;
     }
   });
+
+  // ---------------- Add user modal ----------------
+
+  var addUserModal = document.getElementById("add-user-modal");
+
+  function closeAddUserModal() {
+    addUserModal.hidden = true;
+  }
+
+  document.querySelectorAll(".open-add-user-modal").forEach(function (btn) {
+    btn.addEventListener("click", function () { addUserModal.hidden = false; });
+  });
+
+  document.getElementById("add-user-modal-close").addEventListener("click", closeAddUserModal);
+  addUserModal.addEventListener("click", function (e) {
+    if (e.target === addUserModal) closeAddUserModal();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !addUserModal.hidden) closeAddUserModal();
+  });
+
+  // Reopen automatically after a failed submit (empty/mismatch/exists) so
+  // the error is visible right next to the fields it concerns instead of
+  // silently landing on a closed modal.
+  if (currentParams.get("add_user_error")) addUserModal.hidden = false;
 
   // ---------------- Generic confirm modal (delete user, grant admin) ----------------
 

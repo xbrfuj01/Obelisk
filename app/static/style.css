@@ -601,6 +601,18 @@ button:active { transform: translateY(1px); }
 .badge-error { background: rgba(255, 107, 125, 0.15); color: var(--error); }
 .badge-downloading, .badge-converting, .badge-queued { background: rgba(91, 124, 255, 0.15); color: var(--accent); }
 
+.btn-add-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px 5px 10px;
+  margin-left: 6px;
+  border-radius: 20px;
+  font-size: 0.76rem;
+  vertical-align: middle;
+  box-shadow: none;
+}
+
 .mode-icon {
   display: inline-flex;
   align-items: center;

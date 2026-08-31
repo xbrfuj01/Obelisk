@@ -854,11 +854,11 @@ def admin_add_user(
 ):
     username = username.strip()
     if not username or not password:
-        return RedirectResponse("/admin?tab=users&user_error=empty", status_code=303)
+        return RedirectResponse("/admin?tab=users&add_user_error=empty", status_code=303)
     if password != password_confirm:
-        return RedirectResponse("/admin?tab=users&user_error=mismatch", status_code=303)
+        return RedirectResponse("/admin?tab=users&add_user_error=mismatch", status_code=303)
     if auth.username_exists(db, username):
-        return RedirectResponse("/admin?tab=users&user_error=exists", status_code=303)
+        return RedirectResponse("/admin?tab=users&add_user_error=exists", status_code=303)
     auth.create_user(db, username, password)
     return RedirectResponse("/admin?tab=users&user_added=1", status_code=303)
 
