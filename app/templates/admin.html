@@ -1,4 +1,17 @@
 {% extends "base.html" %}
+
+{% macro status_badge(status) %}
+{% if status == 'finished' %}
+<span class="status-icon status-finished" title="Готово" aria-label="Готово"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+{% elif status == 'error' %}
+<span class="status-icon status-error" title="Помилка" aria-label="Помилка"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span>
+{% elif status == 'expired' %}
+<span class="status-icon status-expired" title="Прострочено" aria-label="Прострочено"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2h4"/><path d="M12 14v-4"/><circle cx="12" cy="14" r="8"/></svg></span>
+{% else %}
+<span class="badge badge-{{ status }}">{{ status }}</span>
+{% endif %}
+{% endmacro %}
+
 {% block content %}
 <div class="admin-header">
   <h1>Адмін-панель</h1>
@@ -101,7 +114,7 @@
             {{ h.mode }}
             {% endif %}
           </td>
-          <td><span class="badge badge-{{ h.status }}">{{ h.status }}</span></td>
+          <td>{{ status_badge(h.status) }}</td>
           <td>{{ h.username or '—' }}</td>
           <td>{{ format_dt(h.created_at, timezone) }}</td>
           <td>{{ format_bytes(h.filesize) if h.filesize else '' }}</td>
@@ -138,7 +151,7 @@
           <td><button type="button" class="table-title-btn">{{ c.original_filename or "video" }}</button></td>
           <td>{{ c.quality }}</td>
           <td>{{ c.audio_option }}</td>
-          <td><span class="badge badge-{{ c.status }}">{{ c.status }}</span></td>
+          <td>{{ status_badge(c.status) }}</td>
           <td>{{ c.username or '—' }}</td>
           <td>{{ format_dt(c.created_at, timezone) }}</td>
           <td>{{ format_bytes(c.filesize) if c.filesize else '' }}</td>
@@ -629,14 +642,26 @@
 
   var STATUS_LABELS_UK = {
     finished: "готово", error: "помилка", queued: "у черзі",
-    downloading: "завантаження", converting: "конвертація", expired: "видалено"
+    downloading: "завантаження", converting: "конвертація", expired: "прострочено"
   };
+  var STATUS_ICONS = {
+    finished: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+    error: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+    expired: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2h4"/><path d="M12 14v-4"/><circle cx="12" cy="14" r="8"/></svg>'
+  };
+
+  function renderStatusBadge(status) {
+    if (STATUS_ICONS[status]) {
+      return '<span class="status-icon status-' + status + '" title="' + (STATUS_LABELS_UK[status] || status) + '" aria-label="' + (STATUS_LABELS_UK[status] || status) + '">' + STATUS_ICONS[status] + '</span>';
+    }
+    return '<span class="badge badge-' + status + '">' + (STATUS_LABELS_UK[status] || status) + '</span>';
+  }
 
   function renderActivitySection(title, items) {
     var rows = items.length
       ? items.map(function (it) {
           return '<div class="activity-row">' +
-            '<span class="badge badge-' + it.status + '">' + (STATUS_LABELS_UK[it.status] || it.status) + '</span>' +
+            renderStatusBadge(it.status) +
             '<span class="activity-title" title="' + escapeHtmlAttr(it.title) + '">' + escapeHtmlAttr(it.title) + '</span>' +
             '<span class="activity-date">' + escapeHtmlAttr(it.date) + '</span>' +
             '<span class="activity-size">' + escapeHtmlAttr(it.size) + '</span>' +
