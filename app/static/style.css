@@ -696,6 +696,17 @@ button:active { transform: translateY(1px); }
 .period-panel[hidden] { display: none; }
 .period-panel { margin-top: 12px; }
 
+.stats-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 24px;
+  align-items: start;
+}
+
+@media (max-width: 760px) {
+  .stats-columns { grid-template-columns: 1fr; }
+}
+
 section h3 { margin: 22px 0 4px; font-size: 1rem; }
 
 .stats-grid {
