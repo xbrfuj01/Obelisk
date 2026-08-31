@@ -88,15 +88,13 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 46px;
-  height: 46px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
   margin-left: 0;
 }
 
-.admin-link:hover { color: var(--text); border-color: var(--border-hover); }
+.admin-link:hover { background: var(--bg-card); color: var(--text); }
 
 .container {
   max-width: 880px;
