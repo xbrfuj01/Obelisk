@@ -320,6 +320,9 @@ label {
 
 .hint.hint-error { color: var(--error); opacity: 1; }
 
+.activity-modal-header { display: flex; flex-direction: column; gap: 2px; }
+.activity-modal-meta { font-size: 0.68rem; }
+
 input.field-invalid {
   border-color: var(--error);
   box-shadow: 0 0 0 3px rgba(255, 107, 125, 0.18);

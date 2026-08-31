@@ -420,9 +420,11 @@
 <div class="modal-overlay" id="activity-modal" hidden>
   <div class="modal-box wide">
     <button type="button" class="modal-close" id="activity-modal-close" aria-label="Закрити">&times;</button>
-    <h3>Журнал дій — <span id="activity-modal-username"></span></h3>
-    <p class="hint" id="activity-modal-created"></p>
-    <p class="hint" id="activity-modal-login"></p>
+    <div class="activity-modal-header">
+      <h3>Журнал дій — <span id="activity-modal-username"></span></h3>
+      <p class="hint activity-modal-meta" id="activity-modal-created"></p>
+      <p class="hint activity-modal-meta" id="activity-modal-login"></p>
+    </div>
     <div id="activity-modal-body">
       <p class="hint">Завантаження...</p>
     </div>
