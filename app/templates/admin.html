@@ -122,17 +122,27 @@
           <td>{{ format_dt(h.created_at, timezone) }}</td>
           <td>{{ format_bytes(h.filesize) if h.filesize else '' }}</td>
           <td>
+            <div class="row-actions">
             {% if h.status == 'finished' %}
-            <a class="row-icon-btn inline-form" href="/api/file/{{ h.id }}" title="Завантажити файл" aria-label="Завантажити файл">
+            <a class="row-icon-btn" href="/api/file/{{ h.id }}" title="Завантажити файл" aria-label="Завантажити файл">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
             </a>
+            {% else %}
+            <span class="row-icon-btn placeholder" aria-hidden="true"></span>
             {% endif %}
-            {% if h.url %}<a href="{{ h.url }}" target="_blank" rel="noopener noreferrer" title="Відкрити оригінал" class="inline-form">🔍</a>{% endif %}
+            {% if h.url %}
+            <a class="row-icon-btn" href="{{ h.url }}" target="_blank" rel="noopener noreferrer" title="Відкрити оригінал" aria-label="Відкрити оригінал">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </a>
+            {% else %}
+            <span class="row-icon-btn placeholder" aria-hidden="true"></span>
+            {% endif %}
             <form method="post" action="/admin/delete/{{ h.id }}" class="inline-form">
               <button type="submit" class="row-icon-btn danger" title="Видалити" aria-label="Видалити">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
               </button>
             </form>
+            </div>
           </td>
         </tr>
       {% else %}
@@ -159,16 +169,20 @@
           <td>{{ format_dt(c.created_at, timezone) }}</td>
           <td>{{ format_bytes(c.filesize) if c.filesize else '' }}</td>
           <td>
+            <div class="row-actions">
             {% if c.status == 'finished' %}
-            <a class="row-icon-btn inline-form" href="/api/convert/file/{{ c.id }}" title="Завантажити файл" aria-label="Завантажити файл">
+            <a class="row-icon-btn" href="/api/convert/file/{{ c.id }}" title="Завантажити файл" aria-label="Завантажити файл">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
             </a>
+            {% else %}
+            <span class="row-icon-btn placeholder" aria-hidden="true"></span>
             {% endif %}
             <form method="post" action="/admin/delete-conversion/{{ c.id }}" class="inline-form">
               <button type="submit" class="row-icon-btn danger" title="Видалити" aria-label="Видалити">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
               </button>
             </form>
+            </div>
           </td>
         </tr>
       {% else %}

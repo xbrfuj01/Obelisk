@@ -88,13 +88,15 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   margin-left: 0;
 }
 
-.admin-link:hover { background: var(--bg-card); color: var(--text); }
+.admin-link:hover { color: var(--text); border-color: var(--border-hover); }
 
 .container {
   max-width: 880px;
@@ -1210,6 +1212,15 @@ a.tool-card:hover {
 
 .row-icon-btn.warning { color: var(--warning); border-color: rgba(232, 179, 57, 0.3); }
 .row-icon-btn.warning:hover { background: rgba(232, 179, 57, 0.12); color: var(--warning); }
+
+.row-actions { display: flex; align-items: center; gap: 6px; }
+
+.row-icon-btn.placeholder {
+  visibility: hidden;
+  pointer-events: none;
+  border-color: transparent;
+  background: none;
+}
 
 /* Mobile */
 
