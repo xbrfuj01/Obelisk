@@ -55,7 +55,6 @@ class StaticFiles(_StaticFiles):
 init_db()
 _bootstrap_db = SessionLocal()
 try:
-    auth.ensure_admin_credentials(_bootstrap_db)
     auth.ensure_secret_key(_bootstrap_db)
     _secret_key = auth.get_secret_key(_bootstrap_db)
     _session_max_age_days = auth.get_session_max_age_days(_bootstrap_db)
@@ -91,7 +90,7 @@ templates.env.globals["is_admin_request"] = _is_admin_request
 
 @app.exception_handler(auth.NotAuthenticated)
 async def not_authenticated_handler(request: Request, exc: auth.NotAuthenticated):
-    return RedirectResponse("/admin/login", status_code=303)
+    return RedirectResponse("/site-login", status_code=303)
 
 
 @app.exception_handler(auth.SiteNotAuthenticated)
@@ -657,43 +656,14 @@ def site_logout(request: Request):
 
 
 # ---------------- Admin ----------------
-
-@app.get("/admin/login", response_class=HTMLResponse)
-def admin_login_form(request: Request):
-    return templates.TemplateResponse("admin_login.html", {"request": request, "error": None})
-
-
-@app.post("/admin/login")
-def admin_login(
-    request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
-    db: Session = Depends(get_db),
-):
-    ip = request.client.host if request.client else "unknown"
-    key = f"admin:{ip}"
-    locked, remaining = auth.check_lockout(key)
-    if locked:
-        minutes = max(1, remaining // 60)
-        return templates.TemplateResponse(
-            "admin_login.html",
-            {"request": request, "error": f"Забагато спроб. Спробуйте ще раз через {minutes} хв."},
-            status_code=429,
-        )
-    if auth.verify_admin_credentials(db, username, password):
-        auth.register_successful_attempt(key)
-        request.session["admin"] = True
-        return RedirectResponse("/admin", status_code=303)
-    auth.register_failed_attempt(key)
-    return templates.TemplateResponse(
-        "admin_login.html", {"request": request, "error": "Невірний логін або пароль"}, status_code=401
-    )
-
+# Access is entirely user-based now (User.is_admin, granted from the Users
+# tab) — there's no separate admin login. Whoever is logged into the site
+# with an admin-flagged account gets /admin automatically.
 
 @app.get("/admin/logout")
 def admin_logout(request: Request):
     request.session.clear()
-    return RedirectResponse("/admin/login", status_code=303)
+    return RedirectResponse("/site-login", status_code=303)
 
 
 @app.get("/admin", response_class=HTMLResponse)
@@ -737,11 +707,9 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
     }
 
     retention_hours = auth.get_retention_hours(db)
-    admin_username = auth.get_admin_username(db)
     site_gate_enabled = auth.is_site_gate_enabled(db)
     users = auth.list_users(db)
-    legacy_admin_enabled = auth.legacy_admin_enabled(db)
-    any_user_is_admin = auth.any_user_is_admin(db)
+    admin_user_count = sum(1 for u in users if u.is_admin)
     cleanup_interval_minutes = auth.get_cleanup_interval_minutes(db)
     max_concurrent_downloads = auth.get_max_concurrent_downloads(db)
     max_concurrent_conversions = auth.get_max_concurrent_conversions(db)
@@ -757,8 +725,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
             "request": request,
             "site_gate_enabled": site_gate_enabled,
             "users": users,
-            "legacy_admin_enabled": legacy_admin_enabled,
-            "any_user_is_admin": any_user_is_admin,
+            "admin_user_count": admin_user_count,
             "total": total,
             "finished": finished,
             "errors": errors,
@@ -774,7 +741,6 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
             "activity_periods": activity_periods,
             "sys_info": sys_info,
             "retention_hours": retention_hours,
-            "admin_username": admin_username,
             "cleanup_interval_minutes": cleanup_interval_minutes,
             "max_concurrent_downloads": max_concurrent_downloads,
             "max_concurrent_conversions": max_concurrent_conversions,
@@ -853,7 +819,9 @@ def admin_add_user(
 
 @app.post("/admin/users/delete/{user_id}")
 def admin_delete_user(user_id: str, db: Session = Depends(get_db), _=Depends(require_admin_dep)):
-    auth.delete_user(db, user_id)
+    ok = auth.delete_user(db, user_id)
+    if not ok:
+        return RedirectResponse("/admin?tab=users&user_error=last_admin", status_code=303)
     return RedirectResponse("/admin?tab=users", status_code=303)
 
 
@@ -877,22 +845,10 @@ def admin_set_user_admin(
     db: Session = Depends(get_db),
     _=Depends(require_admin_dep),
 ):
-    auth.set_user_admin(db, user_id, make_admin)
-    return RedirectResponse("/admin?tab=users", status_code=303)
-
-
-@app.post("/admin/delete-legacy-admin")
-def admin_delete_legacy_admin(
-    request: Request, db: Session = Depends(get_db), _=Depends(require_admin_dep)
-):
-    ok = auth.delete_legacy_admin_credentials(db)
+    ok = auth.set_user_admin(db, user_id, make_admin)
     if not ok:
-        return RedirectResponse("/admin?tab=password&legacy_admin_error=1", status_code=303)
-    # This session's own "admin" flag (if it got in via the legacy login)
-    # is now meaningless — drop it so the page correctly reflects reality
-    # instead of only fixing itself on the next login.
-    request.session.pop("admin", None)
-    return RedirectResponse("/admin?tab=password&legacy_admin_deleted=1", status_code=303)
+        return RedirectResponse("/admin?tab=users&user_error=last_admin", status_code=303)
+    return RedirectResponse("/admin?tab=users", status_code=303)
 
 
 @app.post("/admin/clear-ytdlp-cache")
@@ -911,27 +867,6 @@ def admin_run_cleanup_now(_=Depends(require_admin_dep)):
     except Exception:
         pass
     return RedirectResponse("/admin?tab=settings&cleanup_ran=1", status_code=303)
-
-
-@app.post("/admin/change-password")
-def admin_change_password(
-    request: Request,
-    new_username: str = Form(""),
-    new_password: str = Form(""),
-    new_password_confirm: str = Form(""),
-    db: Session = Depends(get_db),
-    _=Depends(require_admin_dep),
-):
-    if new_password or new_password_confirm:
-        if new_password != new_password_confirm:
-            return RedirectResponse("/admin?tab=password&pw_error=1", status_code=303)
-        auth.set_setting(db, "admin_password_hash", auth.pwd_context.hash(new_password))
-
-    new_username = new_username.strip()
-    if new_username:
-        auth.set_setting(db, "admin_username", new_username)
-
-    return RedirectResponse("/admin?tab=password&pw_saved=1", status_code=303)
 
 
 @app.post("/admin/settings")

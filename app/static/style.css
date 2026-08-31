@@ -470,6 +470,17 @@ button:active { transform: translateY(1px); }
   box-shadow: none;
 }
 
+.link-btn:disabled {
+  color: var(--text-dim);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.link-btn-sm {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+}
+
 .inline-form { display: inline; margin-left: 10px; }
 
 .mini-input {

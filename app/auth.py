@@ -35,50 +35,20 @@ def set_setting(db: Session, key: str, value: str):
     db.commit()
 
 
-def ensure_admin_credentials(db: Session):
-    # Once explicitly deleted (delete_legacy_admin_credentials), stay gone —
-    # without this flag, the next container restart would just recreate the
-    # default admin/admin login since admin_username would look "unset"
-    # again from ensure_admin_credentials's point of view.
-    if get_setting(db, "admin_disabled"):
-        return
-    if not get_setting(db, "admin_username"):
-        set_setting(db, "admin_username", config.DEFAULT_ADMIN_USERNAME)
-    if not get_setting(db, "admin_password_hash"):
-        set_setting(db, "admin_password_hash", pwd_context.hash(config.DEFAULT_ADMIN_PASSWORD))
-
-
-def legacy_admin_enabled(db: Session) -> bool:
-    return not get_setting(db, "admin_disabled") and bool(get_setting(db, "admin_password_hash"))
-
-
-def any_user_is_admin(db: Session) -> bool:
-    return db.query(User).filter(User.is_admin.is_(True)).count() > 0
-
-
-def delete_legacy_admin_credentials(db: Session) -> bool:
-    """Permanently disables the standalone admin/admin-style login. Refuses
-    if no site user currently has admin rights, to avoid locking the whole
-    app out of /admin."""
-    if not any_user_is_admin(db):
-        return False
-    set_setting(db, "admin_disabled", "1")
-    set_setting(db, "admin_username", "")
-    set_setting(db, "admin_password_hash", "")
-    return True
-
-
 def set_user_admin(db: Session, user_id: str, is_admin: bool) -> bool:
+    """Grants or revokes admin rights on a site user. Refuses to revoke the
+    last remaining admin, so the app can never lock itself out of /admin —
+    there's no separate admin login to fall back on."""
     user = db.get(User, user_id)
     if not user:
         return False
+    if not is_admin and user.is_admin:
+        remaining = db.query(User).filter(User.is_admin.is_(True), User.id != user_id).count()
+        if remaining == 0:
+            return False
     user.is_admin = is_admin
     db.commit()
     return True
-
-
-def get_admin_username(db: Session) -> str:
-    return get_setting(db, "admin_username", config.DEFAULT_ADMIN_USERNAME)
 
 
 def ensure_secret_key(db: Session):
@@ -88,14 +58,6 @@ def ensure_secret_key(db: Session):
 
 def get_secret_key(db: Session) -> str:
     return get_setting(db, "secret_key")
-
-
-def verify_admin_credentials(db: Session, username: str, password: str) -> bool:
-    expected_username = get_admin_username(db)
-    hash_ = get_setting(db, "admin_password_hash")
-    if not hash_ or username != expected_username:
-        return False
-    return pwd_context.verify(password, hash_)
 
 
 def get_retention_hours(db: Session) -> int:
@@ -142,17 +104,13 @@ def get_timezone(db: Session) -> str:
 
 
 def is_admin_session(request: Request, db: Session) -> bool:
-    """True if this session has admin rights — either via the legacy
-    standalone admin login, or because the site-logged-in user has been
-    granted admin rights on their own account."""
-    if request.session.get("admin"):
-        return True
+    """True if this session is logged into the site as a user with admin
+    rights — the only way into /admin, there's no separate admin login."""
     username = request.session.get("site_username")
-    if username and request.session.get("site_access"):
-        user = db.query(User).filter(User.username == username).first()
-        if user and user.is_admin:
-            return True
-    return False
+    if not username or not request.session.get("site_access"):
+        return False
+    user = db.query(User).filter(User.username == username).first()
+    return bool(user and user.is_admin)
 
 
 def require_admin(request: Request, db: Session):
@@ -183,11 +141,19 @@ def create_user(db: Session, username: str, password: str) -> User:
     return user
 
 
-def delete_user(db: Session, user_id: str):
+def delete_user(db: Session, user_id: str) -> bool:
+    """Refuses to delete the last remaining admin — same reasoning as
+    set_user_admin: there's no separate admin login to fall back on."""
     user = db.get(User, user_id)
-    if user:
-        db.delete(user)
-        db.commit()
+    if not user:
+        return False
+    if user.is_admin:
+        remaining = db.query(User).filter(User.is_admin.is_(True), User.id != user_id).count()
+        if remaining == 0:
+            return False
+    db.delete(user)
+    db.commit()
+    return True
 
 
 def reset_user_password(db: Session, user_id: str, password: str) -> bool:

@@ -10,7 +10,6 @@
   <button type="button" class="admin-tab-btn" data-tab="users">Користувачі</button>
   <button type="button" class="admin-tab-btn" data-tab="system">Система</button>
   <button type="button" class="admin-tab-btn" data-tab="settings">Налаштування</button>
-  <button type="button" class="admin-tab-btn" data-tab="password">Зміна паролю</button>
 </nav>
 
 <div class="tab-panel" data-tab-panel="stats">
@@ -146,6 +145,7 @@
     {% if request.query_params.get('user_error') == 'empty' %}<p class="error">Заповніть логін і пароль</p>{% endif %}
     {% if request.query_params.get('user_error') == 'mismatch' %}<p class="error">Паролі не співпадають</p>{% endif %}
     {% if request.query_params.get('user_error') == 'exists' %}<p class="error">Такий логін вже існує</p>{% endif %}
+    {% if request.query_params.get('user_error') == 'last_admin' %}<p class="error">Не можна прибрати права в останнього адміна — спершу надайте права комусь іншому.</p>{% endif %}
     {% if request.query_params.get('user_added') %}<p class="success">Користувача додано.</p>{% endif %}
     {% if request.query_params.get('pw_reset') %}<p class="success">Пароль користувача змінено.</p>{% endif %}
 
@@ -164,14 +164,18 @@
           <td>
             <form method="post" action="/admin/users/set-admin/{{ u.id }}" class="inline-form">
               <input type="hidden" name="make_admin" value="{{ 'false' if u.is_admin else 'true' }}">
-              <button type="submit" class="link-btn">{{ 'прибрати права адміна' if u.is_admin else 'надати права адміна' }}</button>
+              {% if u.is_admin %}
+              <button type="submit" class="link-btn" {% if admin_user_count <= 1 %}disabled title="Це останній адмін — спершу надайте права комусь іншому"{% endif %}>прибрати права адміна</button>
+              {% else %}
+              <button type="submit" class="link-btn link-btn-sm">надати права адміна</button>
+              {% endif %}
             </form>
             <form method="post" action="/admin/users/reset-password/{{ u.id }}" class="inline-form">
               <input type="password" name="new_password" class="mini-input" placeholder="новий пароль" required autocomplete="new-password">
               <button type="submit" class="link-btn">змінити пароль</button>
             </form>
             <form method="post" action="/admin/users/delete/{{ u.id }}" class="inline-form">
-              <button type="submit" class="link-btn">видалити</button>
+              <button type="submit" class="link-btn" {% if u.is_admin and admin_user_count <= 1 %}disabled title="Це останній адмін — спершу надайте права комусь іншому"{% endif %}>видалити</button>
             </form>
           </td>
         </tr>
@@ -305,42 +309,6 @@
   </section>
 </div>
 
-<div class="tab-panel" data-tab-panel="password">
-  {% if legacy_admin_enabled %}
-  <section>
-    <h2>Зміна паролю</h2>
-    {% if request.query_params.get('pw_error') %}<p class="error">Паролі не співпадають, пароль не змінено</p>{% endif %}
-    {% if request.query_params.get('pw_saved') %}<p class="success">Збережено.</p>{% endif %}
-    <form method="post" action="/admin/change-password" class="card settings-form">
-      <label>Логін адміна
-        <input type="text" name="new_username" value="{{ admin_username }}" autocomplete="username">
-      </label>
-      <label>Новий пароль адміна (залиште порожнім, щоб не змінювати)
-        <input type="password" name="new_password" autocomplete="new-password">
-      </label>
-      <label>Підтвердження нового пароля
-        <input type="password" name="new_password_confirm" autocomplete="new-password">
-      </label>
-      <button type="submit">Зберегти</button>
-    </form>
-  </section>
-
-  <section>
-    <h2>Старий адмінський логін</h2>
-    {% if request.query_params.get('legacy_admin_error') %}<p class="error">Неможливо видалити — спершу надайте права адміна хоча б одному користувачу сайту (вкладка «Користувачі»).</p>{% endif %}
-    <p class="hint">Якщо хоча б один зареєстрований користувач сайту має права адміна, цей окремий логін/пароль можна прибрати повністю — доступ до адмінки й надалі працюватиме через звичайний вхід на сайт тим користувачем. Дію не можна скасувати.</p>
-    <form method="post" action="/admin/delete-legacy-admin" class="card maintenance-actions" onsubmit="return confirm('Видалити старий адмінський логін? Це незворотно — надалі вхід в адмінку буде лише через акаунти користувачів із правами адміна.');">
-      <button type="submit" {% if not any_user_is_admin %}disabled title="Спершу надайте права адміна хоча б одному користувачу"{% endif %}>Видалити старий адмінський логін</button>
-    </form>
-  </section>
-  {% else %}
-  <section>
-    <h2>Старий адмінський логін</h2>
-    <p class="success">Старий адмінський логін вимкнено. Доступ до адмінки тепер лише через акаунти користувачів із правами адміна (вкладка «Користувачі»).</p>
-    {% if request.query_params.get('legacy_admin_deleted') %}<p class="hint">Видалено щойно.</p>{% endif %}
-  </section>
-  {% endif %}
-</div>
 {% endblock %}
 {% block scripts %}
 <script>
