@@ -116,7 +116,9 @@ body {
 .hero-title-row .back-link {
   position: fixed;
   top: 96px;
-  right: 24px;
+  /* Left third of the screen, at its right edge (i.e. right next to the
+     centered 880px .container's own left edge, half its width is 440px). */
+  left: calc(50% - 500px);
   margin-bottom: 0;
   flex-shrink: 0;
   z-index: 5;
