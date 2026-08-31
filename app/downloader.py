@@ -405,7 +405,11 @@ def _run_job(job_id: str):
             start = job.clip_start or 0
             end = job.clip_end if job.clip_end is not None else float("inf")
             ydl_opts["download_ranges"] = download_range_func([], [(start, end)])
-            ydl_opts["force_keyframes_at_cuts"] = True
+            # force_keyframes_at_cuts would make the cut frame-exact, but it
+            # does so by fully re-encoding the clip (slow, CPU-bound) instead
+            # of a stream copy. The UI only accepts whole-second timecodes
+            # anyway, so snapping to the nearest keyframe is an acceptable
+            # trade for downloads that finish in seconds instead of minutes.
 
         if job.mode == "audio":
             audio_codec = job.container if job.container in AUDIO_FORMATS else "mp3"
