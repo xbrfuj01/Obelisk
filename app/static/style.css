@@ -706,6 +706,32 @@ section h3 { margin: 22px 0 4px; font-size: 1rem; }
 .stat-value { font-size: 1.7rem; font-weight: 800; letter-spacing: -0.02em; }
 .stat-label { color: var(--text-dim); font-size: 0.82rem; }
 
+.stats-overview { display: flex; flex-direction: column; gap: 18px; }
+
+.stats-overview-group h3 {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.stats-overview-group + .stats-overview-group {
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.stats-grid.compact {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.stats-grid.compact .stat-card { padding: 12px 14px; gap: 2px; }
+.stats-grid.compact .stat-value { font-size: 1.25rem; }
+.stats-grid.compact .stat-label { font-size: 0.74rem; }
+
 .settings-group-title {
   margin: 10px 0 -6px;
   padding-top: 18px;

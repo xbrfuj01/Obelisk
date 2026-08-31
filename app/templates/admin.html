@@ -27,22 +27,25 @@
 
 <div class="tab-panel" data-tab-panel="stats">
   <section>
-    <h2>Завантаження</h2>
-    <div class="stats-grid">
-      <div class="stat-card"><span class="stat-value">{{ total }}</span><span class="stat-label">Всього завантажень</span></div>
-      <div class="stat-card"><span class="stat-value">{{ finished }}</span><span class="stat-label">Успішних</span></div>
-      <div class="stat-card"><span class="stat-value">{{ errors }}</span><span class="stat-label">Помилок</span></div>
-      <div class="stat-card"><span class="stat-value">{{ format_bytes(total_size) }}</span><span class="stat-label">Займано місця</span></div>
-    </div>
-  </section>
-
-  <section>
-    <h2>Конвертації</h2>
-    <div class="stats-grid">
-      <div class="stat-card"><span class="stat-value">{{ conversion_total }}</span><span class="stat-label">Всього конвертацій</span></div>
-      <div class="stat-card"><span class="stat-value">{{ conversion_finished }}</span><span class="stat-label">Успішних</span></div>
-      <div class="stat-card"><span class="stat-value">{{ conversion_errors }}</span><span class="stat-label">Помилок</span></div>
-      <div class="stat-card"><span class="stat-value">{{ format_bytes(conversion_total_size) }}</span><span class="stat-label">Займано місця</span></div>
+    <div class="card stats-overview">
+      <div class="stats-overview-group">
+        <h3>Завантаження</h3>
+        <div class="stats-grid compact">
+          <div class="stat-card"><span class="stat-value">{{ total }}</span><span class="stat-label">Всього завантажень</span></div>
+          <div class="stat-card"><span class="stat-value">{{ finished }}</span><span class="stat-label">Успішних</span></div>
+          <div class="stat-card"><span class="stat-value">{{ errors }}</span><span class="stat-label">Помилок</span></div>
+          <div class="stat-card"><span class="stat-value">{{ format_bytes(total_size) }}</span><span class="stat-label">Займано місця</span></div>
+        </div>
+      </div>
+      <div class="stats-overview-group">
+        <h3>Конвертації</h3>
+        <div class="stats-grid compact">
+          <div class="stat-card"><span class="stat-value">{{ conversion_total }}</span><span class="stat-label">Всього конвертацій</span></div>
+          <div class="stat-card"><span class="stat-value">{{ conversion_finished }}</span><span class="stat-label">Успішних</span></div>
+          <div class="stat-card"><span class="stat-value">{{ conversion_errors }}</span><span class="stat-label">Помилок</span></div>
+          <div class="stat-card"><span class="stat-value">{{ format_bytes(conversion_total_size) }}</span><span class="stat-label">Займано місця</span></div>
+        </div>
+      </div>
     </div>
   </section>
 
