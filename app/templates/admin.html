@@ -51,12 +51,14 @@
 
   <div class="stats-columns">
   <section>
-    <h2>Активність користувачів</h2>
-    <nav class="period-tabs">
-      {% for key, label in activity_periods %}
-        <button type="button" class="period-tab-btn" data-period="{{ key }}">{{ label }}</button>
-      {% endfor %}
-    </nav>
+    <div class="section-header-row">
+      <h2>Активність користувачів</h2>
+      <nav class="period-tabs">
+        {% for key, label in activity_periods %}
+          <button type="button" class="period-tab-btn" data-period="{{ key }}">{{ label }}</button>
+        {% endfor %}
+      </nav>
+    </div>
     {% for key, label in activity_periods %}
       <div class="table-wrap card period-panel" data-period-panel="{{ key }}">
       <table class="table">

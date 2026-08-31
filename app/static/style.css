@@ -666,6 +666,16 @@ button:active { transform: translateY(1px); }
 
 .tab-panel[hidden] { display: none; }
 
+.section-header-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+.section-header-row h2 { margin-bottom: 0; }
+.section-header-row .period-tabs { margin-top: 0; }
+
 .period-tabs {
   display: flex;
   gap: 6px;

@@ -7,10 +7,10 @@ from .models import Conversion, Download
 UNKNOWN_USER = "— (без входу)"
 
 PERIODS = [
-    ("day", "За 24 години", timedelta(hours=24)),
-    ("week", "За 7 днів", timedelta(days=7)),
-    ("month", "За 30 днів", timedelta(days=30)),
-    ("all", "За весь час", None),
+    ("day", "24 г", timedelta(hours=24)),
+    ("week", "7д", timedelta(days=7)),
+    ("month", "30д", timedelta(days=30)),
+    ("all", "весь час", None),
 ]
 
 
