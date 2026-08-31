@@ -214,6 +214,7 @@ def probe_qualities(url: str, db):
 
     # dedupe by height only: several formats (different codecs/bitrates) often
     # share the same height, and the download-side quality filter also caps by height
+    duration = (info or {}).get("duration")
     by_height = {}
     best_audio_bytes = 0
     for f in (info or {}).get("formats", []) or []:
@@ -222,6 +223,11 @@ def probe_qualities(url: str, db):
         vcodec = f.get("vcodec")
         acodec = f.get("acodec")
         fsize = f.get("filesize") or f.get("filesize_approx")
+        if not fsize and f.get("tbr") and duration:
+            # Some formats (short-form video in particular) carry a bitrate
+            # but no size at all, exact or approximate — estimate it the same
+            # way yt-dlp itself does elsewhere, so the picker isn't just blank.
+            fsize = f["tbr"] * 1000 / 8 * duration
 
         if h and vcodec not in (None, "none"):
             h = int(h)
