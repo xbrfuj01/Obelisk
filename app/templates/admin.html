@@ -85,7 +85,7 @@
       <tbody>
       {% for h in history %}
         <tr>
-          <td>{{ h.title or h.url }}</td>
+          <td><button type="button" class="table-title-btn">{{ h.title or h.url }}</button></td>
           <td>{{ h.source or '' }}</td>
           <td>{{ h.mode }}</td>
           <td><span class="badge badge-{{ h.status }}">{{ h.status }}</span></td>
@@ -93,10 +93,16 @@
           <td>{{ format_dt(h.created_at, timezone) }}</td>
           <td>{{ format_bytes(h.filesize) if h.filesize else '' }}</td>
           <td>
-            {% if h.status == 'finished' %}<a href="/api/file/{{ h.id }}">файл</a>{% endif %}
+            {% if h.status == 'finished' %}
+            <a class="row-icon-btn inline-form" href="/api/file/{{ h.id }}" title="Завантажити файл" aria-label="Завантажити файл">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+            </a>
+            {% endif %}
             {% if h.url %}<a href="{{ h.url }}" target="_blank" rel="noopener noreferrer" title="Відкрити оригінал" class="inline-form">🔍</a>{% endif %}
             <form method="post" action="/admin/delete/{{ h.id }}" class="inline-form">
-              <button type="submit" class="link-btn">видалити</button>
+              <button type="submit" class="row-icon-btn danger" title="Видалити" aria-label="Видалити">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+              </button>
             </form>
           </td>
         </tr>
@@ -116,7 +122,7 @@
       <tbody>
       {% for c in conversion_history %}
         <tr>
-          <td>{{ c.original_filename or "video" }}</td>
+          <td><button type="button" class="table-title-btn">{{ c.original_filename or "video" }}</button></td>
           <td>{{ c.quality }}</td>
           <td>{{ c.audio_option }}</td>
           <td><span class="badge badge-{{ c.status }}">{{ c.status }}</span></td>
@@ -124,9 +130,15 @@
           <td>{{ format_dt(c.created_at, timezone) }}</td>
           <td>{{ format_bytes(c.filesize) if c.filesize else '' }}</td>
           <td>
-            {% if c.status == 'finished' %}<a href="/api/convert/file/{{ c.id }}">файл</a>{% endif %}
+            {% if c.status == 'finished' %}
+            <a class="row-icon-btn inline-form" href="/api/convert/file/{{ c.id }}" title="Завантажити файл" aria-label="Завантажити файл">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+            </a>
+            {% endif %}
             <form method="post" action="/admin/delete-conversion/{{ c.id }}" class="inline-form">
-              <button type="submit" class="link-btn">видалити</button>
+              <button type="submit" class="row-icon-btn danger" title="Видалити" aria-label="Видалити">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+              </button>
             </form>
           </td>
         </tr>
@@ -580,6 +592,13 @@
   });
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && !confirmModal.hidden) closeConfirmModal();
+  });
+
+  // ---------------- Expandable history titles ----------------
+
+  document.addEventListener("click", function (e) {
+    var titleBtn = e.target.closest(".table-title-btn");
+    if (titleBtn) titleBtn.classList.toggle("expanded");
   });
 })();
 </script>

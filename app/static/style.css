@@ -833,6 +833,35 @@ section h3 { margin: 22px 0 4px; font-size: 1rem; }
   word-break: break-word;
 }
 
+/* Same truncate-then-expand-on-click behavior as .dl-title, but for a
+   plain table cell instead of a flex row — long video titles used to
+   force the whole admin history table wide enough to need horizontal
+   scrolling just to see the other columns. */
+.table-title-btn {
+  display: block;
+  width: 100%;
+  max-width: 260px;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: none;
+}
+
+.table-title-btn.expanded {
+  max-width: none;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  word-break: break-word;
+}
+
 .empty-hint {
   color: var(--text-dim);
   font-size: 0.9rem;
