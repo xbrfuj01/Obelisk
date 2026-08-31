@@ -405,11 +405,14 @@ def _run_job(job_id: str):
             start = job.clip_start or 0
             end = job.clip_end if job.clip_end is not None else float("inf")
             ydl_opts["download_ranges"] = download_range_func([], [(start, end)])
-            # force_keyframes_at_cuts would make the cut frame-exact, but it
-            # does so by fully re-encoding the clip (slow, CPU-bound) instead
-            # of a stream copy. The UI only accepts whole-second timecodes
-            # anyway, so snapping to the nearest keyframe is an acceptable
-            # trade for downloads that finish in seconds instead of minutes.
+            # Without this, ffmpeg trims via stream copy, which requires an
+            # actual keyframe inside the requested range to cut on. Short
+            # clips (YouTube Shorts, or a tight timecode range on a longer
+            # video) often have only one keyframe for the whole clip, so a
+            # stream-copy cut either fails outright ("ffmpeg exited with
+            # code ...") or silently produces a near-empty file. Re-encoding
+            # is slower but always produces a correct, complete clip.
+            ydl_opts["force_keyframes_at_cuts"] = True
 
         if job.mode == "audio":
             audio_codec = job.container if job.container in AUDIO_FORMATS else "mp3"
