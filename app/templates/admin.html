@@ -336,8 +336,8 @@
       <form method="post" action="/admin/clear-ytdlp-cache">
         <button type="submit">Очистити кеш yt-dlp</button>
       </form>
-      <form method="post" action="/admin/run-cleanup-now">
-        <button type="submit">Запустити очищення застарілих файлів зараз</button>
+      <form method="post" action="/admin/wipe-data">
+        <button type="submit">Очистити дані</button>
       </form>
     </div>
   </section>
@@ -512,7 +512,7 @@
   var TOAST_MESSAGES = {
     saved: "Налаштування збережено.",
     cache_cleared: "Кеш yt-dlp очищено.",
-    cleanup_ran: "Очищення застарілих файлів запущено.",
+    data_wiped: "Дані очищено.",
     user_added: "Користувача додано.",
     pw_reset: "Пароль користувача змінено."
   };

@@ -27,7 +27,7 @@ from .downloader import (
     clear_ytdlp_cache,
     parse_timecode,
 )
-from .cleanup import start_cleanup_thread, run_cleanup_once
+from .cleanup import start_cleanup_thread, wipe_all_data
 from . import timeutil
 from . import stats as stats_module
 from . import sysinfo
@@ -863,13 +863,13 @@ def admin_clear_ytdlp_cache(_=Depends(require_admin_dep)):
     return RedirectResponse("/admin?tab=settings&cache_cleared=1", status_code=303)
 
 
-@app.post("/admin/run-cleanup-now")
-def admin_run_cleanup_now(_=Depends(require_admin_dep)):
+@app.post("/admin/wipe-data")
+def admin_wipe_data(_=Depends(require_admin_dep)):
     try:
-        run_cleanup_once()
+        wipe_all_data()
     except Exception:
         pass
-    return RedirectResponse("/admin?tab=settings&cleanup_ran=1", status_code=303)
+    return RedirectResponse("/admin?tab=settings&data_wiped=1", status_code=303)
 
 
 @app.post("/admin/settings")
