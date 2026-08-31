@@ -580,6 +580,12 @@ button:active { transform: translateY(1px); }
 .badge-error { background: rgba(255, 107, 125, 0.15); color: var(--error); }
 .badge-downloading, .badge-converting, .badge-queued { background: rgba(91, 124, 255, 0.15); color: var(--accent); }
 
+.mode-icon {
+  display: inline-flex;
+  color: var(--text-dim);
+  vertical-align: middle;
+}
+
 .admin-header {
   display: flex;
   justify-content: space-between;
