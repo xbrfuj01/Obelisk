@@ -81,3 +81,4 @@ class User(Base):
     is_admin = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
+    last_active = Column(DateTime, nullable=True)

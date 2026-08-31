@@ -179,6 +179,36 @@ def record_login(db: Session, username: str):
         db.commit()
 
 
+# How often a logged-in user's activity timestamp actually gets written -
+# most pages fire several requests a second (status polling etc.), so
+# writing on every single one would be pure DB-write noise for a value
+# that's only ever displayed rounded to a page reload anyway.
+ACTIVITY_UPDATE_THROTTLE_SECONDS = 60
+
+# A user counts as "online" if seen within this window. Wider than the
+# throttle above so someone idling between polls doesn't flicker offline.
+ONLINE_THRESHOLD_SECONDS = 180
+
+
+def record_activity(db: Session, username: str | None):
+    if not username:
+        return
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        return
+    now = datetime.utcnow()
+    if user.last_active and (now - user.last_active).total_seconds() < ACTIVITY_UPDATE_THROTTLE_SECONDS:
+        return
+    user.last_active = now
+    db.commit()
+
+
+def is_user_online(user: User) -> bool:
+    if not user.last_active:
+        return False
+    return (datetime.utcnow() - user.last_active).total_seconds() < ONLINE_THRESHOLD_SECONDS
+
+
 def require_site_access(request: Request, db: Session):
     if is_site_gate_enabled(db) and not request.session.get("site_access"):
         raise SiteNotAuthenticated()

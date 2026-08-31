@@ -86,6 +86,7 @@ def _is_admin_request(request: Request) -> bool:
 
 
 templates.env.globals["is_admin_request"] = _is_admin_request
+templates.env.globals["is_user_online"] = auth.is_user_online
 
 
 @app.exception_handler(auth.NotAuthenticated)
@@ -122,15 +123,18 @@ def get_client_id(request: Request, response: Response) -> str:
 
 def require_site_access_page(request: Request, db: Session = Depends(get_db)):
     auth.require_site_access(request, db)
+    auth.record_activity(db, request.session.get("site_username"))
 
 
 def require_site_access_api(request: Request, db: Session = Depends(get_db)):
     if auth.is_site_gate_enabled(db) and not request.session.get("site_access"):
         raise HTTPException(status_code=401, detail="Потрібен пароль сайту")
+    auth.record_activity(db, request.session.get("site_username"))
 
 
 def require_admin_dep(request: Request, db: Session = Depends(get_db)):
     auth.require_admin(request, db)
+    auth.record_activity(db, request.session.get("site_username"))
 
 
 @app.on_event("startup")
@@ -786,6 +790,7 @@ def admin_user_activity(user_id: str, db: Session = Depends(get_db), _=Depends(r
     )
     return {
         "username": user.username,
+        "created_at": timeutil.format_local(user.created_at, tz),
         "downloads": [
             {
                 "id": h.id,
