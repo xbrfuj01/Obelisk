@@ -541,10 +541,13 @@ button:active { transform: translateY(1px); }
 
 .table th, .table td {
   text-align: left;
-  padding: 13px 20px;
+  padding: 13px 12px;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
+
+.table th:first-child, .table td:first-child { padding-left: 20px; }
+.table th:last-child, .table td:last-child { padding-right: 20px; }
 
 .table tr:last-child td { border-bottom: none; }
 .table tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
