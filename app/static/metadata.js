@@ -2,12 +2,28 @@ const form = document.getElementById("metadata-form");
 const statusBox = document.getElementById("status-box");
 const resultBox = document.getElementById("result-box");
 const fileInput = document.getElementById("file-input");
-const fileChooseBtn = document.getElementById("file-choose-btn");
-const fileNameEl = document.getElementById("file-name");
+const dropZone = document.getElementById("file-drop-zone");
+const fileDropText = document.getElementById("file-drop-text");
+const fileClearBtn = document.getElementById("file-clear-btn");
+const DEFAULT_DROP_TEXT = "Натисніть щоб завантажити або перетягніть сюди";
 
-fileChooseBtn.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    fileInput.click();
+  }
+});
+fileClearBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  fileInput.value = "";
+  fileInput.dispatchEvent(new Event("change"));
+});
 fileInput.addEventListener("change", () => {
-  fileNameEl.textContent = fileInput.files[0] ? fileInput.files[0].name : "Файл не обрано";
+  const file = fileInput.files[0];
+  fileDropText.textContent = file ? file.name : DEFAULT_DROP_TEXT;
+  fileClearBtn.hidden = !file;
+  dropZone.classList.toggle("has-file", !!file);
 });
 
 // Prevent the browser's default "navigate to the dropped file" behavior
@@ -15,29 +31,26 @@ fileInput.addEventListener("change", () => {
 window.addEventListener("dragover", (e) => e.preventDefault());
 window.addEventListener("drop", (e) => e.preventDefault());
 
-const dropZone = document.getElementById("file-drop-zone");
-if (dropZone) {
-  ["dragenter", "dragover"].forEach((evt) =>
-    dropZone.addEventListener(evt, (e) => {
-      e.preventDefault();
-      dropZone.classList.add("dragover");
-    })
-  );
-  ["dragleave", "dragend", "drop"].forEach((evt) =>
-    dropZone.addEventListener(evt, (e) => {
-      e.preventDefault();
-      dropZone.classList.remove("dragover");
-    })
-  );
-  dropZone.addEventListener("drop", (e) => {
-    const file = e.dataTransfer.files && e.dataTransfer.files[0];
-    if (!file) return;
-    const dt = new DataTransfer();
-    dt.items.add(file);
-    fileInput.files = dt.files;
-    fileInput.dispatchEvent(new Event("change"));
-  });
-}
+["dragenter", "dragover"].forEach((evt) =>
+  dropZone.addEventListener(evt, (e) => {
+    e.preventDefault();
+    dropZone.classList.add("dragover");
+  })
+);
+["dragleave", "dragend", "drop"].forEach((evt) =>
+  dropZone.addEventListener(evt, (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("dragover");
+  })
+);
+dropZone.addEventListener("drop", (e) => {
+  const file = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (!file) return;
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  fileInput.files = dt.files;
+  fileInput.dispatchEvent(new Event("change"));
+});
 
 function escapeHtml(str) {
   const div = document.createElement("div");

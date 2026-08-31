@@ -1,8 +1,10 @@
 const form = document.getElementById("convert-form");
 const statusBox = document.getElementById("status-box");
 const fileInput = document.getElementById("file-input");
-const fileChooseBtn = document.getElementById("file-choose-btn");
-const fileNameEl = document.getElementById("file-name");
+const dropZone = document.getElementById("file-drop-zone");
+const fileDropText = document.getElementById("file-drop-text");
+const fileClearBtn = document.getElementById("file-clear-btn");
+const DEFAULT_DROP_TEXT = "Натисніть щоб завантажити або перетягніть сюди";
 const advancedToggle = document.getElementById("advanced-toggle");
 const advancedWrap = document.getElementById("advanced-wrap");
 
@@ -12,7 +14,13 @@ if (advancedToggle) {
   });
 }
 
-fileChooseBtn.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    fileInput.click();
+  }
+});
 
 // Arriving via "Конвертувати" on an already-downloaded file: skip the
 // picker entirely and pre-fill the file field with that download instead
@@ -22,12 +30,25 @@ let sourceDownloadId = _params.get("from_download");
 const sourceFilename = _params.get("filename");
 if (sourceDownloadId) {
   fileInput.required = false;
-  fileNameEl.textContent = sourceFilename ? `${sourceFilename} (із завантажень)` : "Файл із завантажень";
+  fileDropText.textContent = sourceFilename ? `${sourceFilename} (із завантажень)` : "Файл із завантажень";
+  fileClearBtn.hidden = false;
+  dropZone.classList.add("has-file");
 }
+
+fileClearBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  sourceDownloadId = null;
+  fileInput.required = true;
+  fileInput.value = "";
+  fileInput.dispatchEvent(new Event("change"));
+});
 
 fileInput.addEventListener("change", () => {
   sourceDownloadId = null; // picking a file manually overrides the download source
-  fileNameEl.textContent = fileInput.files[0] ? fileInput.files[0].name : "Файл не обрано";
+  const file = fileInput.files[0];
+  fileDropText.textContent = file ? file.name : DEFAULT_DROP_TEXT;
+  fileClearBtn.hidden = !file;
+  dropZone.classList.toggle("has-file", !!file);
 });
 
 // Prevent the browser's default "navigate to the dropped file" behavior
@@ -35,29 +56,26 @@ fileInput.addEventListener("change", () => {
 window.addEventListener("dragover", (e) => e.preventDefault());
 window.addEventListener("drop", (e) => e.preventDefault());
 
-const dropZone = document.getElementById("file-drop-zone");
-if (dropZone) {
-  ["dragenter", "dragover"].forEach((evt) =>
-    dropZone.addEventListener(evt, (e) => {
-      e.preventDefault();
-      dropZone.classList.add("dragover");
-    })
-  );
-  ["dragleave", "dragend", "drop"].forEach((evt) =>
-    dropZone.addEventListener(evt, (e) => {
-      e.preventDefault();
-      dropZone.classList.remove("dragover");
-    })
-  );
-  dropZone.addEventListener("drop", (e) => {
-    const file = e.dataTransfer.files && e.dataTransfer.files[0];
-    if (!file) return;
-    const dt = new DataTransfer();
-    dt.items.add(file);
-    fileInput.files = dt.files;
-    fileInput.dispatchEvent(new Event("change"));
-  });
-}
+["dragenter", "dragover"].forEach((evt) =>
+  dropZone.addEventListener(evt, (e) => {
+    e.preventDefault();
+    dropZone.classList.add("dragover");
+  })
+);
+["dragleave", "dragend", "drop"].forEach((evt) =>
+  dropZone.addEventListener(evt, (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("dragover");
+  })
+);
+dropZone.addEventListener("drop", (e) => {
+  const file = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (!file) return;
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  fileInput.files = dt.files;
+  fileInput.dispatchEvent(new Event("change"));
+});
 
 function formatSize(bytes) {
   if (!bytes) return null;

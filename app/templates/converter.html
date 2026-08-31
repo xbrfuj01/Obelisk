@@ -10,9 +10,11 @@
 
 <form id="convert-form" class="card">
   <label>Відеофайл
-    <div class="file-input-row" id="file-drop-zone">
-      <button type="button" class="file-choose-btn" id="file-choose-btn">Обрати файл</button>
-      <span class="file-name" id="file-name">Файл не обрано або перетягніть сюди</span>
+    <div class="file-input-row">
+      <div class="file-drop-zone" id="file-drop-zone" role="button" tabindex="0" aria-label="Обрати файл">
+        <span class="file-drop-text" id="file-drop-text">Натисніть щоб завантажити або перетягніть сюди</span>
+        <button type="button" class="file-clear-btn" id="file-clear-btn" hidden title="Видалити файл" aria-label="Видалити файл"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+      </div>
       <input type="file" name="file" id="file-input" accept="video/*" required hidden>
     </div>
     <span class="hint">Максимальний розмір файлу: {{ max_upload_mb }} МБ.</span>
