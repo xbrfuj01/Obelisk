@@ -998,6 +998,44 @@ a.tool-card:hover {
 .modal-box h3 { margin: 0; font-size: 1.15rem; }
 .modal-box form { display: flex; flex-direction: column; gap: 14px; }
 
+.modal-box.wide { max-width: 640px; }
+
+.user-activity-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  box-shadow: none;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.user-activity-btn:hover { color: var(--accent); }
+
+.activity-section { display: flex; flex-direction: column; gap: 8px; }
+.activity-section h4 { margin: 0; font-size: 0.92rem; color: var(--text-dim); font-weight: 600; }
+.activity-list { max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; }
+
+.activity-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.88rem;
+}
+.activity-row:last-child { border-bottom: none; }
+.activity-row .activity-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-row .activity-date { flex: 0 0 auto; color: var(--text-dim); }
+.activity-row .activity-size { flex: 0 0 auto; color: var(--text-dim); width: 64px; text-align: right; }
+
 .modal-close {
   position: absolute;
   top: 12px;

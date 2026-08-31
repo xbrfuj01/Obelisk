@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from . import config
 from .database import init_db, SessionLocal
-from .models import Conversion, Download
+from .models import Conversion, Download, User
 from . import auth
 from . import converter
 from . import metadata_tool
@@ -760,6 +760,52 @@ def admin_sysinfo(_=Depends(require_admin_dep)):
         "memory": sysinfo.get_memory_stats(),
         "cpu_temp": sysinfo.get_cpu_temperature(),
         "network": sysinfo.get_network_stats(),
+    }
+
+
+@app.get("/admin/api/user-activity/{user_id}")
+def admin_user_activity(user_id: str, db: Session = Depends(get_db), _=Depends(require_admin_dep)):
+    user = db.get(User, user_id)
+    if not user:
+        return JSONResponse({"error": "Користувача не знайдено"}, status_code=404)
+    tz = auth.get_timezone(db)
+
+    downloads = (
+        db.query(Download)
+        .filter(Download.username == user.username)
+        .order_by(Download.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    conversions = (
+        db.query(Conversion)
+        .filter(Conversion.username == user.username)
+        .order_by(Conversion.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    return {
+        "username": user.username,
+        "downloads": [
+            {
+                "id": h.id,
+                "title": h.title or h.url,
+                "status": h.status,
+                "date": timeutil.format_local(h.created_at, tz),
+                "size": sysinfo.format_bytes(h.filesize) if h.filesize else "",
+            }
+            for h in downloads
+        ],
+        "conversions": [
+            {
+                "id": c.id,
+                "title": c.original_filename or "video",
+                "status": c.status,
+                "date": timeutil.format_local(c.created_at, tz),
+                "size": sysinfo.format_bytes(c.filesize) if c.filesize else "",
+            }
+            for c in conversions
+        ],
     }
 
 

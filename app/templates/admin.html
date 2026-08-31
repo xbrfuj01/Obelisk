@@ -178,7 +178,7 @@
       <tbody>
       {% for u in users %}
         <tr>
-          <td>{{ u.username }}</td>
+          <td><button type="button" class="user-activity-btn open-activity-modal" data-user-id="{{ u.id }}" data-username="{{ u.username }}">{{ u.username }}</button></td>
           <td>
             {% if u.is_admin %}<span class="badge badge-finished">адмін</span>{% else %}<span class="badge">користувач</span>{% endif %}
           </td>
@@ -369,6 +369,16 @@
     <div class="modal-actions">
       <button type="button" class="btn-secondary" id="confirm-modal-cancel">Скасувати</button>
       <button type="button" class="btn-primary" id="confirm-modal-ok">Підтвердити</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="activity-modal" hidden>
+  <div class="modal-box wide">
+    <button type="button" class="modal-close" id="activity-modal-close" aria-label="Закрити">&times;</button>
+    <h3>Журнал дій — <span id="activity-modal-username"></span></h3>
+    <div id="activity-modal-body">
+      <p class="hint">Завантаження...</p>
     </div>
   </div>
 </div>
@@ -605,6 +615,71 @@
   });
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && !confirmModal.hidden) closeConfirmModal();
+  });
+
+  // ---------------- Per-user activity log ----------------
+
+  var activityModal = document.getElementById("activity-modal");
+  var activityUsername = document.getElementById("activity-modal-username");
+  var activityBody = document.getElementById("activity-modal-body");
+
+  function closeActivityModal() {
+    activityModal.hidden = true;
+  }
+
+  var STATUS_LABELS_UK = {
+    finished: "готово", error: "помилка", queued: "у черзі",
+    downloading: "завантаження", converting: "конвертація", expired: "видалено"
+  };
+
+  function renderActivitySection(title, items) {
+    var rows = items.length
+      ? items.map(function (it) {
+          return '<div class="activity-row">' +
+            '<span class="badge badge-' + it.status + '">' + (STATUS_LABELS_UK[it.status] || it.status) + '</span>' +
+            '<span class="activity-title" title="' + escapeHtmlAttr(it.title) + '">' + escapeHtmlAttr(it.title) + '</span>' +
+            '<span class="activity-date">' + escapeHtmlAttr(it.date) + '</span>' +
+            '<span class="activity-size">' + escapeHtmlAttr(it.size) + '</span>' +
+            '</div>';
+        }).join("")
+      : '<p class="empty-hint">Немає записів</p>';
+    return '<div class="activity-section"><h4>' + title + ' (' + items.length + ')</h4>' +
+      '<div class="activity-list">' + rows + '</div></div>';
+  }
+
+  function escapeHtmlAttr(str) {
+    var div = document.createElement("div");
+    div.textContent = str == null ? "" : String(str);
+    return div.innerHTML;
+  }
+
+  document.querySelectorAll(".open-activity-modal").forEach(function (btn) {
+    btn.addEventListener("click", async function () {
+      activityUsername.textContent = btn.dataset.username;
+      activityBody.innerHTML = '<p class="hint">Завантаження...</p>';
+      activityModal.hidden = false;
+      try {
+        const res = await fetch("/admin/api/user-activity/" + btn.dataset.userId);
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          activityBody.innerHTML = '<p class="error">' + escapeHtmlAttr(data.error || "Помилка завантаження") + '</p>';
+          return;
+        }
+        activityBody.innerHTML =
+          renderActivitySection("Завантаження", data.downloads) +
+          renderActivitySection("Конвертації", data.conversions);
+      } catch (err) {
+        activityBody.innerHTML = '<p class="error">Помилка з\'єднання</p>';
+      }
+    });
+  });
+
+  document.getElementById("activity-modal-close").addEventListener("click", closeActivityModal);
+  activityModal.addEventListener("click", function (e) {
+    if (e.target === activityModal) closeActivityModal();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !activityModal.hidden) closeActivityModal();
   });
 
   // ---------------- Expandable history titles ----------------
