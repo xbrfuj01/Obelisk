@@ -320,7 +320,7 @@ label {
 
 .hint.hint-error { color: var(--error); opacity: 1; }
 
-.activity-modal-header { display: flex; flex-direction: column; gap: 2px; }
+.activity-modal-header { display: flex; flex-direction: column; gap: 0; }
 .activity-modal-meta { font-size: 0.68rem; }
 
 input.field-invalid {
