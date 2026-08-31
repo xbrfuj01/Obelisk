@@ -160,17 +160,34 @@
           <td>{{ format_dt(u.last_login, timezone) if u.last_login else '—' }}</td>
           <td>{{ format_dt(u.created_at, timezone) }}</td>
           <td>
-            <form method="post" action="/admin/users/set-admin/{{ u.id }}" class="inline-form">
+            <form method="post" action="/admin/users/set-admin/{{ u.id }}" class="inline-form" id="admin-form-{{ u.id }}">
               <input type="hidden" name="make_admin" value="{{ 'false' if u.is_admin else 'true' }}">
               {% if u.is_admin %}
-              <button type="submit" class="link-btn" {% if admin_user_count <= 1 %}disabled title="Це останній адмін — спершу надайте права комусь іншому"{% endif %}>прибрати права адміна</button>
+              <button type="submit" class="row-icon-btn warning" aria-label="Прибрати права адміна"
+                title="{% if admin_user_count <= 1 %}Це останній адмін — спершу надайте права комусь іншому{% else %}Прибрати права адміна{% endif %}"
+                {% if admin_user_count <= 1 %}disabled{% endif %}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5v6c0 5 3.5 9 8 11 4.5-2 8-6 8-11V5l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+              </button>
               {% else %}
-              <button type="submit" class="link-btn link-btn-sm">надати права адміна</button>
+              <button type="button" class="row-icon-btn sm open-confirm-modal" aria-label="Надати права адміна" title="Надати права адміна"
+                data-form-id="admin-form-{{ u.id }}" data-title="Надати права адміна"
+                data-text="Надати права адміністратора користувачу «{{ u.username }}»? Він отримає повний доступ до адмін-панелі.">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5v6c0 5 3.5 9 8 11 4.5-2 8-6 8-11V5l-8-3Z"/><path d="M12 8v6M9 11h6"/></svg>
+              </button>
               {% endif %}
             </form>
-            <button type="button" class="link-btn inline-form open-password-modal" data-user-id="{{ u.id }}" data-username="{{ u.username }}">змінити пароль</button>
-            <form method="post" action="/admin/users/delete/{{ u.id }}" class="inline-form">
-              <button type="submit" class="link-btn" {% if u.is_admin and admin_user_count <= 1 %}disabled title="Це останній адмін — спершу надайте права комусь іншому"{% endif %}>видалити</button>
+            <button type="button" class="row-icon-btn inline-form open-password-modal" aria-label="Змінити пароль" title="Змінити пароль"
+              data-user-id="{{ u.id }}" data-username="{{ u.username }}">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0L19 4l3 3-3.5 3.5-2.5-2.5"/></svg>
+            </button>
+            <form method="post" action="/admin/users/delete/{{ u.id }}" class="inline-form" id="delete-form-{{ u.id }}">
+              <button type="button" class="row-icon-btn danger open-confirm-modal" aria-label="Видалити"
+                title="{% if u.is_admin and admin_user_count <= 1 %}Це останній адмін — спершу надайте права комусь іншому{% else %}Видалити{% endif %}"
+                data-form-id="delete-form-{{ u.id }}" data-title="Видалити користувача"
+                data-text="Видалити користувача «{{ u.username }}»? Дію не можна скасувати."
+                {% if u.is_admin and admin_user_count <= 1 %}disabled{% endif %}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+              </button>
             </form>
           </td>
         </tr>
@@ -316,6 +333,18 @@
       <p class="error" id="password-modal-error" hidden>Паролі не співпадають</p>
       <button type="submit" class="btn-primary">Змінити</button>
     </form>
+  </div>
+</div>
+
+<div class="modal-overlay" id="confirm-modal" hidden>
+  <div class="modal-box">
+    <button type="button" class="modal-close" id="confirm-modal-close" aria-label="Закрити">&times;</button>
+    <h3 id="confirm-modal-title">Підтвердження</h3>
+    <p id="confirm-modal-text"></p>
+    <div class="modal-actions">
+      <button type="button" class="btn-secondary" id="confirm-modal-cancel">Скасувати</button>
+      <button type="button" class="btn-primary" id="confirm-modal-ok">Підтвердити</button>
+    </div>
   </div>
 </div>
 
@@ -513,6 +542,44 @@
       e.preventDefault();
       passwordError.hidden = false;
     }
+  });
+
+  // ---------------- Generic confirm modal (delete user, grant admin) ----------------
+
+  var confirmModal = document.getElementById("confirm-modal");
+  var confirmTitle = document.getElementById("confirm-modal-title");
+  var confirmText = document.getElementById("confirm-modal-text");
+  var confirmOkBtn = document.getElementById("confirm-modal-ok");
+  var pendingForm = null;
+
+  function closeConfirmModal() {
+    confirmModal.hidden = true;
+    pendingForm = null;
+  }
+
+  document.querySelectorAll(".open-confirm-modal").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      if (btn.disabled) return;
+      var form = document.getElementById(btn.dataset.formId);
+      if (!form) return;
+      pendingForm = form;
+      confirmTitle.textContent = btn.dataset.title || "Підтвердження";
+      confirmText.textContent = btn.dataset.text || "Ви впевнені?";
+      confirmModal.hidden = false;
+    });
+  });
+
+  confirmOkBtn.addEventListener("click", function () {
+    if (pendingForm) pendingForm.submit();
+    closeConfirmModal();
+  });
+  document.getElementById("confirm-modal-cancel").addEventListener("click", closeConfirmModal);
+  document.getElementById("confirm-modal-close").addEventListener("click", closeConfirmModal);
+  confirmModal.addEventListener("click", function (e) {
+    if (e.target === confirmModal) closeConfirmModal();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !confirmModal.hidden) closeConfirmModal();
   });
 })();
 </script>
