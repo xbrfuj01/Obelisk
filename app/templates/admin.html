@@ -207,7 +207,7 @@
 
     <div class="table-wrap card">
     <table class="table">
-      <thead><tr><th>Логін</th><th>Права</th><th>Останній вхід</th><th>Остання дія</th><th></th></tr></thead>
+      <thead><tr><th>Логін</th><th>Права</th><th>Остання дія</th><th></th></tr></thead>
       <tbody>
       {% for u in users %}
         <tr>
@@ -215,7 +215,6 @@
           <td>
             {% if u.is_admin %}<span class="badge badge-finished">адмін</span>{% else %}<span class="badge">користувач</span>{% endif %}
           </td>
-          <td>{{ format_dt(u.last_login, timezone) if u.last_login else '—' }}</td>
           <td>{{ format_dt(u.last_active, timezone) if u.last_active else '—' }}</td>
           <td>
             <form method="post" action="/admin/users/set-admin/{{ u.id }}" class="inline-form" id="admin-form-{{ u.id }}">
@@ -250,7 +249,7 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="5">Ще немає користувачів — сайт відкритий для всіх</td></tr>
+        <tr><td colspan="4">Ще немає користувачів — сайт відкритий для всіх</td></tr>
       {% endfor %}
       </tbody>
     </table>
@@ -423,6 +422,7 @@
     <button type="button" class="modal-close" id="activity-modal-close" aria-label="Закрити">&times;</button>
     <h3>Журнал дій — <span id="activity-modal-username"></span></h3>
     <p class="hint" id="activity-modal-created"></p>
+    <p class="hint" id="activity-modal-login"></p>
     <div id="activity-modal-body">
       <p class="hint">Завантаження...</p>
     </div>
@@ -693,6 +693,7 @@
   var activityModal = document.getElementById("activity-modal");
   var activityUsername = document.getElementById("activity-modal-username");
   var activityCreated = document.getElementById("activity-modal-created");
+  var activityLogin = document.getElementById("activity-modal-login");
   var activityBody = document.getElementById("activity-modal-body");
 
   function closeActivityModal() {
@@ -741,6 +742,7 @@
     btn.addEventListener("click", async function () {
       activityUsername.textContent = btn.dataset.username;
       activityCreated.textContent = "";
+      activityLogin.textContent = "";
       activityBody.innerHTML = '<p class="hint">Завантаження...</p>';
       activityModal.hidden = false;
       try {
@@ -751,6 +753,7 @@
           return;
         }
         activityCreated.textContent = "Створено: " + data.created_at;
+        activityLogin.textContent = "Авторизація: " + (data.last_login || "—");
         activityBody.innerHTML =
           renderActivitySection("Завантаження", data.downloads) +
           renderActivitySection("Конвертації", data.conversions);

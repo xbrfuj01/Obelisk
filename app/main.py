@@ -791,6 +791,7 @@ def admin_user_activity(user_id: str, db: Session = Depends(get_db), _=Depends(r
     return {
         "username": user.username,
         "created_at": timeutil.format_local(user.created_at, tz),
+        "last_login": timeutil.format_local(user.last_login, tz) if user.last_login else None,
         "downloads": [
             {
                 "id": h.id,
