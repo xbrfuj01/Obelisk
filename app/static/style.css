@@ -582,6 +582,8 @@ button:active { transform: translateY(1px); }
 
 .mode-icon {
   display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--text-dim);
   vertical-align: middle;
 }
