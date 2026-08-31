@@ -19,25 +19,25 @@ def run_cleanup_once():
     try:
         retention_hours = auth.get_retention_hours(db)
         cutoff = datetime.utcnow() - timedelta(hours=retention_hours)
-        for model in (Download, Conversion):
+        # "error" is included alongside "finished": a failed download/conversion
+        # still leaves its whole working directory behind (partial fragments,
+        # a half-written output file, ...) since nothing else ever removes it -
+        # only job.filepath (never set on failure) was swept before, so those
+        # never actually got cleaned up.
+        for model, subdir in ((Download, None), (Conversion, "converts")):
             expired = (
                 db.query(model)
-                .filter(model.status == "finished")
+                .filter(model.status.in_(("finished", "error")))
                 .filter(model.finished_at.isnot(None))
                 .filter(model.finished_at < cutoff)
                 .all()
             )
             for job in expired:
-                if job.filepath and os.path.exists(job.filepath):
-                    try:
-                        os.remove(job.filepath)
-                        parent = os.path.dirname(job.filepath)
-                        if os.path.isdir(parent) and not os.listdir(parent):
-                            os.rmdir(parent)
-                    except OSError:
-                        pass
-                job.filepath = None
-                job.status = "expired"
+                job_dir = os.path.join(config.DOWNLOAD_DIR, subdir, job.id) if subdir else os.path.join(config.DOWNLOAD_DIR, job.id)
+                shutil.rmtree(job_dir, ignore_errors=True)
+                if job.status == "finished":
+                    job.filepath = None
+                    job.status = "expired"
         db.commit()
     finally:
         db.close()
