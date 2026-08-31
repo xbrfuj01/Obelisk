@@ -296,25 +296,37 @@
 
 <div class="tab-panel" data-tab-panel="settings">
   <section>
+    <h2>Обслуговування</h2>
+    <div class="card maintenance-actions">
+      <form method="post" action="/admin/clear-ytdlp-cache">
+        <button type="submit">Очистити кеш yt-dlp</button>
+      </form>
+      <form method="post" action="/admin/wipe-data">
+        <button type="submit">Очистити дані</button>
+      </form>
+    </div>
+  </section>
+
+  <section>
     <h2>Налаштування</h2>
     <form method="post" action="/admin/settings" class="card settings-form">
 
       <p class="settings-group-title">Завантаження</p>
-      <div class="grid-2">
-        <label>Автовидалення файлів через (годин)
+      <div class="grid-3">
+        <label>Автоочищення (г)
           <input type="number" name="retention_hours" value="{{ retention_hours }}" min="1" required>
         </label>
-        <label>Перевіряти застарілі файли кожні (хвилин)
+        <label>Перевіряти застарілі файли (хв)
           <input type="number" name="cleanup_interval_minutes" value="{{ cleanup_interval_minutes }}" min="1" required>
         </label>
+        <label>Максимум одночасних завантажень
+          <input type="number" name="max_concurrent_downloads" value="{{ max_concurrent_downloads }}" min="1" required>
+        </label>
       </div>
-      <label>Максимум одночасних завантажень
-        <input type="number" name="max_concurrent_downloads" value="{{ max_concurrent_downloads }}" min="1" required>
-      </label>
 
       <p class="settings-group-title">Конвертер відео</p>
       <div class="grid-2">
-        <label>Максимум одночасних конвертацій <span class="hint">— кодування навантажує CPU, тримайте невисоким</span>
+        <label>Максимум одночасних конвертацій
           <input type="number" name="max_concurrent_conversions" value="{{ max_concurrent_conversions }}" min="1" required>
         </label>
         <label>Максимальний розмір файлу для завантаження (МБ)
@@ -322,19 +334,24 @@
         </label>
       </div>
 
-      <p class="settings-group-title">Часовий пояс</p>
-      <label>Часовий пояс для відображення дат/часу
-        <select name="timezone">
-          {% for tz in timezones %}
-            <option value="{{ tz }}" {% if tz == timezone %}selected{% endif %}>{{ tz }}</option>
-          {% endfor %}
-        </select>
-      </label>
-
-      <p class="settings-group-title">Сесія</p>
-      <label>Тривалість входу на пристрої (днів) <span class="hint">— застосується після перезапуску контейнера</span>
-        <input type="number" name="session_max_age_days" value="{{ session_max_age_days }}" min="1" required>
-      </label>
+      <div class="grid-2">
+        <div>
+          <p class="settings-group-title">Часовий пояс</p>
+          <label>Часовий пояс для відображення дат/часу
+            <select name="timezone">
+              {% for tz in timezones %}
+                <option value="{{ tz }}" {% if tz == timezone %}selected{% endif %}>{{ tz }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <div>
+          <p class="settings-group-title">Сесія</p>
+          <label>Тривалість входу на пристрої (днів) <span class="hint">— застосується після перезапуску контейнера</span>
+            <input type="number" name="session_max_age_days" value="{{ session_max_age_days }}" min="1" required>
+          </label>
+        </div>
+      </div>
 
       <p class="settings-group-title">Проксі для заблокованих сайтів</p>
       <label>Адреса проксі (напр. socks5h://user:pass@host:1080)
@@ -346,18 +363,6 @@
 
       <button type="submit">Зберегти</button>
     </form>
-  </section>
-
-  <section>
-    <h2>Обслуговування</h2>
-    <div class="card maintenance-actions">
-      <form method="post" action="/admin/clear-ytdlp-cache">
-        <button type="submit">Очистити кеш yt-dlp</button>
-      </form>
-      <form method="post" action="/admin/wipe-data">
-        <button type="submit">Очистити дані</button>
-      </form>
-    </div>
   </section>
 </div>
 
