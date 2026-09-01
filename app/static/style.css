@@ -97,7 +97,7 @@ body {
 .admin-link:hover { background: var(--bg-card); color: var(--text); }
 
 .container {
-  max-width: 880px;
+  max-width: 1080px;
   margin: 0 auto;
   padding: 40px 24px 80px;
 }
@@ -117,14 +117,14 @@ body {
   position: fixed;
   top: 96px;
   /* Left third of the screen, at its right edge (i.e. right next to the
-     centered 880px .container's own left edge, half its width is 440px). */
-  left: calc(50% - 500px);
+     centered 1080px .container's own left edge, half its width is 540px). */
+  left: calc(50% - 600px);
   margin-bottom: 0;
   flex-shrink: 0;
   z-index: 5;
 }
 
-@media (max-width: 1000px) {
+@media (max-width: 1200px) {
   /* No room for a floating corner button once the content column takes up
      most of the viewport - just hide it (the topbar's Obelisk logo still
      links home). */
@@ -673,6 +673,8 @@ button:active { transform: translateY(1px); }
   align-items: center;
 }
 
+.admin-header-title { display: flex; align-items: center; gap: 10px; }
+
 .admin-header a {
   color: var(--text-dim);
   text-decoration: none;
@@ -680,6 +682,29 @@ button:active { transform: translateY(1px); }
 }
 
 .admin-header a:hover { color: var(--text); }
+
+.admin-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0;
+  box-shadow: none;
+}
+
+.admin-refresh-btn:hover { color: var(--text); border-color: var(--border-hover); }
+
+.admin-refresh-btn.spinning svg { animation: admin-refresh-spin 0.7s linear infinite; }
+
+@keyframes admin-refresh-spin {
+  to { transform: rotate(360deg); }
+}
 
 .admin-tabs {
   display: flex;

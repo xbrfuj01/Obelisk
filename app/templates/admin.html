@@ -14,7 +14,12 @@
 
 {% block content %}
 <div class="admin-header">
-  <h1>Адмін-панель</h1>
+  <div class="admin-header-title">
+    <h1>Адмін-панель</h1>
+    <button type="button" class="admin-refresh-btn" id="admin-refresh-btn" title="Оновити дані" aria-label="Оновити дані">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+    </button>
+  </div>
   <a href="/admin/logout">Вийти</a>
 </div>
 
@@ -500,6 +505,11 @@
       activate(btn.dataset.tab);
       if (btn.dataset.tab === "system") startSysinfoPolling();
       else stopSysinfoPolling();
+      // Keep the URL's ?tab= in sync so a page refresh lands back on the
+      // same tab instead of always bouncing to the default (stats).
+      var tabUrl = new URL(window.location.href);
+      tabUrl.searchParams.set("tab", btn.dataset.tab);
+      window.history.replaceState({}, "", tabUrl);
     });
   });
 
@@ -517,8 +527,11 @@
     periodPanels.forEach(function (p) { p.hidden = p.dataset.periodPanel !== period; });
   }
 
-  periodBtns.forEach(function (btn) {
-    btn.addEventListener("click", function () { activatePeriod(btn.dataset.period); });
+  // Delegated (not a per-button forEach) so it keeps working after the
+  // refresh button swaps in fresh period-tab buttons.
+  document.addEventListener("click", function (e) {
+    var periodBtn = e.target.closest(".period-tab-btn");
+    if (periodBtn) activatePeriod(periodBtn.dataset.period);
   });
 
   if (periodBtns.length) activatePeriod(periodBtns[0].dataset.period);
@@ -601,16 +614,16 @@
     passwordModal.hidden = true;
   }
 
-  document.querySelectorAll(".open-password-modal").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      passwordForm.action = "/admin/users/reset-password/" + btn.dataset.userId;
-      passwordUsername.textContent = "Користувач: " + btn.dataset.username;
-      passwordNew.value = "";
-      passwordConfirm.value = "";
-      passwordError.hidden = true;
-      passwordModal.hidden = false;
-      passwordNew.focus();
-    });
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest(".open-password-modal");
+    if (!btn) return;
+    passwordForm.action = "/admin/users/reset-password/" + btn.dataset.userId;
+    passwordUsername.textContent = "Користувач: " + btn.dataset.username;
+    passwordNew.value = "";
+    passwordConfirm.value = "";
+    passwordError.hidden = true;
+    passwordModal.hidden = false;
+    passwordNew.focus();
   });
 
   document.getElementById("password-modal-close").addEventListener("click", closePasswordModal);
@@ -635,8 +648,8 @@
     addUserModal.hidden = true;
   }
 
-  document.querySelectorAll(".open-add-user-modal").forEach(function (btn) {
-    btn.addEventListener("click", function () { addUserModal.hidden = false; });
+  document.addEventListener("click", function (e) {
+    if (e.target.closest(".open-add-user-modal")) addUserModal.hidden = false;
   });
 
   document.getElementById("add-user-modal-close").addEventListener("click", closeAddUserModal);
@@ -665,16 +678,15 @@
     pendingForm = null;
   }
 
-  document.querySelectorAll(".open-confirm-modal").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      if (btn.disabled) return;
-      var form = document.getElementById(btn.dataset.formId);
-      if (!form) return;
-      pendingForm = form;
-      confirmTitle.textContent = btn.dataset.title || "Підтвердження";
-      confirmText.textContent = btn.dataset.text || "Ви впевнені?";
-      confirmModal.hidden = false;
-    });
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest(".open-confirm-modal");
+    if (!btn || btn.disabled) return;
+    var form = document.getElementById(btn.dataset.formId);
+    if (!form) return;
+    pendingForm = form;
+    confirmTitle.textContent = btn.dataset.title || "Підтвердження";
+    confirmText.textContent = btn.dataset.text || "Ви впевнені?";
+    confirmModal.hidden = false;
   });
 
   confirmOkBtn.addEventListener("click", function () {
@@ -740,29 +752,29 @@
     return div.innerHTML;
   }
 
-  document.querySelectorAll(".open-activity-modal").forEach(function (btn) {
-    btn.addEventListener("click", async function () {
-      activityUsername.textContent = btn.dataset.username;
-      activityCreated.textContent = "";
-      activityLogin.textContent = "";
-      activityBody.innerHTML = '<p class="hint">Завантаження...</p>';
-      activityModal.hidden = false;
-      try {
-        const res = await fetch("/admin/api/user-activity/" + btn.dataset.userId);
-        const data = await res.json();
-        if (!res.ok || data.error) {
-          activityBody.innerHTML = '<p class="error">' + escapeHtmlAttr(data.error || "Помилка завантаження") + '</p>';
-          return;
-        }
-        activityCreated.textContent = "Створено: " + data.created_at;
-        activityLogin.textContent = "Авторизація: " + (data.last_login || "—");
-        activityBody.innerHTML =
-          renderActivitySection("Завантаження", data.downloads) +
-          renderActivitySection("Конвертації", data.conversions);
-      } catch (err) {
-        activityBody.innerHTML = '<p class="error">Помилка з\'єднання</p>';
+  document.addEventListener("click", async function (e) {
+    var btn = e.target.closest(".open-activity-modal");
+    if (!btn) return;
+    activityUsername.textContent = btn.dataset.username;
+    activityCreated.textContent = "";
+    activityLogin.textContent = "";
+    activityBody.innerHTML = '<p class="hint">Завантаження...</p>';
+    activityModal.hidden = false;
+    try {
+      const res = await fetch("/admin/api/user-activity/" + btn.dataset.userId);
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        activityBody.innerHTML = '<p class="error">' + escapeHtmlAttr(data.error || "Помилка завантаження") + '</p>';
+        return;
       }
-    });
+      activityCreated.textContent = "Створено: " + data.created_at;
+      activityLogin.textContent = "Авторизація: " + (data.last_login || "—");
+      activityBody.innerHTML =
+        renderActivitySection("Завантаження", data.downloads) +
+        renderActivitySection("Конвертації", data.conversions);
+    } catch (err) {
+      activityBody.innerHTML = '<p class="error">Помилка з\'єднання</p>';
+    }
   });
 
   document.getElementById("activity-modal-close").addEventListener("click", closeActivityModal);
@@ -779,6 +791,43 @@
     var titleBtn = e.target.closest(".table-title-btn");
     if (titleBtn) titleBtn.classList.toggle("expanded");
   });
+
+  // ---------------- Refresh data (no page reload) ----------------
+
+  var refreshBtn = document.getElementById("admin-refresh-btn");
+
+  async function refreshTabData() {
+    if (!refreshBtn || refreshBtn.classList.contains("spinning")) return;
+    refreshBtn.classList.add("spinning");
+    try {
+      const res = await fetch(window.location.pathname + window.location.search);
+      if (!res.ok) return;
+      const html = await res.text();
+      const fresh = new DOMParser().parseFromString(html, "text/html");
+
+      // Swap each tab's content in place, leaving this document's own
+      // hidden/active state (which tab is currently shown) untouched.
+      panels.forEach(function (panel) {
+        var freshPanel = fresh.querySelector('.tab-panel[data-tab-panel="' + panel.dataset.tabPanel + '"]');
+        if (freshPanel) panel.innerHTML = freshPanel.innerHTML;
+      });
+
+      // These re-derive their target elements by querying the DOM (or by
+      // id), so they pick up the freshly swapped-in nodes on their own -
+      // all the click handlers above are delegated on `document`, so no
+      // rewiring is needed for the new buttons/rows either.
+      periodBtns = document.querySelectorAll(".period-tab-btn");
+      periodPanels = document.querySelectorAll(".period-panel");
+      if (periodBtns.length) activatePeriod(periodBtns[0].dataset.period);
+      if (sysinfoTimer) refreshSysinfo();
+    } catch (err) {
+      // ignore — keep showing what's already there
+    } finally {
+      refreshBtn.classList.remove("spinning");
+    }
+  }
+
+  if (refreshBtn) refreshBtn.addEventListener("click", refreshTabData);
 })();
 </script>
 {% endblock %}
