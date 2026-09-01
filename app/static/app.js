@@ -212,10 +212,29 @@ updateVisibility();
 let lastProbedUrl = "";
 let probeTimer = null;
 
+// Resets everything that only makes sense for the *previous* video - a
+// clip range or subtitle language from one video is meaningless (and the
+// clip range could even be invalid, e.g. longer than the new video) once
+// the URL points somewhere else, and "compatibility mode" shouldn't carry
+// over as a silent, easy-to-miss quality cap on an unrelated download.
+function resetPerVideoOptions() {
+  clipStartInput.value = "";
+  clipEndInput.value = "";
+  updateClipValidity();
+
+  lastSubtitles = [];
+  renderSubtitleOptions();
+  updateSubtitleAvailability();
+
+  const premiereCompatInput = premiereCompatWrap && premiereCompatWrap.querySelector('input[type="checkbox"]');
+  if (premiereCompatInput) premiereCompatInput.checked = false;
+}
+
 async function probeQualities() {
   const url = urlInput.value.trim();
   if (!url || !url.startsWith("http") || url === lastProbedUrl) return;
   lastProbedUrl = url;
+  resetPerVideoOptions();
 
   urlStatus.innerHTML = '<span class="spinner"></span>';
   urlStatus.className = "url-status loading";
@@ -269,10 +288,8 @@ if (urlClearBtn) {
     urlInput.value = "";
     lastProbedUrl = "";
     lastQualities = [];
-    lastSubtitles = [];
     qualitySelect.innerHTML = '<option value="best">Найкраща доступна</option>';
-    renderSubtitleOptions();
-    updateSubtitleAvailability();
+    resetPerVideoOptions();
     urlStatus.innerHTML = "";
     urlStatus.className = "url-status";
     qualityHint.textContent = "Встав посилання, щоб побачити реальні доступні роздільні здатності (в т.ч. 4K/8K)";
