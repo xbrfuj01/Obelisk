@@ -282,6 +282,12 @@ def probe_qualities(url: str, db):
         "noplaylist": True,
         "skip_download": True,
         "extractor_args": YOUTUBE_EXTRACTOR_ARGS,
+        # Solving YouTube's JS challenge needs the actual challenge-solving
+        # script (EJS) - yt-dlp-ejs (installed in the image) should provide
+        # it locally, but allow fetching it from yt-dlp's own GitHub as a
+        # fallback rather than silently failing if that package ever falls
+        # out of sync with the yt-dlp version.
+        "remote_components": {"ejs:github"},
     }
     if _should_use_proxy(url, db):
         ydl_opts["proxy"] = auth.get_proxy_url(db)
@@ -514,6 +520,12 @@ def _run_job(job_id: str):
             "logger": log_capture,
             "progress_hooks": [lambda d: _progress_hook(job_id, d, progress_state)],
             "extractor_args": YOUTUBE_EXTRACTOR_ARGS,
+        # Solving YouTube's JS challenge needs the actual challenge-solving
+        # script (EJS) - yt-dlp-ejs (installed in the image) should provide
+        # it locally, but allow fetching it from yt-dlp's own GitHub as a
+        # fallback rather than silently failing if that package ever falls
+        # out of sync with the yt-dlp version.
+        "remote_components": {"ejs:github"},
         }
         if _should_use_proxy(job.url, db):
             ydl_opts["proxy"] = auth.get_proxy_url(db)

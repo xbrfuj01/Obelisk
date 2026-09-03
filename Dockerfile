@@ -23,7 +23,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Docker layer cache. CACHEBUST is passed as a unique value per build.
 ARG CACHEBUST=1
 RUN echo "cachebust=${CACHEBUST}" \
-    && pip install --no-cache-dir --upgrade yt-dlp bgutil-ytdlp-pot-provider \
+    && pip install --no-cache-dir --upgrade yt-dlp yt-dlp-ejs bgutil-ytdlp-pot-provider \
     && cpanm --notest Image::ExifTool
 
 COPY app ./app
