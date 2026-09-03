@@ -51,6 +51,16 @@ class _ConcurrencyGate:
 
 _gate = _ConcurrencyGate()
 
+# Same idea as downloader.py's: a queued job checks this once it gets its
+# concurrency slot, and a running one is caught inside _run_ffmpeg's line
+# loop (which, reading ffmpeg's own -progress stream, gets a chance to
+# check several times a second).
+_cancel_requested = set()
+
+
+def request_cancel(job_id: str):
+    _cancel_requested.add(job_id)
+
 
 def _parse_fps(rate: str):
     try:
@@ -245,7 +255,12 @@ def _run_ffmpeg(cmd, job_id, duration):
         watchdog.daemon = True
         watchdog.start()
 
+        cancelled = False
         for raw_line in proc.stdout:
+            if job_id in _cancel_requested:
+                cancelled = True
+                proc.kill()
+                break
             line = raw_line.strip()
             if not line:
                 continue
@@ -278,6 +293,8 @@ def _run_ffmpeg(cmd, job_id, duration):
                 log_tail.append(line)
                 del log_tail[:-20]
         proc.wait()
+        if cancelled:
+            return "cancelled", ""
         if timed_out:
             log_tail.append(f"ffmpeg перевищив ліміт часу ({FFMPEG_TIMEOUT_SECONDS // 3600} год) і був примусово зупинений")
             return 1, "\n".join(log_tail)
@@ -298,6 +315,15 @@ def _run_job(job_id: str, input_path: str, info: dict):
     limit = auth.get_max_concurrent_conversions(db)
     _gate.acquire(limit)
     try:
+        if job_id in _cancel_requested:
+            # Cancelled while it was still waiting for a concurrency slot -
+            # never actually started, so there's nothing to abort mid-flight.
+            job.status = "cancelled"
+            job.eta_seconds = None
+            job.finished_at = datetime.utcnow()
+            db.commit()
+            return
+
         job.status = "converting"
         db.commit()
 
@@ -314,13 +340,25 @@ def _run_job(job_id: str, input_path: str, info: dict):
         cmd = _build_ffmpeg_cmd(input_path, output_path, job.quality, job.audio_option, fps, has_audio, video_bitrate)
         returncode, log_tail = _run_ffmpeg(cmd, job_id, duration)
 
-        if returncode != 0 and job.audio_option == "original":
+        if returncode != 0 and returncode != "cancelled" and job.audio_option == "original":
             # Stream-copying the source audio into an MP4 container can fail
             # outright for codecs MP4 can't hold (e.g. Vorbis/Opus from a
             # webm source) - fall back to a real AAC re-encode once instead
             # of just surfacing an error for something we can recover from.
             cmd = _build_ffmpeg_cmd(input_path, output_path, job.quality, "aac", fps, has_audio, video_bitrate)
             returncode, log_tail = _run_ffmpeg(cmd, job_id, duration)
+
+        if returncode == "cancelled":
+            if os.path.exists(output_path):
+                try:
+                    os.remove(output_path)
+                except OSError:
+                    pass
+            job.status = "cancelled"
+            job.eta_seconds = None
+            job.finished_at = datetime.utcnow()
+            db.commit()
+            return
 
         if returncode != 0 or not os.path.exists(output_path):
             raise RuntimeError(log_tail[-500:] if log_tail else "Помилка конвертації ffmpeg")
@@ -344,6 +382,7 @@ def _run_job(job_id: str, input_path: str, info: dict):
                 os.remove(input_path)
             except OSError:
                 pass
+        _cancel_requested.discard(job_id)
         _gate.release()
         db.close()
 

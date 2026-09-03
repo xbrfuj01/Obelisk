@@ -13,6 +13,7 @@
   var everSucceeded = false;
 
   var DOWNLOAD_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
+  var CANCEL_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
 
   function escapeHtml(str) {
     var div = document.createElement("div");
@@ -43,6 +44,7 @@
   function statusSymbol(status) {
     if (status === "finished") return "✓";
     if (status === "error") return "✕";
+    if (status === "cancelled") return "⊘";
     if (status === "downloading" || status === "converting") return '<span class="spinner"></span>';
     if (status === "queued") return "⏳";
     return "–";
@@ -52,13 +54,18 @@
     var isActive = !!ACTIVE_STATUSES[item.status];
     var fileUrl = item.kind === "download" ? "/api/file/" + item.id : "/api/convert/file/" + item.id;
     var metaBits = [];
-    if (isActive && item.eta_seconds != null) metaBits.push(formatEta(item.eta_seconds) + " до завершення");
+    if (item.status === "queued") metaBits.push("У черзі");
+    else if (isActive && item.eta_seconds != null) metaBits.push(formatEta(item.eta_seconds) + " до завершення");
     if (item.status === "finished" && item.filesize) metaBits.push(formatSize(item.filesize));
     if (item.status === "error") metaBits.push("Помилка");
+    if (item.status === "cancelled") metaBits.push("Скасовано");
 
-    var link = item.status === "finished"
-      ? '<a href="' + fileUrl + '" class="processes-row-link" title="Завантажити файл" aria-label="Завантажити файл">' + DOWNLOAD_ICON + '</a>'
-      : "";
+    var action = "";
+    if (item.status === "finished") {
+      action = '<a href="' + fileUrl + '" class="processes-row-link" title="Завантажити файл" aria-label="Завантажити файл">' + DOWNLOAD_ICON + '</a>';
+    } else if (isActive) {
+      action = '<button type="button" class="processes-row-link cancel" data-cancel-kind="' + item.kind + '" data-cancel-id="' + item.id + '" title="Скасувати" aria-label="Скасувати">' + CANCEL_ICON + '</button>';
+    }
     var progressBar = isActive
       ? '<div class="progress"><div class="progress-bar' + (item.progress ? '' : ' indeterminate') + '" style="width:' + (item.progress || 0) + '%"></div></div>'
       : "";
@@ -67,7 +74,7 @@
       '<div class="processes-row-top">' +
         '<span class="status-icon status-' + item.status + '">' + statusSymbol(item.status) + '</span>' +
         '<span class="processes-row-title" title="' + escapeHtml(item.title) + '">' + escapeHtml(item.title) + '</span>' +
-        link +
+        action +
       '</div>' +
       (metaBits.length ? '<span class="processes-row-meta">' + escapeHtml(metaBits.join(" · ")) + '</span>' : "") +
       progressBar +
@@ -135,6 +142,22 @@
   });
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && !panel.hidden) closePanel();
+  });
+
+  list.addEventListener("click", async function (e) {
+    var cancelBtn = e.target.closest(".processes-row-link.cancel");
+    if (!cancelBtn) return;
+    e.stopPropagation();
+    cancelBtn.disabled = true;
+    var url = cancelBtn.dataset.cancelKind === "download"
+      ? "/api/cancel/" + cancelBtn.dataset.cancelId
+      : "/api/convert/cancel/" + cancelBtn.dataset.cancelId;
+    try {
+      await fetch(url, { method: "POST" });
+    } catch (err) {
+      // ignore — refresh() below will just show whatever state actually stuck
+    }
+    refresh();
   });
 
   refresh();

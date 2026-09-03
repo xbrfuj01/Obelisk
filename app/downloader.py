@@ -1,6 +1,7 @@
 import ipaddress
 import os
 import re
+import shutil
 import socket
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -123,6 +124,16 @@ class _ConcurrencyGate:
 
 
 _gate = _ConcurrencyGate()
+
+# job_ids the user has asked to cancel. A queued job checks this right after
+# acquiring its concurrency slot (and skips running yt-dlp at all); an
+# in-progress one is caught by the progress hook, which fires often enough
+# for this to feel roughly instant.
+_cancel_requested = set()
+
+
+def request_cancel(job_id: str):
+    _cancel_requested.add(job_id)
 
 
 def clear_ytdlp_cache():
@@ -340,6 +351,13 @@ def _combine_leg_progress(leg: int, leg_pct: float) -> float:
 
 
 def _progress_hook(job_id, d, state):
+    if job_id in _cancel_requested:
+        # yt_dlp.utils.DownloadCancelled is the library's own supported way
+        # to abort mid-download from inside a progress hook - unlike a plain
+        # exception, it's guaranteed not to get swallowed as "a hook errored,
+        # ignoring it" and actually propagates out of extract_info().
+        from yt_dlp.utils import DownloadCancelled
+        raise DownloadCancelled("cancelled by user")
     db = SessionLocal()
     try:
         job = db.get(Download, job_id)
@@ -385,6 +403,12 @@ def _run_job(job_id: str):
     limit = auth.get_max_concurrent_downloads(db)
     _gate.acquire(limit)
     try:
+        if job_id in _cancel_requested:
+            # Cancelled while it was still waiting for a concurrency slot -
+            # never actually started, so there's nothing to abort mid-flight.
+            _update(db, job, status="cancelled", eta_seconds=None, finished_at=datetime.utcnow())
+            return
+
         if not is_url_allowed(job.url, db):
             raise RuntimeError("Це посилання вказує на заборонену адресу")
 
@@ -491,7 +515,16 @@ def _run_job(job_id: str):
             finished_at=datetime.utcnow(),
         )
     except Exception as e:
-        _update(db, job, status="error", eta_seconds=None, error_message=str(e)[:500], finished_at=datetime.utcnow())
+        if job_id in _cancel_requested:
+            _update(db, job, status="cancelled", eta_seconds=None, finished_at=datetime.utcnow())
+        else:
+            _update(db, job, status="error", eta_seconds=None, error_message=str(e)[:500], finished_at=datetime.utcnow())
+        # Partial output from an aborted download shouldn't linger forever -
+        # let the cleanup path treat it the same as any other dead job.
+        out_dir = os.path.join(config.DOWNLOAD_DIR, job_id)
+        if job_id in _cancel_requested and os.path.isdir(out_dir):
+            shutil.rmtree(out_dir, ignore_errors=True)
     finally:
+        _cancel_requested.discard(job_id)
         _gate.release()
         db.close()

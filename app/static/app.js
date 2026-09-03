@@ -380,6 +380,10 @@ function pollStatus(id, estimatedBytes, isClipped) {
         statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка завантаження: ${escapeHtml(job.error || "невідома помилка")}</p></div>`;
         clearInterval(interval);
         refreshRecent();
+      } else if (job.status === "cancelled") {
+        statusBox.innerHTML = `<div class="card status-card"><p>Завантаження скасовано.</p></div>`;
+        clearInterval(interval);
+        refreshRecent();
       } else if (isClipped) {
         // yt-dlp never reports incremental progress while cutting a clip —
         // only a single event once it's fully done — so a real percentage
@@ -403,9 +407,12 @@ function pollStatus(id, estimatedBytes, isClipped) {
   }, 1500);
 }
 
+const CANCELLABLE_STATUSES = { queued: true, downloading: true };
+
 function statusIcon(status) {
   if (status === "finished") return "✓";
   if (status === "error") return "✕";
+  if (status === "cancelled") return "⊘";
   if (status === "downloading") return '<span class="spinner"></span>';
   if (status === "queued") return "⏳";
   return "–";
@@ -416,6 +423,8 @@ function escapeHtml(str) {
   div.textContent = str == null ? "" : String(str);
   return div.innerHTML;
 }
+
+const CANCEL_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
 
 function renderRow(r) {
   let btn;
@@ -431,9 +440,15 @@ function renderRow(r) {
   const sourceLink = r.url
     ? `<a class="dl-source-btn" href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer" title="Відкрити оригінал">🔍</a>`
     : "";
+  const statusCell = CANCELLABLE_STATUSES[r.status]
+    ? `<span class="status-icon-wrap">
+         <span class="status-icon status-${r.status}">${statusIcon(r.status)}</span>
+         <button type="button" class="status-cancel-btn" data-cancel-id="${r.id}" title="Скасувати" aria-label="Скасувати">${CANCEL_ICON}</button>
+       </span>`
+    : `<span class="status-icon status-${r.status}">${statusIcon(r.status)}</span>`;
   return `
     <div class="dl-row" data-id="${r.id}">
-      <span class="status-icon status-${r.status}">${statusIcon(r.status)}</span>
+      ${statusCell}
       <button type="button" class="dl-title">${escapeHtml(title)}</button>
       ${sourceLink}
       ${btn}
@@ -460,4 +475,16 @@ setInterval(refreshRecent, 5000);
 document.addEventListener("click", (e) => {
   const titleBtn = e.target.closest(".dl-title");
   if (titleBtn) titleBtn.classList.toggle("expanded");
+});
+
+document.addEventListener("click", async (e) => {
+  const cancelBtn = e.target.closest(".status-cancel-btn");
+  if (!cancelBtn) return;
+  cancelBtn.disabled = true;
+  try {
+    await fetch(`/api/cancel/${cancelBtn.dataset.cancelId}`, { method: "POST" });
+  } catch (err) {
+    // ignore — the row will just keep showing its old state until the next poll
+  }
+  refreshRecent();
 });

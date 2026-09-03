@@ -46,7 +46,7 @@ def _sweep_jobs(max_age_hours):
         # only job.filepath (never set on failure) was swept before, so those
         # never actually got cleaned up.
         for model, subdir in ((Download, None), (Conversion, "converts")):
-            query = db.query(model).filter(model.status.in_(("finished", "error")))
+            query = db.query(model).filter(model.status.in_(("finished", "error", "cancelled")))
             if cutoff is not None:
                 query = query.filter(model.finished_at.isnot(None)).filter(model.finished_at < cutoff)
             for job in query.all():

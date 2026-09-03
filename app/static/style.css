@@ -140,7 +140,7 @@ body {
   position: absolute;
   top: calc(100% + 10px);
   right: 0;
-  width: 340px;
+  width: 460px;
   max-width: calc(100vw - 32px);
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -196,13 +196,19 @@ body {
   justify-content: center;
   width: 22px;
   height: 22px;
+  padding: 0;
+  border: none;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.06);
   color: var(--text-dim);
   box-shadow: none;
+  cursor: pointer;
 }
 
 .processes-row-link:hover { color: var(--text); background: rgba(255, 255, 255, 0.12); }
+
+.processes-row-link.cancel { background: rgba(255, 107, 125, 0.12); color: var(--error); }
+.processes-row-link.cancel:hover { background: var(--error); color: #fff; }
 
 .container {
   max-width: 1080px;
@@ -1028,6 +1034,28 @@ section h3 { margin: 22px 0 4px; font-size: 1rem; }
 .status-icon.status-downloading,
 .status-icon.status-converting,
 .status-icon.status-queued { background: rgba(91, 124, 255, 0.15); color: var(--accent); }
+
+.status-icon-wrap { position: relative; flex: 0 0 auto; width: 24px; height: 24px; }
+.status-icon-wrap .status-icon { position: absolute; inset: 0; }
+
+.status-cancel-btn {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  box-shadow: none;
+  background: rgba(255, 107, 125, 0.15);
+  color: var(--error);
+  cursor: pointer;
+}
+
+.status-icon-wrap:hover .status-icon { display: none; }
+.status-icon-wrap:hover .status-cancel-btn { display: flex; }
+.status-cancel-btn:hover { background: var(--error); color: #fff; }
 
 .dl-download-btn {
   flex: 0 0 auto;

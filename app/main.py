@@ -2,6 +2,7 @@ import os
 import re
 import shutil
 import uuid
+from datetime import datetime
 
 from fastapi import (
     BackgroundTasks, FastAPI, File, Request, Response, Form, Depends, HTTPException, UploadFile,
@@ -26,6 +27,7 @@ from .downloader import (
     is_url_allowed,
     clear_ytdlp_cache,
     parse_timecode,
+    request_cancel as request_download_cancel,
 )
 from .cleanup import start_cleanup_thread, wipe_all_data
 from . import timeutil
@@ -279,6 +281,31 @@ def job_status(job_id: str, db: Session = Depends(get_db), _=Depends(require_sit
         "error": job.error_message,
         "filesize": job.filesize,
     }
+
+
+@app.post("/api/cancel/{job_id}")
+def cancel_download(
+    job_id: str,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    _=Depends(require_site_access_api),
+):
+    job = db.get(Download, job_id)
+    client_id = get_client_id(request, response)
+    if not job or job.client_id != client_id:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    if job.status not in ("queued", "downloading"):
+        return JSONResponse({"error": "already finished"}, status_code=400)
+    request_download_cancel(job_id)
+    if job.status == "queued":
+        # Still waiting for a slot - nothing running yet to catch the flag,
+        # so reflect the cancellation immediately instead of waiting for its
+        # turn to come up and notice on its own.
+        job.status = "cancelled"
+        job.finished_at = datetime.utcnow()
+        db.commit()
+    return {"ok": True}
 
 
 @app.get("/api/formats")
@@ -535,6 +562,28 @@ def conversion_status(job_id: str, db: Session = Depends(get_db), _=Depends(requ
         "error": job.error_message,
         "filesize": job.filesize,
     }
+
+
+@app.post("/api/convert/cancel/{job_id}")
+def cancel_conversion(
+    job_id: str,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    _=Depends(require_site_access_api),
+):
+    job = db.get(Conversion, job_id)
+    client_id = get_client_id(request, response)
+    if not job or job.client_id != client_id:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    if job.status not in ("queued", "converting"):
+        return JSONResponse({"error": "already finished"}, status_code=400)
+    converter.request_cancel(job_id)
+    if job.status == "queued":
+        job.status = "cancelled"
+        job.finished_at = datetime.utcnow()
+        db.commit()
+    return {"ok": True}
 
 
 @app.get("/api/convert/recent")
