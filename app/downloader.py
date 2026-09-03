@@ -4,6 +4,7 @@ import re
 import shutil
 import socket
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from urllib.parse import urlparse
@@ -442,6 +443,14 @@ def _combine_leg_progress(leg: int, leg_pct: float) -> float:
     return 99.0
 
 
+# yt-dlp can call the progress hook many times a second (up to once per
+# chunk read) - the UI polling /api/status only every 1.5s could never even
+# observe writes that frequent, so committing to SQLite on every single call
+# is pure overhead. Same throttling idea as converter.py's ffmpeg progress
+# loop, which hits the same pattern.
+PROGRESS_DB_WRITE_INTERVAL_SECONDS = 0.5
+
+
 def _progress_hook(job_id, d, state):
     if job_id in _cancel_requested:
         # yt_dlp.utils.DownloadCancelled is the library's own supported way
@@ -450,11 +459,8 @@ def _progress_hook(job_id, d, state):
         # ignoring it" and actually propagates out of extract_info().
         from yt_dlp.utils import DownloadCancelled
         raise DownloadCancelled("cancelled by user")
-    db = SessionLocal()
+
     try:
-        job = db.get(Download, job_id)
-        if not job:
-            return
         status = d.get("status")
         if status == "downloading":
             if not state["leg_active"]:
@@ -468,8 +474,6 @@ def _progress_hook(job_id, d, state):
             # once, at "finished") — so total/downloaded stay at 0 here and
             # the UI shows an indeterminate bar instead of a fake percentage.
             leg_pct = (downloaded / total * 100) if total else 0
-            job.progress = _combine_leg_progress(state["leg"], leg_pct)
-            job.status = "downloading"
 
             # yt-dlp's own eta jumps around a lot (it's derived from a very
             # short recent window - a momentary speed dip reads as "3 годин"
@@ -483,21 +487,41 @@ def _progress_hook(job_id, d, state):
                 state["smoothed_speed"] = raw_speed if not prev else (
                     ETA_SMOOTHING_ALPHA * raw_speed + (1 - ETA_SMOOTHING_ALPHA) * prev
                 )
+
+            now = time.time()
+            if now - state.get("last_write", 0) < PROGRESS_DB_WRITE_INTERVAL_SECONDS:
+                return
+            state["last_write"] = now
+
             smoothed_speed = state.get("smoothed_speed")
-            if total and smoothed_speed:
-                job.eta_seconds = max(0, round((total - downloaded) / smoothed_speed))
-            else:
-                job.eta_seconds = None
-            db.commit()
+            db = SessionLocal()
+            try:
+                job = db.get(Download, job_id)
+                if not job:
+                    return
+                job.progress = _combine_leg_progress(state["leg"], leg_pct)
+                job.status = "downloading"
+                if total and smoothed_speed:
+                    job.eta_seconds = max(0, round((total - downloaded) / smoothed_speed))
+                else:
+                    job.eta_seconds = None
+                db.commit()
+            finally:
+                db.close()
         elif status == "finished":
             state["leg_active"] = False
-            job.progress = _combine_leg_progress(state["leg"], 100)
-            job.eta_seconds = None
-            db.commit()
+            db = SessionLocal()
+            try:
+                job = db.get(Download, job_id)
+                if not job:
+                    return
+                job.progress = _combine_leg_progress(state["leg"], 100)
+                job.eta_seconds = None
+                db.commit()
+            finally:
+                db.close()
     except Exception:
         pass
-    finally:
-        db.close()
 
 
 def _run_job(job_id: str):

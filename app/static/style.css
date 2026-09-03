@@ -608,24 +608,6 @@ button:active { transform: translateY(1px); }
 .btn-convert:active { transform: translateY(1px); }
 .btn-convert svg { flex-shrink: 0; }
 
-.link-btn {
-  background: none;
-  border: none;
-  color: var(--error);
-  padding: 0;
-  font-size: 0.85rem;
-  text-decoration: underline;
-  cursor: pointer;
-  width: auto;
-  box-shadow: none;
-}
-
-.link-btn:disabled {
-  color: var(--text-dim);
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .inline-form { display: inline; margin-left: 10px; }
 
 #status-box { margin-top: 18px; }
@@ -780,7 +762,6 @@ button:active { transform: translateY(1px); }
 }
 
 .badge-finished { background: rgba(62, 207, 142, 0.15); color: var(--success); }
-.badge-error { background: rgba(255, 107, 125, 0.15); color: var(--error); }
 .badge-downloading, .badge-converting, .badge-queued { background: rgba(91, 124, 255, 0.15); color: var(--accent); }
 
 .btn-add-user {
@@ -1272,11 +1253,6 @@ a.tool-card:hover {
   transform: translateY(-2px);
 }
 
-.tool-card.disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
 .tool-icon {
   font-size: 1.6rem;
   width: 48px;
@@ -1286,11 +1262,6 @@ a.tool-card:hover {
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
-}
-
-.tool-card.disabled .tool-icon {
-  background: var(--bg-input);
-  color: var(--text-dim);
 }
 
 .tool-name { font-size: 1.05rem; font-weight: 700; }
@@ -1503,8 +1474,6 @@ a.tool-card:hover {
   cursor: not-allowed;
 }
 .row-icon-btn:disabled:hover { color: var(--text-dim); border-color: var(--border); }
-
-.row-icon-btn.sm { width: 24px; height: 24px; }
 
 .row-icon-btn.danger { color: var(--error); border-color: rgba(255, 107, 125, 0.3); }
 .row-icon-btn.danger:hover { background: rgba(255, 107, 125, 0.12); color: var(--error); }

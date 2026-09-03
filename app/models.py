@@ -25,7 +25,7 @@ class Download(Base):
     clip_start = Column(Float, nullable=True)
     clip_end = Column(Float, nullable=True)
 
-    status = Column(String, default="queued")  # queued, downloading, finished, error, expired, deleted
+    status = Column(String, default="queued", index=True)  # queued, downloading, finished, error, expired, deleted
     progress = Column(Float, default=0.0)
     eta_seconds = Column(Integer, nullable=True)
     # Set when premiere_compat found the downloaded file's codec unsuitable
@@ -39,8 +39,8 @@ class Download(Base):
 
     client_ip = Column(String, nullable=True)
     client_id = Column(String, nullable=True, index=True)
-    username = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    username = Column(String, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
     finished_at = Column(DateTime, nullable=True)
 
 
@@ -55,7 +55,7 @@ class Conversion(Base):
     quality = Column(String, default="high")  # high | medium | low
     audio_option = Column(String, default="original")  # aac | original | none
 
-    status = Column(String, default="queued")  # queued, converting, finished, error, expired
+    status = Column(String, default="queued", index=True)  # queued, converting, finished, error, expired
     progress = Column(Float, default=0.0)
     eta_seconds = Column(Integer, nullable=True)
 
@@ -65,8 +65,8 @@ class Conversion(Base):
 
     client_ip = Column(String, nullable=True)
     client_id = Column(String, nullable=True, index=True)
-    username = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    username = Column(String, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
     finished_at = Column(DateTime, nullable=True)
 
 

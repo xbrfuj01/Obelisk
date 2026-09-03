@@ -2,7 +2,6 @@ const form = document.getElementById("download-form");
 const statusBox = document.getElementById("status-box");
 const modeRadios = document.querySelectorAll('input[name="mode"]');
 const qualityWrap = document.getElementById("quality-wrap");
-const containerWrap = document.getElementById("container-wrap");
 const containerSelect = document.getElementById("container-select");
 const urlInput = document.getElementById("url-input");
 const urlStatus = document.getElementById("url-status");
