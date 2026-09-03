@@ -454,12 +454,11 @@ def _run_job(job_id: str):
                 "preferredquality": "192",
             }]
         elif job.mode == "video_only":
-            if job.premiere_compat:
-                ydl_opts["format"] = (
-                    f"bestvideo[vcodec^=avc1]{height_filter}/bestvideo{height_filter}/best{height_filter}"
-                )
-            else:
-                ydl_opts["format"] = f"bestvideo{height_filter}/best{height_filter}"
+            # premiere_compat no longer restricts the format selection here -
+            # always grab the best available, then check the actual codec
+            # after downloading and re-encode only if it turns out to
+            # matter (see the premiere_compat block after the download).
+            ydl_opts["format"] = f"bestvideo{height_filter}/best{height_filter}"
             if job.container in VIDEO_FORMATS:
                 ydl_opts.setdefault("postprocessors", [])
                 ydl_opts["postprocessors"].append({
@@ -467,16 +466,7 @@ def _run_job(job_id: str):
                     "preferedformat": job.container,
                 })
         else:
-            if job.premiere_compat:
-                # Prefer H.264 video + AAC audio (what Adobe Premiere Pro can actually
-                # decode) over YouTube's usual best pick, which is often VP9/AV1 + Opus.
-                ydl_opts["format"] = (
-                    f"bestvideo[vcodec^=avc1]{height_filter}+bestaudio[acodec^=mp4a]"
-                    f"/best[vcodec^=avc1]{height_filter}"
-                    f"/bestvideo{height_filter}+bestaudio/best{height_filter}"
-                )
-            else:
-                ydl_opts["format"] = f"bestvideo{height_filter}+bestaudio/best{height_filter}"
+            ydl_opts["format"] = f"bestvideo{height_filter}+bestaudio/best{height_filter}"
             if job.container in VIDEO_FORMATS:
                 ydl_opts["merge_output_format"] = job.container
 
@@ -504,6 +494,26 @@ def _run_job(job_id: str):
         if not filepath:
             raise RuntimeError("Не вдалося знайти завантажений файл")
 
+        # Resolved *before* the job is marked "finished" (and committed
+        # together with it below) so a poll landing right after "finished"
+        # appears can never see it without auto_convert_id already set -
+        # otherwise the frontend would briefly think the raw, incompatible
+        # file is the final result and auto-download that instead.
+        auto_convert_id = None
+        if job.mode != "audio" and job.premiere_compat:
+            # Deferred import: converter.py imports parse_timecode from this
+            # module, so importing it back at module load time would be
+            # circular - by the time this actually runs, both modules are
+            # already fully loaded, so a call-time import resolves fine.
+            from . import converter
+            probed = converter.probe_input(filepath)
+            if probed and not converter.is_premiere_compatible(probed["vcodec"], probed["acodec"]):
+                job.filepath = filepath  # not committed yet - the conversion needs the real path to copy from
+                try:
+                    auto_convert_id = converter.submit_conversion_from_download(job)
+                except Exception:
+                    auto_convert_id = None
+
         _update(
             db, job,
             status="finished",
@@ -512,6 +522,7 @@ def _run_job(job_id: str):
             title=title,
             filepath=filepath,
             filesize=filesize,
+            auto_convert_id=auto_convert_id,
             finished_at=datetime.utcnow(),
         )
     except Exception as e:

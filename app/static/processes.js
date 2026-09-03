@@ -15,6 +15,48 @@
   var DOWNLOAD_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
   var CANCEL_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
 
+  // Shared with app.js/converter.js: whichever poller (this global tray, or
+  // the originating tool page's own poller) notices a job finish first
+  // claims it, so the browser download doesn't fire twice for one job.
+  var AUTO_DOWNLOAD_STORAGE_KEY = "obelisk_auto_downloaded";
+  function claimAutoDownload(key) {
+    try {
+      var done = JSON.parse(localStorage.getItem(AUTO_DOWNLOAD_STORAGE_KEY) || "[]");
+      if (done.indexOf(key) !== -1) return false;
+      done.push(key);
+      if (done.length > 200) done.splice(0, done.length - 200);
+      localStorage.setItem(AUTO_DOWNLOAD_STORAGE_KEY, JSON.stringify(done));
+      return true;
+    } catch (err) {
+      return true;
+    }
+  }
+
+  function triggerAutoDownload(url) {
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  // This is the point of the whole tray: a job started on the downloader/
+  // converter page keeps running server-side even after you navigate away
+  // (or the page reloads) - without this, nothing would ever pick the
+  // finished file back up and send it to your computer.
+  function autoDownloadFinished(items) {
+    items.forEach(function (item) {
+      if (item.status !== "finished") return;
+      if (item.kind === "download") {
+        if (item.auto_convert_id) return; // the real deliverable is the conversion below, not this raw file
+        if (claimAutoDownload("download:" + item.id)) triggerAutoDownload("/api/file/" + item.id);
+      } else {
+        if (claimAutoDownload("conversion:" + item.id)) triggerAutoDownload("/api/convert/file/" + item.id);
+      }
+    });
+  }
+
   function escapeHtml(str) {
     var div = document.createElement("div");
     div.textContent = str == null ? "" : String(str);
@@ -52,16 +94,18 @@
 
   function renderRow(item) {
     var isActive = !!ACTIVE_STATUSES[item.status];
+    var isAutoConverting = item.kind === "download" && !!item.auto_convert_id;
     var fileUrl = item.kind === "download" ? "/api/file/" + item.id : "/api/convert/file/" + item.id;
     var metaBits = [];
     if (item.status === "queued") metaBits.push("У черзі");
     else if (isActive && item.eta_seconds != null) metaBits.push(formatEta(item.eta_seconds) + " до завершення");
-    if (item.status === "finished" && item.filesize) metaBits.push(formatSize(item.filesize));
+    if (item.status === "finished" && isAutoConverting) metaBits.push("Конвертується для сумісності з відеоредакторами");
+    else if (item.status === "finished" && item.filesize) metaBits.push(formatSize(item.filesize));
     if (item.status === "error") metaBits.push("Помилка");
     if (item.status === "cancelled") metaBits.push("Скасовано");
 
     var action = "";
-    if (item.status === "finished") {
+    if (item.status === "finished" && !isAutoConverting) {
       action = '<a href="' + fileUrl + '" class="processes-row-link" title="Завантажити файл" aria-label="Завантажити файл">' + DOWNLOAD_ICON + '</a>';
     } else if (isActive) {
       action = '<button type="button" class="processes-row-link cancel" data-cancel-kind="' + item.kind + '" data-cancel-id="' + item.id + '" title="Скасувати" aria-label="Скасувати">' + CANCEL_ICON + '</button>';
@@ -117,6 +161,7 @@
         everSucceeded = true;
         wrap.hidden = false;
       }
+      autoDownloadFinished(items);
       render(items);
     } catch (err) {
       // ignore — keep showing the last known state, try again next tick

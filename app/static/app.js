@@ -16,8 +16,7 @@ const subtitleHint = document.getElementById("subtitle-hint");
 const clipStartInput = document.getElementById("clip-start-input");
 const clipEndInput = document.getElementById("clip-end-input");
 const clipHint = document.getElementById("clip-hint");
-const advancedToggle = document.getElementById("advanced-toggle");
-const advancedWrap = document.getElementById("advanced-wrap");
+const premiereCompatInput = document.getElementById("premiere-compat-input");
 
 const CLIP_START_DEFAULT = "00:00:00";
 const CLIP_END_DEFAULT = "99:99:99";
@@ -77,9 +76,22 @@ if (clipStartInput && clipEndInput) {
   clipEndInput.addEventListener("input", autoFormatClipInput);
 }
 
-if (advancedToggle) {
-  advancedToggle.addEventListener("change", () => {
-    advancedWrap.hidden = !advancedToggle.checked;
+// Persists across page reloads and URL changes (unlike the clip/subtitle
+// fields, which are tied to one specific video) - it's a standing user
+// preference, not per-video state.
+const PREMIERE_COMPAT_STORAGE_KEY = "obelisk_premiere_compat";
+if (premiereCompatInput) {
+  try {
+    premiereCompatInput.checked = localStorage.getItem(PREMIERE_COMPAT_STORAGE_KEY) === "1";
+  } catch (err) {
+    // ignore — localStorage unavailable, just falls back to unchecked
+  }
+  premiereCompatInput.addEventListener("change", () => {
+    try {
+      localStorage.setItem(PREMIERE_COMPAT_STORAGE_KEY, premiereCompatInput.checked ? "1" : "0");
+    } catch (err) {
+      // ignore
+    }
   });
 }
 
@@ -227,8 +239,9 @@ let probeTimer = null;
 // Resets everything that only makes sense for the *previous* video - a
 // clip range or subtitle language from one video is meaningless (and the
 // clip range could even be invalid, e.g. longer than the new video) once
-// the URL points somewhere else, and "compatibility mode" shouldn't carry
-// over as a silent, easy-to-miss quality cap on an unrelated download.
+// the URL points somewhere else. "Сумісність з відеоредакторами" is a
+// standing preference (persisted separately, see above), not per-video
+// state, so it's deliberately left alone here.
 function resetPerVideoOptions() {
   clipStartInput.value = "";
   clipEndInput.value = "";
@@ -237,9 +250,6 @@ function resetPerVideoOptions() {
   lastSubtitles = [];
   renderSubtitleOptions();
   updateSubtitleAvailability();
-
-  const premiereCompatInput = premiereCompatWrap && premiereCompatWrap.querySelector('input[type="checkbox"]');
-  if (premiereCompatInput) premiereCompatInput.checked = false;
 }
 
 async function probeQualities() {
@@ -348,13 +358,31 @@ const CONVERT_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none
 // Kicks off the browser's own download for the finished file without
 // navigating away from the page, so the user gets it on their device
 // automatically instead of having to click the button themselves.
-function triggerAutoDownload(id) {
+function triggerAutoDownload(url) {
   const a = document.createElement("a");
-  a.href = `/api/file/${id}`;
+  a.href = url;
   a.download = "";
   document.body.appendChild(a);
   a.click();
   a.remove();
+}
+
+// Shared with processes.js: both this page's own poller and the global
+// processes tray can notice the same job finish (e.g. the tray polls
+// regardless of which page you're on) - this keeps whichever one gets
+// there first from triggering the browser download twice.
+const AUTO_DOWNLOAD_STORAGE_KEY = "obelisk_auto_downloaded";
+function claimAutoDownload(key) {
+  try {
+    const done = JSON.parse(localStorage.getItem(AUTO_DOWNLOAD_STORAGE_KEY) || "[]");
+    if (done.includes(key)) return false;
+    done.push(key);
+    if (done.length > 200) done.splice(0, done.length - 200);
+    localStorage.setItem(AUTO_DOWNLOAD_STORAGE_KEY, JSON.stringify(done));
+    return true;
+  } catch (err) {
+    return true; // no localStorage — just always trigger, better than never
+  }
 }
 
 function pollStatus(id, estimatedBytes, isClipped) {
@@ -363,9 +391,15 @@ function pollStatus(id, estimatedBytes, isClipped) {
     try {
       const res = await fetch(`/api/status/${id}`);
       const job = await res.json();
-      if (job.status === "finished") {
+      if (job.status === "finished" && job.auto_convert_id) {
+        // Компат-режим виявив несумісний кодек і вже запустив конвертацію —
+        // показуємо той самий рядок стану, але вже для процесу конвертації.
+        clearInterval(interval);
+        refreshRecent();
+        pollAutoConvert(job.auto_convert_id, job.title);
+      } else if (job.status === "finished") {
         const finalSize = formatSize(job.filesize) || estimatedSize;
-        triggerAutoDownload(id);
+        if (claimAutoDownload("download:" + id)) triggerAutoDownload(`/api/file/${id}`);
         const convertHref = `/converter?from_download=${id}&filename=${encodeURIComponent(job.title || "")}`;
         statusBox.innerHTML = `<div class="card status-card">
           <p class="success">✓ Готово: ${escapeHtml(job.title || "")}${finalSize ? ` (${finalSize})` : ""}</p>
@@ -398,6 +432,45 @@ function pollStatus(id, estimatedBytes, isClipped) {
         const eta = formatEta(job.eta_seconds);
         statusBox.innerHTML = `<div class="card status-card">
           <p>Статус: ${label} (${progress}%)${eta ? ` — ${eta} до завершення` : estimatedSize ? ` — орієнтовно ~${estimatedSize}` : ""}</p>
+          <div class="progress"><div class="progress-bar" style="width:${progress}%"></div></div>
+        </div>`;
+      }
+    } catch (err) {
+      clearInterval(interval);
+    }
+  }, 1500);
+}
+
+// Continues the same status card once a download has handed off to an
+// auto-triggered "make it Premiere-compatible" conversion, so the user
+// sees one continuous process instead of the card just going quiet.
+function pollAutoConvert(convertId, title) {
+  const interval = setInterval(async () => {
+    try {
+      const res = await fetch(`/api/convert/status/${convertId}`);
+      const job = await res.json();
+      if (job.status === "finished") {
+        const size = formatSize(job.filesize);
+        if (claimAutoDownload("conversion:" + convertId)) triggerAutoDownload(`/api/convert/file/${convertId}`);
+        statusBox.innerHTML = `<div class="card status-card">
+          <p class="success">✓ Готово: ${escapeHtml(title || "")}${size ? ` (${size})` : ""}</p>
+          <p class="hint">Відео автоматично сконвертовано для сумісності з відеоредакторами.</p>
+          <div class="status-actions">
+            <a class="btn-download" href="/api/convert/file/${convertId}">${DOWNLOAD_ICON} Завантажити ще раз</a>
+          </div>
+        </div>`;
+        clearInterval(interval);
+      } else if (job.status === "error") {
+        statusBox.innerHTML = `<div class="card status-card"><p class="error">Відео завантажено, але автоконвертація не вдалась: ${escapeHtml(job.error || "невідома помилка")}</p></div>`;
+        clearInterval(interval);
+      } else if (job.status === "cancelled") {
+        statusBox.innerHTML = `<div class="card status-card"><p>Автоконвертацію скасовано.</p></div>`;
+        clearInterval(interval);
+      } else {
+        const progress = job.progress || 0;
+        const eta = formatEta(job.eta_seconds);
+        statusBox.innerHTML = `<div class="card status-card">
+          <p>Статус: Конвертація для сумісності з відеоредакторами (${progress}%)${eta ? ` — ${eta} до завершення` : ""}</p>
           <div class="progress"><div class="progress-bar" style="width:${progress}%"></div></div>
         </div>`;
       }

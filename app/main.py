@@ -280,6 +280,7 @@ def job_status(job_id: str, db: Session = Depends(get_db), _=Depends(require_sit
         "title": job.title,
         "error": job.error_message,
         "filesize": job.filesize,
+        "auto_convert_id": job.auto_convert_id,
     }
 
 
@@ -367,16 +368,19 @@ def processes(
     processes tray - kept in one feed (rather than two) so it reads as a
     single timeline regardless of which tool the job came from."""
     client_id = get_client_id(request, response)
+    # "Прострочені" (expired - the file was cleaned up by the retention
+    # sweep) jobs are done and gone, not something still worth downloading -
+    # only ready-to-download or in-progress work belongs in this tray.
     downloads = (
         db.query(Download)
-        .filter(Download.client_id == client_id)
+        .filter(Download.client_id == client_id, Download.status != "expired")
         .order_by(Download.created_at.desc())
         .limit(20)
         .all()
     )
     conversions = (
         db.query(Conversion)
-        .filter(Conversion.client_id == client_id)
+        .filter(Conversion.client_id == client_id, Conversion.status != "expired")
         .order_by(Conversion.created_at.desc())
         .limit(20)
         .all()
@@ -391,6 +395,7 @@ def processes(
             "eta_seconds": r.eta_seconds,
             "filesize": r.filesize,
             "created_at": r.created_at.isoformat(),
+            "auto_convert_id": r.auto_convert_id,
         }
         for r in downloads
     ] + [

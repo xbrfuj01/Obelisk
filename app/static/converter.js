@@ -113,6 +113,23 @@ function triggerAutoDownload(id) {
   a.remove();
 }
 
+// Shared with app.js/processes.js: whichever poller (this page's own, or
+// the global processes tray on any page) notices a job finish first claims
+// it, so the same file doesn't get auto-downloaded twice.
+const AUTO_DOWNLOAD_STORAGE_KEY = "obelisk_auto_downloaded";
+function claimAutoDownload(key) {
+  try {
+    const done = JSON.parse(localStorage.getItem(AUTO_DOWNLOAD_STORAGE_KEY) || "[]");
+    if (done.includes(key)) return false;
+    done.push(key);
+    if (done.length > 200) done.splice(0, done.length - 200);
+    localStorage.setItem(AUTO_DOWNLOAD_STORAGE_KEY, JSON.stringify(done));
+    return true;
+  } catch (err) {
+    return true;
+  }
+}
+
 function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str == null ? "" : String(str);
@@ -190,7 +207,7 @@ function pollConvertStatus(id, durationSeconds, inputSummary) {
       const job = await res.json();
       if (job.status === "finished") {
         const size = formatSize(job.filesize);
-        triggerAutoDownload(id);
+        if (claimAutoDownload("conversion:" + id)) triggerAutoDownload(id);
         statusBox.innerHTML = `<div class="card status-card">
           <p class="success">✓ Готово${size ? ` (${size})` : ""}</p>
           ${summaryLine}

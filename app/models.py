@@ -28,6 +28,9 @@ class Download(Base):
     status = Column(String, default="queued")  # queued, downloading, finished, error, expired, deleted
     progress = Column(Float, default=0.0)
     eta_seconds = Column(Integer, nullable=True)
+    # Set when premiere_compat found the downloaded file's codec unsuitable
+    # and auto-started a conversion job for it - id of that Conversion row.
+    auto_convert_id = Column(String, nullable=True)
 
     title = Column(Text, nullable=True)
     filepath = Column(Text, nullable=True)

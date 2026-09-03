@@ -1,13 +1,15 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import threading
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
-from . import auth
+from . import auth, config
 from .database import SessionLocal
 from .downloader import parse_timecode
 from .models import Conversion
@@ -176,7 +178,58 @@ def probe_input(path):
         "fps": fps,
         "has_audio": audio is not None,
         "video_bitrate": video_bitrate,
+        "vcodec": vcodec,
+        "acodec": acodec,
     }
+
+
+def is_premiere_compatible(vcodec, acodec):
+    """H.264 video (+ AAC audio, if there's audio at all) is what Premiere
+    can decode directly - anything else (VP9/AV1 + Opus is YouTube's usual
+    default for "best quality") needs a re-encode first."""
+    return vcodec == "H264" and (acodec is None or acodec == "AAC")
+
+
+def submit_conversion_from_download(download_job):
+    """Auto-triggered right after a download finishes when premiere_compat
+    is on and the file's actual codec turned out unsuitable - copies it
+    into a new conversion job (same shape as the manual "Конвертувати для
+    Premiere" flow) and starts it immediately. Returns the new Conversion
+    job's id, or None if the file can't be read at all."""
+    info = probe_input(download_job.filepath)
+    if not info:
+        return None
+
+    db = SessionLocal()
+    try:
+        job_id = uuid.uuid4().hex
+        job_dir = os.path.join(config.DOWNLOAD_DIR, "converts", job_id)
+        os.makedirs(job_dir, exist_ok=True)
+
+        original_name = os.path.basename(download_job.filepath)
+        ext = os.path.splitext(original_name)[1][:10] or ".bin"
+        input_path = os.path.join(job_dir, f"input{ext}")
+        shutil.copyfile(download_job.filepath, input_path)
+
+        job = Conversion(
+            id=job_id,
+            original_filename=original_name,
+            input_summary=info["summary"],
+            duration_seconds=info["duration"],
+            quality="high",
+            audio_option="original",
+            status="queued",
+            client_ip=download_job.client_ip,
+            client_id=download_job.client_id,
+            username=download_job.username,
+        )
+        db.add(job)
+        db.commit()
+    finally:
+        db.close()
+
+    submit_job(job_id, input_path, info)
+    return job_id
 
 
 def _build_ffmpeg_cmd(input_path, output_path, quality, audio_option, fps, has_audio, video_bitrate=None):
