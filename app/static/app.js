@@ -354,6 +354,14 @@ const STATUS_LABELS = {
 
 const DOWNLOAD_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
 const CONVERT_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h11l-3.5-3.5"/><path d="M17 17H6l3.5 3.5"/></svg>';
+const STATUS_CANCEL_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+
+// Top-right cancel button embedded in the active-status card itself (as
+// opposed to the one hidden behind hover in the history rows) - kind is
+// "download" or "conversion", matching the two /api/*cancel/{id} routes.
+function statusCancelBtn(kind, id) {
+  return `<button type="button" class="status-cancel-corner" data-cancel-kind="${kind}" data-cancel-id="${id}" title="Скасувати" aria-label="Скасувати">${STATUS_CANCEL_ICON}</button>`;
+}
 
 // Kicks off the browser's own download for the finished file without
 // navigating away from the page, so the user gets it on their device
@@ -423,6 +431,7 @@ function pollStatus(id, estimatedBytes, isClipped) {
         // only a single event once it's fully done — so a real percentage
         // would just sit frozen. Show an indeterminate bar instead.
         statusBox.innerHTML = `<div class="card status-card">
+          ${statusCancelBtn("download", id)}
           <p>Статус: Підготовка фрагмента... (це може тривати довше за звичайне завантаження)</p>
           <div class="progress"><div class="progress-bar indeterminate"></div></div>
         </div>`;
@@ -431,6 +440,7 @@ function pollStatus(id, estimatedBytes, isClipped) {
         const label = STATUS_LABELS[job.status] || job.status;
         const eta = formatEta(job.eta_seconds);
         statusBox.innerHTML = `<div class="card status-card">
+          ${statusCancelBtn("download", id)}
           <p>Статус: ${label} (${progress}%)${eta ? ` — ${eta} до завершення` : estimatedSize ? ` — орієнтовно ~${estimatedSize}` : ""}</p>
           <div class="progress"><div class="progress-bar" style="width:${progress}%"></div></div>
         </div>`;
@@ -470,6 +480,7 @@ function pollAutoConvert(convertId, title) {
         const progress = job.progress || 0;
         const eta = formatEta(job.eta_seconds);
         statusBox.innerHTML = `<div class="card status-card">
+          ${statusCancelBtn("conversion", convertId)}
           <p>Статус: Конвертація для сумісності з відеоредакторами (${progress}%)${eta ? ` — ${eta} до завершення` : ""}</p>
           <div class="progress"><div class="progress-bar" style="width:${progress}%"></div></div>
         </div>`;
@@ -560,4 +571,18 @@ document.addEventListener("click", async (e) => {
     // ignore — the row will just keep showing its old state until the next poll
   }
   refreshRecent();
+});
+
+document.addEventListener("click", async (e) => {
+  const cancelBtn = e.target.closest(".status-cancel-corner");
+  if (!cancelBtn) return;
+  cancelBtn.disabled = true;
+  const url = cancelBtn.dataset.cancelKind === "conversion"
+    ? `/api/convert/cancel/${cancelBtn.dataset.cancelId}`
+    : `/api/cancel/${cancelBtn.dataset.cancelId}`;
+  try {
+    await fetch(url, { method: "POST" });
+  } catch (err) {
+    // ignore — the next poll tick will just show whatever state actually stuck
+  }
 });

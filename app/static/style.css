@@ -628,7 +628,27 @@ button:active { transform: translateY(1px); }
 
 #status-box { margin-top: 18px; }
 
-.status-card { padding: 18px 22px; }
+.status-card { position: relative; padding: 18px 46px 18px 22px; }
+
+.status-cancel-corner {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 107, 125, 0.12);
+  color: var(--error);
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.status-cancel-corner:hover { background: var(--error); color: #fff; }
 
 .progress {
   background: var(--bg-input);

@@ -103,6 +103,11 @@ const STATUS_LABELS = {
 };
 
 const DOWNLOAD_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
+const STATUS_CANCEL_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+
+function statusCancelBtn(id) {
+  return `<button type="button" class="status-cancel-corner" data-cancel-id="${id}" title="Скасувати" aria-label="Скасувати">${STATUS_CANCEL_ICON}</button>`;
+}
 
 function triggerAutoDownload(id) {
   const a = document.createElement("a");
@@ -225,6 +230,7 @@ function pollConvertStatus(id, durationSeconds, inputSummary) {
         refreshRecent();
       } else if (isIndeterminate) {
         statusBox.innerHTML = `<div class="card status-card">
+          ${statusCancelBtn(id)}
           <p>Статус: ${STATUS_LABELS[job.status] || job.status}...</p>
           ${summaryLine}
           <div class="progress"><div class="progress-bar indeterminate"></div></div>
@@ -233,6 +239,7 @@ function pollConvertStatus(id, durationSeconds, inputSummary) {
         const progress = job.progress || 0;
         const eta = formatEta(job.eta_seconds);
         statusBox.innerHTML = `<div class="card status-card">
+          ${statusCancelBtn(id)}
           <p>Статус: ${STATUS_LABELS[job.status] || job.status} (${progress}%)${eta ? ` — ${eta} до завершення` : ""}</p>
           ${summaryLine}
           <div class="progress"><div class="progress-bar" style="width:${progress}%"></div></div>
@@ -310,4 +317,15 @@ document.addEventListener("click", async (e) => {
     // ignore — the row will just keep showing its old state until the next poll
   }
   refreshRecent();
+});
+
+document.addEventListener("click", async (e) => {
+  const cancelBtn = e.target.closest(".status-cancel-corner");
+  if (!cancelBtn) return;
+  cancelBtn.disabled = true;
+  try {
+    await fetch(`/api/convert/cancel/${cancelBtn.dataset.cancelId}`, { method: "POST" });
+  } catch (err) {
+    // ignore — the next poll tick will just show whatever state actually stuck
+  }
 });
