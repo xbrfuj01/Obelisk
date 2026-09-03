@@ -388,6 +388,35 @@
       <button type="submit">Зберегти</button>
     </form>
   </section>
+
+  <section>
+    <h2>Cookies YouTube</h2>
+    <div class="card">
+      <p class="hint">
+        Деякі відео YouTube віддає лише авторизованим користувачам. Щоб їх качало, встав сюди вміст cookies.txt
+        (Netscape-формат) залогіненого акаунта — наприклад, розширенням браузера "Get cookies.txt LOCALLY" на youtube.com.
+        Файл зберігається на сервері й дає доступ до акаунта, поки cookies дійсні — краще використати для цього окремий акаунт.
+      </p>
+      {% if has_cookies %}
+      <p class="success">✓ Cookies налаштовано.</p>
+      {% else %}
+      <p class="hint">Cookies не налаштовано.</p>
+      {% endif %}
+      {% if request.query_params.get('cookies_error') == 'empty' %}<p class="error">Встав вміст cookies.txt</p>{% endif %}
+      <form method="post" action="/admin/settings/cookies">
+        <label>Вміст cookies.txt
+          <textarea name="cookies_content" rows="6" placeholder="# Netscape HTTP Cookie File..." autocomplete="off"></textarea>
+        </label>
+        <button type="submit">Зберегти cookies</button>
+      </form>
+      {% if has_cookies %}
+      <form method="post" action="/admin/settings/cookies/clear" class="inline-form" id="clear-cookies-form">
+        <button type="button" class="btn-secondary open-confirm-modal" data-form-id="clear-cookies-form" data-title="Прибрати cookies"
+          data-text="Видалити збережені cookies? Відео, що вимагають авторизації, перестануть качатись.">Прибрати cookies</button>
+      </form>
+      {% endif %}
+    </div>
+  </section>
 </div>
 
 <div class="modal-overlay" id="password-modal" hidden>
@@ -605,7 +634,9 @@
     cache_cleared: "Кеш yt-dlp очищено.",
     data_wiped: "Дані очищено.",
     user_added: "Користувача додано.",
-    pw_reset: "Пароль користувача змінено."
+    pw_reset: "Пароль користувача змінено.",
+    cookies_saved: "Cookies збережено.",
+    cookies_cleared: "Cookies прибрано."
   };
   var currentParams = new URLSearchParams(window.location.search);
   var firedAny = false;

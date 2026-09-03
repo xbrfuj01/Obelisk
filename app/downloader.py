@@ -285,6 +285,9 @@ def probe_qualities(url: str, db):
     }
     if _should_use_proxy(url, db):
         ydl_opts["proxy"] = auth.get_proxy_url(db)
+    cookies_path = auth.get_cookies_path()
+    if cookies_path:
+        ydl_opts["cookiefile"] = cookies_path
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
 
@@ -514,6 +517,9 @@ def _run_job(job_id: str):
         }
         if _should_use_proxy(job.url, db):
             ydl_opts["proxy"] = auth.get_proxy_url(db)
+        cookies_path = auth.get_cookies_path()
+        if cookies_path:
+            ydl_opts["cookiefile"] = cookies_path
 
         if job.clip_start is not None or job.clip_end is not None:
             from yt_dlp.utils import download_range_func

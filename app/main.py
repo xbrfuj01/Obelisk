@@ -883,6 +883,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
     proxy_url = auth.get_proxy_url(db)
     proxy_domains = ",".join(auth.get_proxy_domains(db))
     timezone = auth.get_timezone(db)
+    has_cookies = auth.has_cookies()
 
     return templates.TemplateResponse(
         "admin.html",
@@ -919,6 +920,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
             "proxy_domains": proxy_domains,
             "timezone": timezone,
             "timezones": timeutil.COMMON_TIMEZONES,
+            "has_cookies": has_cookies,
         },
     )
 
@@ -1155,3 +1157,18 @@ def admin_settings(
         auth.set_setting(db, "timezone", timezone)
 
     return RedirectResponse("/admin?tab=settings&saved=1", status_code=303)
+
+
+@app.post("/admin/settings/cookies")
+def admin_save_cookies(cookies_content: str = Form(...), _=Depends(require_admin_dep)):
+    content = cookies_content.strip()
+    if not content:
+        return RedirectResponse("/admin?tab=settings&cookies_error=empty", status_code=303)
+    auth.save_cookies(content)
+    return RedirectResponse("/admin?tab=settings&cookies_saved=1", status_code=303)
+
+
+@app.post("/admin/settings/cookies/clear")
+def admin_clear_cookies(_=Depends(require_admin_dep)):
+    auth.clear_cookies()
+    return RedirectResponse("/admin?tab=settings&cookies_cleared=1", status_code=303)

@@ -442,7 +442,7 @@ input.field-invalid {
   box-shadow: 0 0 0 3px rgba(255, 107, 125, 0.18);
 }
 
-input, select, button {
+input, select, button, textarea {
   font-family: inherit;
   font-size: 0.96rem;
   padding: 11px 14px;
@@ -454,7 +454,9 @@ input, select, button {
   width: 100%;
 }
 
-input:hover, select:hover { border-color: var(--border-hover); }
+textarea { resize: vertical; font-size: 0.82rem; line-height: 1.4; }
+
+input:hover, select:hover, textarea:hover { border-color: var(--border-hover); }
 
 input::placeholder { color: var(--text-dim); opacity: 0.7; }
 
