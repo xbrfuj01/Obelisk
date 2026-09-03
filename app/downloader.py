@@ -43,7 +43,11 @@ ETA_SMOOTHING_ALPHA = 0.25
 # over the compose network by its service name - if it's ever not running,
 # yt-dlp degrades to not sending a token rather than failing outright.
 YOUTUBE_POT_PROVIDER_EXTRACTOR_ARGS = {
-    "youtubepot-bgutilhttp": {"base_url": "http://bgutil-provider:4416"}
+    # Values must be lists, matching how --extractor-args "key=value" gets
+    # parsed on the CLI ({'base_url': ['http://...']}) - a bare string here
+    # gets iterated character-by-character instead, which is what was
+    # producing "Unsupported url scheme: \"\"" against the provider.
+    "youtubepot-bgutilhttp": {"base_url": ["http://bgutil-provider:4416"]}
 }
 
 
