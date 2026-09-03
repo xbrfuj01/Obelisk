@@ -77,6 +77,22 @@ class _YdlLogCapture:
     def error(self, msg):
         self.lines.append(f"ERROR: {msg}")
 
+    def summary(self, max_lines=60):
+        """Collapses consecutive repeats (yt-dlp logs the same SABR/format
+        warning once per client-retry, which otherwise ate the whole
+        "last N lines" budget with duplicates of one line) so the tail
+        actually covers every client it tried, not just the noisiest one."""
+        collapsed = []
+        for line in self.lines:
+            if collapsed and collapsed[-1][0] == line:
+                collapsed[-1][1] += 1
+            else:
+                collapsed.append([line, 1])
+        return "\n".join(
+            f"{line} (x{count})" if count > 1 else line
+            for line, count in collapsed[-max_lines:]
+        )
+
 LANG_NAMES = {
     # Native/autonym names for languages Ukrainian users are most likely to
     # see; everything else falls back to an English name below rather than
@@ -604,8 +620,8 @@ def _run_job(job_id: str):
             # whether the PO token provider was even reached.
             detail = str(e)
             if log_capture.lines:
-                detail += "\n---\n" + "\n".join(log_capture.lines[-15:])
-            _update(db, job, status="error", eta_seconds=None, error_message=detail[:2000], finished_at=datetime.utcnow())
+                detail += "\n---\n" + log_capture.summary()
+            _update(db, job, status="error", eta_seconds=None, error_message=detail[:4000], finished_at=datetime.utcnow())
         # Partial output from an aborted download shouldn't linger forever -
         # let the cleanup path treat it the same as any other dead job.
         out_dir = os.path.join(config.DOWNLOAD_DIR, job_id)
