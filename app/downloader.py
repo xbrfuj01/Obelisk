@@ -35,6 +35,17 @@ SKIP_EXT = {".srt", ".vtt", ".json", ".description", ".part", ".ytdl"}
 # progress-hook callbacks, which fire every second or so.
 ETA_SMOOTHING_ALPHA = 0.25
 
+# YouTube increasingly withholds some videos/formats ("This video is not
+# available") from clients that can't prove they're a real browser - a
+# proof-of-origin token. A real browser gets one automatically via Google's
+# own JS; yt-dlp needs this sidecar (bgutil-ytdlp-pot-provider, bundled as
+# its own service in docker-compose.yml) to generate one instead. Reachable
+# over the compose network by its service name - if it's ever not running,
+# yt-dlp degrades to not sending a token rather than failing outright.
+YOUTUBE_POT_PROVIDER_EXTRACTOR_ARGS = {
+    "youtubepot-bgutilhttp": {"base_url": "http://bgutil-provider:4416"}
+}
+
 LANG_NAMES = {
     # Native/autonym names for languages Ukrainian users are most likely to
     # see; everything else falls back to an English name below rather than
@@ -223,6 +234,7 @@ def probe_qualities(url: str, db):
         "no_warnings": True,
         "noplaylist": True,
         "skip_download": True,
+        "extractor_args": YOUTUBE_POT_PROVIDER_EXTRACTOR_ARGS,
     }
     if _should_use_proxy(url, db):
         ydl_opts["proxy"] = auth.get_proxy_url(db)
@@ -448,6 +460,7 @@ def _run_job(job_id: str):
             "quiet": True,
             "no_warnings": True,
             "progress_hooks": [lambda d: _progress_hook(job_id, d, progress_state)],
+            "extractor_args": YOUTUBE_POT_PROVIDER_EXTRACTOR_ARGS,
         }
         if _should_use_proxy(job.url, db):
             ydl_opts["proxy"] = auth.get_proxy_url(db)
