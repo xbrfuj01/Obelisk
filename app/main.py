@@ -786,6 +786,13 @@ def admin_logout(request: Request):
     return RedirectResponse("/site-login", status_code=303)
 
 
+def _page_param(request: Request, name: str) -> int:
+    try:
+        return max(1, int(request.query_params.get(name, 1)))
+    except (TypeError, ValueError):
+        return 1
+
+
 @app.get("/admin", response_class=HTMLResponse)
 def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(require_admin_dep)):
     total = db.query(func.count(Download.id)).scalar()
@@ -805,7 +812,16 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
         .all()
     )
 
-    history = db.query(Download).order_by(Download.created_at.desc()).limit(100).all()
+    HISTORY_PAGE_SIZE = 10
+    history_total_pages = max(1, -(-total // HISTORY_PAGE_SIZE))  # ceil division
+    history_page = min(_page_param(request, "history_page"), history_total_pages)
+    history = (
+        db.query(Download)
+        .order_by(Download.created_at.desc())
+        .offset((history_page - 1) * HISTORY_PAGE_SIZE)
+        .limit(HISTORY_PAGE_SIZE)
+        .all()
+    )
 
     conversion_total = db.query(func.count(Conversion.id)).scalar()
     conversion_finished = db.query(func.count(Conversion.id)).filter(Conversion.status == "finished").scalar()
@@ -815,7 +831,15 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
         .filter(Conversion.status == "finished")
         .scalar()
     )
-    conversion_history = db.query(Conversion).order_by(Conversion.created_at.desc()).limit(100).all()
+    conversion_total_pages = max(1, -(-conversion_total // HISTORY_PAGE_SIZE))
+    conversion_page = min(_page_param(request, "conversion_page"), conversion_total_pages)
+    conversion_history = (
+        db.query(Conversion)
+        .order_by(Conversion.created_at.desc())
+        .offset((conversion_page - 1) * HISTORY_PAGE_SIZE)
+        .limit(HISTORY_PAGE_SIZE)
+        .all()
+    )
 
     user_activity = stats_module.user_activity(db)
     activity_periods = [(key, label) for key, label, _delta in stats_module.PERIODS]
@@ -852,11 +876,15 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
             "total_size": total_size,
             "by_source": by_source,
             "history": history,
+            "history_page": history_page,
+            "history_total_pages": history_total_pages,
             "conversion_total": conversion_total,
             "conversion_finished": conversion_finished,
             "conversion_errors": conversion_errors,
             "conversion_total_size": conversion_total_size,
             "conversion_history": conversion_history,
+            "conversion_page": conversion_page,
+            "conversion_total_pages": conversion_total_pages,
             "user_activity": user_activity,
             "activity_periods": activity_periods,
             "sys_info": sys_info,

@@ -20,6 +20,16 @@
 {% endif %}
 {% endmacro %}
 
+{% macro pagination(current, total_pages, param_name) %}
+{% if total_pages > 1 %}
+<nav class="pagination">
+  {% for p in range(1, total_pages + 1) %}
+  <a href="/admin?tab=stats&{{ param_name }}={{ p }}" class="page-link{% if p == current %} active{% endif %}">{{ p }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
+{% endmacro %}
+
 {% block content %}
 <div class="admin-header">
   <div class="admin-header-title">
@@ -168,6 +178,7 @@
       </tbody>
     </table>
     </div>
+    {{ pagination(history_page, history_total_pages, "history_page") }}
   </section>
 
   <section>
@@ -208,6 +219,7 @@
       </tbody>
     </table>
     </div>
+    {{ pagination(conversion_page, conversion_total_pages, "conversion_page") }}
   </section>
 </div>
 
