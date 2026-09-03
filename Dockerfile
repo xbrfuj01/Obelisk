@@ -1,8 +1,15 @@
 FROM python:3.12-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg curl make cpanminus \
+    && apt-get install -y --no-install-recommends ffmpeg curl unzip make cpanminus \
     && rm -rf /var/lib/apt/lists/*
+
+# yt-dlp needs a JS runtime to solve YouTube's player challenge - without
+# one it silently falls back to a more restricted client (e.g. "visionos")
+# that reports some videos as unplayable even though the normal web client
+# handles them fine. Deno is yt-dlp's own default runtime to look for, and
+# DENO_INSTALL puts the binary straight on PATH without a manual mv.
+RUN curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh -s -- -y
 
 WORKDIR /app
 
