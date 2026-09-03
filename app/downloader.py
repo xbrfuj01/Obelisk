@@ -42,12 +42,20 @@ ETA_SMOOTHING_ALPHA = 0.25
 # its own service in docker-compose.yml) to generate one instead. Reachable
 # over the compose network by its service name - if it's ever not running,
 # yt-dlp degrades to not sending a token rather than failing outright.
-YOUTUBE_POT_PROVIDER_EXTRACTOR_ARGS = {
+YOUTUBE_EXTRACTOR_ARGS = {
     # Values must be lists, matching how --extractor-args "key=value" gets
     # parsed on the CLI ({'base_url': ['http://...']}) - a bare string here
     # gets iterated character-by-character instead, which is what was
     # producing "Unsupported url scheme: \"\"" against the provider.
-    "youtubepot-bgutilhttp": {"base_url": ["http://bgutil-provider:4416"]}
+    "youtubepot-bgutilhttp": {"base_url": ["http://bgutil-provider:4416"]},
+    # YouTube has been rolling out "SABR-only" streaming for the default
+    # web client - it still responds, but every format is missing a usable
+    # URL ("YouTube is forcing SABR streaming for this client"), which is
+    # exactly what was making otherwise-normal videos come back as
+    # unavailable even with the PO token working. tv/ios/web_safari aren't
+    # (yet) restricted this way - keeping "web" in the list too so videos
+    # that don't hit this restriction still get its higher-res formats.
+    "youtube": {"player_client": ["web", "tv", "ios", "web_safari"]},
 }
 
 
@@ -257,7 +265,7 @@ def probe_qualities(url: str, db):
         "no_warnings": True,
         "noplaylist": True,
         "skip_download": True,
-        "extractor_args": YOUTUBE_POT_PROVIDER_EXTRACTOR_ARGS,
+        "extractor_args": YOUTUBE_EXTRACTOR_ARGS,
     }
     if _should_use_proxy(url, db):
         ydl_opts["proxy"] = auth.get_proxy_url(db)
@@ -486,7 +494,7 @@ def _run_job(job_id: str):
             "verbose": True,  # otherwise yt-dlp's own debug lines (incl. PO token status) never reach the logger at all
             "logger": log_capture,
             "progress_hooks": [lambda d: _progress_hook(job_id, d, progress_state)],
-            "extractor_args": YOUTUBE_POT_PROVIDER_EXTRACTOR_ARGS,
+            "extractor_args": YOUTUBE_EXTRACTOR_ARGS,
         }
         if _should_use_proxy(job.url, db):
             ydl_opts["proxy"] = auth.get_proxy_url(db)
