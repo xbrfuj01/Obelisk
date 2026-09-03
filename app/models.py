@@ -27,6 +27,7 @@ class Download(Base):
 
     status = Column(String, default="queued")  # queued, downloading, finished, error, expired, deleted
     progress = Column(Float, default=0.0)
+    eta_seconds = Column(Integer, nullable=True)
 
     title = Column(Text, nullable=True)
     filepath = Column(Text, nullable=True)
@@ -53,6 +54,7 @@ class Conversion(Base):
 
     status = Column(String, default="queued")  # queued, converting, finished, error, expired
     progress = Column(Float, default=0.0)
+    eta_seconds = Column(Integer, nullable=True)
 
     filepath = Column(Text, nullable=True)
     filesize = Column(Integer, nullable=True)

@@ -103,6 +103,18 @@ function formatSize(bytes) {
   return Math.round(mb) + " МБ";
 }
 
+function formatEta(seconds) {
+  if (seconds == null || seconds < 0) return null;
+  seconds = Math.round(seconds);
+  if (seconds < 60) return "≈" + seconds + " с";
+  const totalMinutes = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (totalMinutes < 60) return "≈" + totalMinutes + " хв" + (s ? " " + s + " с" : "");
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return "≈" + h + " год" + (m ? " " + m + " хв" : "");
+}
+
 function currentMode() {
   const checked = document.querySelector('input[name="mode"]:checked');
   return checked ? checked.value : "video";
@@ -379,8 +391,9 @@ function pollStatus(id, estimatedBytes, isClipped) {
       } else {
         const progress = job.progress || 0;
         const label = STATUS_LABELS[job.status] || job.status;
+        const eta = formatEta(job.eta_seconds);
         statusBox.innerHTML = `<div class="card status-card">
-          <p>Статус: ${label} (${progress}%)${estimatedSize ? ` — орієнтовно ~${estimatedSize}` : ""}</p>
+          <p>Статус: ${label} (${progress}%)${eta ? ` — ${eta} до завершення` : estimatedSize ? ` — орієнтовно ~${estimatedSize}` : ""}</p>
           <div class="progress"><div class="progress-bar" style="width:${progress}%"></div></div>
         </div>`;
       }

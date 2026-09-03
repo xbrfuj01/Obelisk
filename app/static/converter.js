@@ -85,6 +85,18 @@ function formatSize(bytes) {
   return Math.round(mb) + " МБ";
 }
 
+function formatEta(seconds) {
+  if (seconds == null || seconds < 0) return null;
+  seconds = Math.round(seconds);
+  if (seconds < 60) return "≈" + seconds + " с";
+  const totalMinutes = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (totalMinutes < 60) return "≈" + totalMinutes + " хв" + (s ? " " + s + " с" : "");
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return "≈" + h + " год" + (m ? " " + m + " хв" : "");
+}
+
 const STATUS_LABELS = {
   queued: "У черзі",
   converting: "Конвертація",
@@ -198,8 +210,9 @@ function pollConvertStatus(id, durationSeconds, inputSummary) {
         </div>`;
       } else {
         const progress = job.progress || 0;
+        const eta = formatEta(job.eta_seconds);
         statusBox.innerHTML = `<div class="card status-card">
-          <p>Статус: ${STATUS_LABELS[job.status] || job.status} (${progress}%)</p>
+          <p>Статус: ${STATUS_LABELS[job.status] || job.status} (${progress}%)${eta ? ` — ${eta} до завершення` : ""}</p>
           ${summaryLine}
           <div class="progress"><div class="progress-bar" style="width:${progress}%"></div></div>
         </div>`;

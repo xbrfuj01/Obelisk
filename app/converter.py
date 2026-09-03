@@ -229,6 +229,7 @@ def _run_ffmpeg(cmd, job_id, duration):
     db = SessionLocal()
     log_tail = []
     last_commit = 0.0
+    last_speed = None
     timed_out = False
     proc = None
     watchdog = None
@@ -250,6 +251,14 @@ def _run_ffmpeg(cmd, job_id, duration):
                 continue
             key, sep, value = line.partition("=")
             if sep and key in PROGRESS_KEYS:
+                # ffmpeg reports how many seconds of output it's producing per
+                # wall-clock second (e.g. "2.53x") - combined with how much
+                # is left, that gives a real ETA instead of a guess.
+                if key == "speed":
+                    try:
+                        last_speed = float(value.strip().rstrip("x"))
+                    except ValueError:
+                        pass
                 # ffmpeg's -progress can report multiple times a second (up
                 # to once per frame) - throttle DB writes to a couple times a
                 # second instead of hammering SQLite on every line.
@@ -261,6 +270,8 @@ def _run_ffmpeg(cmd, job_id, duration):
                         if job:
                             job.progress = round(min(99.0, seconds / duration * 100), 1)
                             job.status = "converting"
+                            if last_speed:
+                                job.eta_seconds = max(0, round((duration - seconds) / last_speed))
                             db.commit()
                     last_commit = now
             else:
@@ -316,12 +327,14 @@ def _run_job(job_id: str, input_path: str, info: dict):
 
         job.status = "finished"
         job.progress = 100.0
+        job.eta_seconds = None
         job.filepath = output_path
         job.filesize = os.path.getsize(output_path)
         job.finished_at = datetime.utcnow()
         db.commit()
     except Exception as e:
         job.status = "error"
+        job.eta_seconds = None
         job.error_message = str(e)[:500]
         job.finished_at = datetime.utcnow()
         db.commit()

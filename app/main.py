@@ -274,6 +274,7 @@ def job_status(job_id: str, db: Session = Depends(get_db), _=Depends(require_sit
         "id": job.id,
         "status": job.status,
         "progress": job.progress,
+        "eta_seconds": job.eta_seconds,
         "title": job.title,
         "error": job.error_message,
         "filesize": job.filesize,
@@ -326,6 +327,60 @@ def recent_jobs(
         }
         for r in rows
     ]
+
+
+@app.get("/api/processes")
+def processes(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    _=Depends(require_site_access_api),
+):
+    """Combined active + recent downloads/conversions for the top-right
+    processes tray - kept in one feed (rather than two) so it reads as a
+    single timeline regardless of which tool the job came from."""
+    client_id = get_client_id(request, response)
+    downloads = (
+        db.query(Download)
+        .filter(Download.client_id == client_id)
+        .order_by(Download.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    conversions = (
+        db.query(Conversion)
+        .filter(Conversion.client_id == client_id)
+        .order_by(Conversion.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    items = [
+        {
+            "id": r.id,
+            "kind": "download",
+            "title": r.title or r.url,
+            "status": r.status,
+            "progress": r.progress,
+            "eta_seconds": r.eta_seconds,
+            "filesize": r.filesize,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in downloads
+    ] + [
+        {
+            "id": r.id,
+            "kind": "conversion",
+            "title": r.original_filename or "video",
+            "status": r.status,
+            "progress": r.progress,
+            "eta_seconds": r.eta_seconds,
+            "filesize": r.filesize,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in conversions
+    ]
+    items.sort(key=lambda it: it["created_at"], reverse=True)
+    return items[:20]
 
 
 @app.get("/api/file/{job_id}")
@@ -474,6 +529,7 @@ def conversion_status(job_id: str, db: Session = Depends(get_db), _=Depends(requ
         "id": job.id,
         "status": job.status,
         "progress": job.progress,
+        "eta_seconds": job.eta_seconds,
         "input_summary": job.input_summary,
         "duration_seconds": job.duration_seconds,
         "error": job.error_message,

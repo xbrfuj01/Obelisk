@@ -359,10 +359,15 @@ def _progress_hook(job_id, d, state):
             leg_pct = (downloaded / total * 100) if total else 0
             job.progress = _combine_leg_progress(state["leg"], leg_pct)
             job.status = "downloading"
+            # yt-dlp already computes this from the current transfer rate -
+            # it's per-leg (video, then audio for "video" mode), not for the
+            # combined job, but that's a fine approximation for "приблизно".
+            job.eta_seconds = d.get("eta")
             db.commit()
         elif status == "finished":
             state["leg_active"] = False
             job.progress = _combine_leg_progress(state["leg"], 100)
+            job.eta_seconds = None
             db.commit()
     except Exception:
         pass
@@ -479,13 +484,14 @@ def _run_job(job_id: str):
             db, job,
             status="finished",
             progress=100.0,
+            eta_seconds=None,
             title=title,
             filepath=filepath,
             filesize=filesize,
             finished_at=datetime.utcnow(),
         )
     except Exception as e:
-        _update(db, job, status="error", error_message=str(e)[:500], finished_at=datetime.utcnow())
+        _update(db, job, status="error", eta_seconds=None, error_message=str(e)[:500], finished_at=datetime.utcnow())
     finally:
         _gate.release()
         db.close()
