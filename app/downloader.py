@@ -272,6 +272,28 @@ def _subtitle_options(info):
     return result
 
 
+def _extract_with_cookie_fallback(ydl_opts, url, *, download, should_retry=lambda: True, before_retry=None):
+    """Tries anonymously first - most videos don't need an authenticated
+    session, and the cookies belong to one specific account that's better
+    exercised sparingly than spent on every single request. Only retries
+    with cookies if the anonymous attempt actually fails, and only when
+    should_retry() still allows it (e.g. not for a job that was cancelled
+    mid-flight, which isn't a real failure to retry)."""
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            return ydl.extract_info(url, download=download)
+    except Exception:
+        cookies_path = auth.get_cookies_path()
+        if not cookies_path or ydl_opts.get("cookiefile") or not should_retry():
+            raise
+        if before_retry:
+            before_retry()
+        retry_opts = dict(ydl_opts)
+        retry_opts["cookiefile"] = cookies_path
+        with yt_dlp.YoutubeDL(retry_opts) as ydl:
+            return ydl.extract_info(url, download=download)
+
+
 def probe_qualities(url: str, db):
     """Fetch the real (width x height) resolutions and subtitle languages available for this URL."""
     if not is_url_allowed(url, db):
@@ -291,11 +313,7 @@ def probe_qualities(url: str, db):
     }
     if _should_use_proxy(url, db):
         ydl_opts["proxy"] = auth.get_proxy_url(db)
-    cookies_path = auth.get_cookies_path()
-    if cookies_path:
-        ydl_opts["cookiefile"] = cookies_path
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
+    info = _extract_with_cookie_fallback(ydl_opts, url, download=False)
 
     # dedupe by height only: several formats (different codecs/bitrates) often
     # share the same height, and the download-side quality filter also caps by height
@@ -529,9 +547,6 @@ def _run_job(job_id: str):
         }
         if _should_use_proxy(job.url, db):
             ydl_opts["proxy"] = auth.get_proxy_url(db)
-        cookies_path = auth.get_cookies_path()
-        if cookies_path:
-            ydl_opts["cookiefile"] = cookies_path
 
         if job.clip_start is not None or job.clip_end is not None:
             from yt_dlp.utils import download_range_func
@@ -586,8 +601,26 @@ def _run_job(job_id: str):
             })
             ydl_opts["postprocessors"].append({"key": "FFmpegEmbedSubtitle"})
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(job.url, download=True)
+        def _clear_partial_output():
+            # The failed anonymous attempt may have already written a
+            # partial file before erroring out - clear it so the retry
+            # starts clean instead of _find_main_file picking up stale
+            # leftovers below.
+            for name in os.listdir(out_dir):
+                path = os.path.join(out_dir, name)
+                if os.path.isdir(path):
+                    shutil.rmtree(path, ignore_errors=True)
+                else:
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
+
+        info = _extract_with_cookie_fallback(
+            ydl_opts, job.url, download=True,
+            should_retry=lambda: job_id not in _cancel_requested,
+            before_retry=_clear_partial_output,
+        )
 
         title = (info or {}).get("title") or "video"
         filepath = _find_main_file(out_dir)
