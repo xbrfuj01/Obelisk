@@ -29,6 +29,12 @@ COMMON_LABELS = {
 
 SKIP_EXT = {".srt", ".vtt", ".json", ".description", ".part", ".ytdl"}
 
+# How much each new speed sample moves the smoothed estimate used for ETA -
+# lower means steadier (slower to react to a real speed change), higher
+# means more responsive (but jitterier). 0.25 roughly averages the last few
+# progress-hook callbacks, which fire every second or so.
+ETA_SMOOTHING_ALPHA = 0.25
+
 LANG_NAMES = {
     # Native/autonym names for languages Ukrainian users are most likely to
     # see; everything else falls back to an English name below rather than
@@ -368,6 +374,7 @@ def _progress_hook(job_id, d, state):
             if not state["leg_active"]:
                 state["leg_active"] = True
                 state["leg"] += 1
+                state["smoothed_speed"] = None  # new leg (e.g. audio after video) - unrelated transfer, fresh start
             total = d.get("total_bytes") or d.get("total_bytes_estimate")
             downloaded = d.get("downloaded_bytes", 0)
             # For timecode-clipped downloads yt-dlp's ffmpeg-based range
@@ -377,10 +384,24 @@ def _progress_hook(job_id, d, state):
             leg_pct = (downloaded / total * 100) if total else 0
             job.progress = _combine_leg_progress(state["leg"], leg_pct)
             job.status = "downloading"
-            # yt-dlp already computes this from the current transfer rate -
-            # it's per-leg (video, then audio for "video" mode), not for the
-            # combined job, but that's a fine approximation for "приблизно".
-            job.eta_seconds = d.get("eta")
+
+            # yt-dlp's own eta jumps around a lot (it's derived from a very
+            # short recent window - a momentary speed dip reads as "3 годин"
+            # one tick and "5 хв" the next). Smoothing the transfer rate
+            # ourselves with an exponential moving average - each new sample
+            # nudges the estimate instead of replacing it outright - reacts
+            # to a real, sustained speed change without visibly jittering.
+            raw_speed = d.get("speed")
+            if raw_speed:
+                prev = state.get("smoothed_speed")
+                state["smoothed_speed"] = raw_speed if not prev else (
+                    ETA_SMOOTHING_ALPHA * raw_speed + (1 - ETA_SMOOTHING_ALPHA) * prev
+                )
+            smoothed_speed = state.get("smoothed_speed")
+            if total and smoothed_speed:
+                job.eta_seconds = max(0, round((total - downloaded) / smoothed_speed))
+            else:
+                job.eta_seconds = None
             db.commit()
         elif status == "finished":
             state["leg_active"] = False

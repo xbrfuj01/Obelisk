@@ -207,3 +207,121 @@
 
   refresh();
 })();
+
+// ---------------- Admin: processes of every user ----------------
+// Separate button+panel (only rendered in the DOM at all for admins) - a
+// site-wide read-only view, not "my" tray, so it skips cancel buttons and
+// auto-download entirely and just shows who's running what.
+(function () {
+  var wrap = document.getElementById("admin-processes-wrap");
+  if (!wrap) return;
+  var btn = document.getElementById("admin-processes-btn");
+  var badge = document.getElementById("admin-processes-badge");
+  var panel = document.getElementById("admin-processes-panel");
+  var list = document.getElementById("admin-processes-list");
+  if (!btn || !badge || !panel || !list) return;
+
+  var ACTIVE_STATUSES = { queued: true, downloading: true, converting: true };
+  var POLL_OPEN_MS = 3000;
+  var POLL_CLOSED_MS = 15000;
+  var pollTimer = null;
+
+  function escapeHtml(str) {
+    var div = document.createElement("div");
+    div.textContent = str == null ? "" : String(str);
+    return div.innerHTML;
+  }
+
+  function formatEta(seconds) {
+    if (seconds == null || seconds < 0) return "";
+    seconds = Math.round(seconds);
+    if (seconds < 60) return "≈" + seconds + " с";
+    var totalMinutes = Math.floor(seconds / 60);
+    var s = seconds % 60;
+    if (totalMinutes < 60) return "≈" + totalMinutes + " хв" + (s ? " " + s + " с" : "");
+    var h = Math.floor(totalMinutes / 60);
+    var m = totalMinutes % 60;
+    return "≈" + h + " год" + (m ? " " + m + " хв" : "");
+  }
+
+  function statusSymbol(status) {
+    if (status === "finished") return "✓";
+    if (status === "error") return "✕";
+    if (status === "cancelled") return "⊘";
+    if (status === "downloading" || status === "converting") return '<span class="spinner"></span>';
+    if (status === "queued") return "⏳";
+    return "–";
+  }
+
+  function renderRow(item) {
+    var isActive = !!ACTIVE_STATUSES[item.status];
+    var kindLabel = item.kind === "download" ? "Завантаження" : "Конвертація";
+    var metaBits = [kindLabel];
+    if (item.status === "queued") metaBits.push("У черзі");
+    else if (isActive && item.eta_seconds != null) metaBits.push(formatEta(item.eta_seconds) + " до завершення");
+    if (item.status === "error") metaBits.push("Помилка");
+    if (item.status === "cancelled") metaBits.push("Скасовано");
+    var progressBar = isActive
+      ? '<div class="progress"><div class="progress-bar' + (item.progress ? '' : ' indeterminate') + '" style="width:' + (item.progress || 0) + '%"></div></div>'
+      : "";
+
+    return '<div class="processes-row">' +
+      '<div class="processes-row-top">' +
+        '<span class="status-icon status-' + item.status + '">' + statusSymbol(item.status) + '</span>' +
+        '<span class="processes-row-title"><b>' + escapeHtml(item.username) + '</b> — ' + escapeHtml(item.title) + '</span>' +
+      '</div>' +
+      '<span class="processes-row-meta">' + escapeHtml(metaBits.join(" · ")) + '</span>' +
+      progressBar +
+      '</div>';
+  }
+
+  function render(items) {
+    if (!items.length) {
+      list.innerHTML = '<p class="empty-hint">Немає процесів</p>';
+    } else {
+      list.innerHTML = items.map(renderRow).join("");
+    }
+    var activeCount = items.filter(function (it) { return ACTIVE_STATUSES[it.status]; }).length;
+    if (activeCount > 0) {
+      badge.textContent = activeCount > 99 ? "99+" : String(activeCount);
+      badge.hidden = false;
+    } else {
+      badge.hidden = true;
+    }
+  }
+
+  function schedulePoll() {
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(refresh, panel.hidden ? POLL_CLOSED_MS : POLL_OPEN_MS);
+  }
+
+  async function refresh() {
+    try {
+      const res = await fetch("/admin/api/processes");
+      if (res.ok) render(await res.json());
+    } catch (err) {
+      // ignore — keep showing the last known state, try again next tick
+    } finally {
+      schedulePoll();
+    }
+  }
+
+  function closePanel() {
+    panel.hidden = true;
+  }
+
+  btn.addEventListener("click", function () {
+    var willOpen = panel.hidden;
+    panel.hidden = !willOpen;
+    if (willOpen) refresh();
+  });
+
+  document.addEventListener("click", function (e) {
+    if (!panel.hidden && !wrap.contains(e.target)) closePanel();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !panel.hidden) closePanel();
+  });
+
+  refresh();
+})();

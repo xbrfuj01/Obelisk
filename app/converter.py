@@ -27,6 +27,9 @@ PROGRESS_KEYS = {
     "out_time", "dup_frames", "drop_frames", "speed", "progress",
 }
 
+# Same idea as downloader.py's constant of the same name - see there for why.
+ETA_SMOOTHING_ALPHA = 0.25
+
 
 class _ConcurrencyGate:
     """Caps how many conversions actually run at once, against a limit that
@@ -324,7 +327,18 @@ def _run_ffmpeg(cmd, job_id, duration):
                 # is left, that gives a real ETA instead of a guess.
                 if key == "speed":
                     try:
-                        last_speed = float(value.strip().rstrip("x"))
+                        raw_speed = float(value.strip().rstrip("x"))
+                        if raw_speed > 0:
+                            # Momentary dips (a hard-to-encode scene, a
+                            # slow keyframe) make the raw value jump around
+                            # tick to tick - an exponential moving average
+                            # nudges the estimate toward each new sample
+                            # instead of replacing it outright, so ETA
+                            # reacts to a real speed change without
+                            # visibly jittering.
+                            last_speed = raw_speed if not last_speed else (
+                                ETA_SMOOTHING_ALPHA * raw_speed + (1 - ETA_SMOOTHING_ALPHA) * last_speed
+                            )
                     except ValueError:
                         pass
                 # ffmpeg's -progress can report multiple times a second (up
@@ -375,6 +389,7 @@ def _run_job(job_id: str, input_path: str, info: dict):
             job.eta_seconds = None
             job.finished_at = datetime.utcnow()
             db.commit()
+            shutil.rmtree(os.path.dirname(input_path), ignore_errors=True)
             return
 
         job.status = "converting"
@@ -402,15 +417,11 @@ def _run_job(job_id: str, input_path: str, info: dict):
             returncode, log_tail = _run_ffmpeg(cmd, job_id, duration)
 
         if returncode == "cancelled":
-            if os.path.exists(output_path):
-                try:
-                    os.remove(output_path)
-                except OSError:
-                    pass
             job.status = "cancelled"
             job.eta_seconds = None
             job.finished_at = datetime.utcnow()
             db.commit()
+            shutil.rmtree(job_dir, ignore_errors=True)
             return
 
         if returncode != 0 or not os.path.exists(output_path):

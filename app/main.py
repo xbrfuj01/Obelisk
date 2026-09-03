@@ -2,7 +2,7 @@ import os
 import re
 import shutil
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import (
     BackgroundTasks, FastAPI, File, Request, Response, Form, Depends, HTTPException, UploadFile,
@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSON
 from starlette.staticfiles import StaticFiles as _StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from . import config
@@ -357,6 +357,18 @@ def recent_jobs(
     ]
 
 
+CANCELLED_HIDE_AFTER_SECONDS = 30
+
+
+def _hide_stale_cancelled(query, model):
+    """A cancelled job is already fully cleaned up server-side the moment it
+    happens - there's nothing left to act on, so leaving it sitting in the
+    tray is just clutter. Kept visible for a short window so the person who
+    just clicked cancel sees it register, then drops out on its own."""
+    cutoff = datetime.utcnow() - timedelta(seconds=CANCELLED_HIDE_AFTER_SECONDS)
+    return query.filter(or_(model.status != "cancelled", model.finished_at >= cutoff))
+
+
 @app.get("/api/processes")
 def processes(
     request: Request,
@@ -371,20 +383,14 @@ def processes(
     # "Прострочені" (expired - the file was cleaned up by the retention
     # sweep) jobs are done and gone, not something still worth downloading -
     # only ready-to-download or in-progress work belongs in this tray.
-    downloads = (
-        db.query(Download)
-        .filter(Download.client_id == client_id, Download.status != "expired")
-        .order_by(Download.created_at.desc())
-        .limit(20)
-        .all()
-    )
-    conversions = (
-        db.query(Conversion)
-        .filter(Conversion.client_id == client_id, Conversion.status != "expired")
-        .order_by(Conversion.created_at.desc())
-        .limit(20)
-        .all()
-    )
+    downloads = _hide_stale_cancelled(
+        db.query(Download).filter(Download.client_id == client_id, Download.status != "expired"),
+        Download,
+    ).order_by(Download.created_at.desc()).limit(20).all()
+    conversions = _hide_stale_cancelled(
+        db.query(Conversion).filter(Conversion.client_id == client_id, Conversion.status != "expired"),
+        Conversion,
+    ).order_by(Conversion.created_at.desc()).limit(20).all()
     items = [
         {
             "id": r.id,
@@ -875,6 +881,45 @@ def admin_sysinfo(_=Depends(require_admin_dep)):
         "cpu_temp": sysinfo.get_cpu_temperature(),
         "network": sysinfo.get_network_stats(),
     }
+
+
+@app.get("/admin/api/processes")
+def admin_processes(db: Session = Depends(get_db), _=Depends(require_admin_dep)):
+    """Same idea as /api/processes, but site-wide instead of scoped to one
+    browser's client_id - lets an admin see what every user is up to."""
+    downloads = _hide_stale_cancelled(
+        db.query(Download).filter(Download.status != "expired"), Download
+    ).order_by(Download.created_at.desc()).limit(50).all()
+    conversions = _hide_stale_cancelled(
+        db.query(Conversion).filter(Conversion.status != "expired"), Conversion
+    ).order_by(Conversion.created_at.desc()).limit(50).all()
+    items = [
+        {
+            "id": r.id,
+            "kind": "download",
+            "username": r.username or "—",
+            "title": r.title or r.url,
+            "status": r.status,
+            "progress": r.progress,
+            "eta_seconds": r.eta_seconds,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in downloads
+    ] + [
+        {
+            "id": r.id,
+            "kind": "conversion",
+            "username": r.username or "—",
+            "title": r.original_filename or "video",
+            "status": r.status,
+            "progress": r.progress,
+            "eta_seconds": r.eta_seconds,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in conversions
+    ]
+    items.sort(key=lambda it: it["created_at"], reverse=True)
+    return items[:50]
 
 
 @app.get("/admin/api/user-activity/{user_id}")
