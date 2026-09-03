@@ -1216,6 +1216,8 @@ section h3 { margin: 22px 0 4px; font-size: 1rem; }
   font-size: 0.86rem;
   font-weight: 600;
   text-decoration: none;
+  box-shadow: none;
+  cursor: pointer;
 }
 
 .page-link:hover { color: var(--text); border-color: var(--border-hover); }

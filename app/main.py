@@ -111,6 +111,7 @@ def get_db():
 
 CLIENT_ID_COOKIE = "client_id"
 CLIENT_ID_MAX_AGE = 60 * 60 * 24 * 400  # ~400 days
+RECENT_PAGE_SIZE = 10
 
 
 def get_client_id(request: Request, response: Response) -> str:
@@ -162,7 +163,7 @@ def downloader_page(request: Request, db: Session = Depends(get_db), _=Depends(r
         db.query(Download)
         .filter(Download.client_id == client_id)
         .order_by(Download.created_at.desc())
-        .limit(20)
+        .limit(RECENT_PAGE_SIZE)
         .all()
     )
     resp = templates.TemplateResponse("downloader.html", {"request": request, "recent": recent})
@@ -184,7 +185,7 @@ def converter_page(request: Request, db: Session = Depends(get_db), _=Depends(re
         db.query(Conversion)
         .filter(Conversion.client_id == client_id)
         .order_by(Conversion.created_at.desc())
-        .limit(20)
+        .limit(RECENT_PAGE_SIZE)
         .all()
     )
     resp = templates.TemplateResponse(
@@ -331,30 +332,40 @@ def get_formats(request: Request, url: str, db: Session = Depends(get_db), _=Dep
 def recent_jobs(
     request: Request,
     response: Response,
+    page: int = 1,
     db: Session = Depends(get_db),
     _=Depends(require_site_access_api),
 ):
     client_id = get_client_id(request, response)
+    page = max(1, page)
+    total = db.query(func.count(Download.id)).filter(Download.client_id == client_id).scalar()
+    total_pages = max(1, -(-total // RECENT_PAGE_SIZE))
+    page = min(page, total_pages)
     rows = (
         db.query(Download)
         .filter(Download.client_id == client_id)
         .order_by(Download.created_at.desc())
-        .limit(20)
+        .offset((page - 1) * RECENT_PAGE_SIZE)
+        .limit(RECENT_PAGE_SIZE)
         .all()
     )
-    return [
-        {
-            "id": r.id,
-            "title": r.title or r.url,
-            "url": r.url,
-            "status": r.status,
-            "progress": r.progress,
-            "source": r.source,
-            "mode": r.mode,
-            "filesize": r.filesize,
-        }
-        for r in rows
-    ]
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "title": r.title or r.url,
+                "url": r.url,
+                "status": r.status,
+                "progress": r.progress,
+                "source": r.source,
+                "mode": r.mode,
+                "filesize": r.filesize,
+            }
+            for r in rows
+        ],
+        "page": page,
+        "total_pages": total_pages,
+    }
 
 
 CANCELLED_HIDE_AFTER_SECONDS = 30
@@ -601,27 +612,37 @@ def cancel_conversion(
 def recent_conversions(
     request: Request,
     response: Response,
+    page: int = 1,
     db: Session = Depends(get_db),
     _=Depends(require_site_access_api),
 ):
     client_id = get_client_id(request, response)
+    page = max(1, page)
+    total = db.query(func.count(Conversion.id)).filter(Conversion.client_id == client_id).scalar()
+    total_pages = max(1, -(-total // RECENT_PAGE_SIZE))
+    page = min(page, total_pages)
     rows = (
         db.query(Conversion)
         .filter(Conversion.client_id == client_id)
         .order_by(Conversion.created_at.desc())
-        .limit(20)
+        .offset((page - 1) * RECENT_PAGE_SIZE)
+        .limit(RECENT_PAGE_SIZE)
         .all()
     )
-    return [
-        {
-            "id": r.id,
-            "title": r.original_filename or "video",
-            "status": r.status,
-            "progress": r.progress,
-            "filesize": r.filesize,
-        }
-        for r in rows
-    ]
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "title": r.original_filename or "video",
+                "status": r.status,
+                "progress": r.progress,
+                "filesize": r.filesize,
+            }
+            for r in rows
+        ],
+        "page": page,
+        "total_pages": total_pages,
+    }
 
 
 @app.get("/api/convert/file/{job_id}")

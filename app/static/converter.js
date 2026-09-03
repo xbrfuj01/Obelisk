@@ -285,22 +285,44 @@ function renderRow(r) {
     </div>`;
 }
 
+let recentPage = 1;
+
+function renderPagination(page, totalPages) {
+  if (totalPages <= 1) return "";
+  let html = '<nav class="pagination">';
+  for (let p = 1; p <= totalPages; p++) {
+    html += `<button type="button" class="page-link${p === page ? " active" : ""}" data-page="${p}">${p}</button>`;
+  }
+  return html + "</nav>";
+}
+
 async function refreshRecent() {
   try {
-    const res = await fetch("/api/convert/recent");
-    const rows = await res.json();
+    const res = await fetch(`/api/convert/recent?page=${recentPage}`);
+    const data = await res.json();
     const list = document.getElementById("recent-list");
+    const paginationBox = document.getElementById("recent-pagination");
     if (!list) return;
-    if (!rows.length) {
+    recentPage = data.page;
+    if (!data.items.length) {
       list.innerHTML = `<p class="empty-hint">Ще немає конвертацій</p>`;
-      return;
+    } else {
+      list.innerHTML = data.items.map(renderRow).join("");
     }
-    list.innerHTML = rows.map(renderRow).join("");
+    if (paginationBox) paginationBox.innerHTML = renderPagination(data.page, data.total_pages);
   } catch (err) {
     // ignore
   }
 }
+refreshRecent();
 setInterval(refreshRecent, 5000);
+
+document.addEventListener("click", (e) => {
+  const pageBtn = e.target.closest("#recent-pagination .page-link");
+  if (!pageBtn) return;
+  recentPage = parseInt(pageBtn.dataset.page, 10) || 1;
+  refreshRecent();
+});
 
 document.addEventListener("click", (e) => {
   const titleBtn = e.target.closest(".dl-title");
