@@ -46,6 +46,25 @@ YOUTUBE_POT_PROVIDER_EXTRACTOR_ARGS = {
     "youtubepot-bgutilhttp": {"base_url": "http://bgutil-provider:4416"}
 }
 
+
+class _YdlLogCapture:
+    """Replaces yt-dlp's normal console output (suppressed via quiet=True)
+    so its debug/warning lines - including anything about the PO token
+    provider - end up somewhere the person hitting a download error can
+    actually read them, instead of only in the container's own logs."""
+
+    def __init__(self):
+        self.lines = []
+
+    def debug(self, msg):
+        self.lines.append(msg)
+
+    def warning(self, msg):
+        self.lines.append(f"WARNING: {msg}")
+
+    def error(self, msg):
+        self.lines.append(f"ERROR: {msg}")
+
 LANG_NAMES = {
     # Native/autonym names for languages Ukrainian users are most likely to
     # see; everything else falls back to an English name below rather than
@@ -435,6 +454,7 @@ def _run_job(job_id: str):
 
     limit = auth.get_max_concurrent_downloads(db)
     _gate.acquire(limit)
+    log_capture = _YdlLogCapture()
     try:
         if job_id in _cancel_requested:
             # Cancelled while it was still waiting for a concurrency slot -
@@ -459,6 +479,8 @@ def _run_job(job_id: str):
             "noplaylist": True,
             "quiet": True,
             "no_warnings": True,
+            "verbose": True,  # otherwise yt-dlp's own debug lines (incl. PO token status) never reach the logger at all
+            "logger": log_capture,
             "progress_hooks": [lambda d: _progress_hook(job_id, d, progress_state)],
             "extractor_args": YOUTUBE_POT_PROVIDER_EXTRACTOR_ARGS,
         }
@@ -563,7 +585,15 @@ def _run_job(job_id: str):
         if job_id in _cancel_requested:
             _update(db, job, status="cancelled", eta_seconds=None, finished_at=datetime.utcnow())
         else:
-            _update(db, job, status="error", eta_seconds=None, error_message=str(e)[:500], finished_at=datetime.utcnow())
+            # The exception text alone is often just "This video is not
+            # available" with no clue why - yt-dlp's own debug/warning
+            # trail (captured above via the logger, since quiet=True would
+            # otherwise send it nowhere) usually says a lot more, including
+            # whether the PO token provider was even reached.
+            detail = str(e)
+            if log_capture.lines:
+                detail += "\n---\n" + "\n".join(log_capture.lines[-15:])
+            _update(db, job, status="error", eta_seconds=None, error_message=detail[:2000], finished_at=datetime.utcnow())
         # Partial output from an aborted download shouldn't linger forever -
         # let the cleanup path treat it the same as any other dead job.
         out_dir = os.path.join(config.DOWNLOAD_DIR, job_id)
