@@ -434,13 +434,32 @@ def processes(
     return items[:20]
 
 
+def _format_hms(seconds: float) -> str:
+    total = int(round(seconds))
+    h, rem = divmod(total, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+
+def _download_filename(job: Download) -> str:
+    """The on-disk filename is just the video title (outtmpl has no clip
+    info in it) - for a clipped download, prefix the *served* filename with
+    the requested timecode range so it's obvious which fragment this is
+    without having to open it, without renaming the file on disk itself."""
+    filename = os.path.basename(job.filepath)
+    if job.clip_start is None and job.clip_end is None:
+        return filename
+    start = _format_hms(job.clip_start or 0)
+    end = _format_hms(job.clip_end) if job.clip_end is not None else "кінець"
+    return f"[{start}]-[{end}] {filename}"
+
+
 @app.get("/api/file/{job_id}")
 def download_file(job_id: str, db: Session = Depends(get_db), _=Depends(require_site_access_api)):
     job = db.get(Download, job_id)
     if not job or job.status != "finished" or not job.filepath or not os.path.exists(job.filepath):
         return JSONResponse({"error": "Файл недоступний"}, status_code=404)
-    filename = os.path.basename(job.filepath)
-    return FileResponse(job.filepath, filename=filename)
+    return FileResponse(job.filepath, filename=_download_filename(job))
 
 
 # ---------------- Video converter ----------------
