@@ -189,6 +189,11 @@
     if (e.key === "Escape" && !panel.hidden) closePanel();
   });
 
+  // Fired by app.js/converter.js right after a new job is created, so the
+  // badge picks it up immediately instead of waiting for the next scheduled
+  // poll tick (which can be several seconds away if the panel is closed).
+  document.addEventListener("obelisk:job-created", refresh);
+
   list.addEventListener("click", async function (e) {
     var cancelBtn = e.target.closest(".processes-row-link.cancel");
     if (!cancelBtn) return;
@@ -322,6 +327,10 @@
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && !panel.hidden) closePanel();
   });
+
+  // Fired by app.js/converter.js right after a new job is created, so an
+  // admin watching the site-wide tray sees it appear immediately too.
+  document.addEventListener("obelisk:job-created", refresh);
 
   refresh();
 })();

@@ -155,6 +155,7 @@ async function submitFromDownload(downloadId) {
       return;
     }
     pollConvertStatus(data.id, data.duration_seconds, data.input_summary);
+    document.dispatchEvent(new CustomEvent("obelisk:job-created"));
   } catch (err) {
     statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка з'єднання</p></div>`;
   }
@@ -196,6 +197,7 @@ form.addEventListener("submit", (e) => {
       return;
     }
     pollConvertStatus(data.id, data.duration_seconds, data.input_summary);
+    document.dispatchEvent(new CustomEvent("obelisk:job-created"));
   };
   xhr.onerror = () => {
     statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка з'єднання</p></div>`;

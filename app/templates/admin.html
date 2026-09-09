@@ -873,6 +873,35 @@
     window.location.href = "/admin?tab=stats&" + nav.dataset.param + "=" + page;
   });
 
+  // ---------------- Delete a history row (no page reload) ----------------
+
+  document.addEventListener("submit", function (e) {
+    var form = e.target;
+    var action = form.getAttribute("action") || "";
+    var isConversion = /^\/admin\/delete-conversion\//.test(action);
+    if (!isConversion && !/^\/admin\/delete\//.test(action)) return;
+    e.preventDefault();
+
+    var submitBtn = form.querySelector("button[type=submit]");
+    if (submitBtn) submitBtn.disabled = true;
+    fetch(action, { method: "POST" }).catch(function () {});
+
+    var row = form.closest("tr");
+    if (!row) return;
+    var tbody = row.parentElement;
+    var colspan = row.children.length;
+    var emptyText = isConversion ? "Ще немає конвертацій" : "Ще немає завантажень";
+    row.classList.add("row-fade-out");
+    setTimeout(function () {
+      row.remove();
+      if (tbody && !tbody.querySelector("tr")) {
+        var placeholder = document.createElement("tr");
+        placeholder.innerHTML = "<td colspan=\"" + colspan + "\">" + emptyText + "</td>";
+        tbody.appendChild(placeholder);
+      }
+    }, 260);
+  });
+
   // ---------------- Refresh data (no page reload) ----------------
 
   var refreshBtn = document.getElementById("admin-refresh-btn");

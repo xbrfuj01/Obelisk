@@ -341,6 +341,7 @@ form.addEventListener("submit", async (e) => {
       return;
     }
     pollStatus(data.id, estimatedBytes, isClipped);
+    document.dispatchEvent(new CustomEvent("obelisk:job-created"));
   } catch (err) {
     statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка з'єднання</p></div>`;
   }
