@@ -26,7 +26,7 @@
     </div>
   </div>
 
-  <div class="grid-2">
+  <div class="grid-3">
     <div id="quality-wrap" class="field-group">
       <span class="field-label">Якість</span>
       <select name="quality" id="quality-select">
@@ -42,6 +42,14 @@
         <option value="webm">WebM</option>
         <option value="mkv">MKV</option>
       </select>
+    </div>
+
+    <div class="field-group" id="subtitles-wrap">
+      <span class="field-label">Субтитри</span>
+      <select name="subtitle_lang" id="subtitle-select">
+        <option value="">Без субтитрів</option>
+      </select>
+      <span class="hint" id="subtitle-hint"></span>
     </div>
   </div>
 
@@ -60,13 +68,6 @@
     <span class="hint" id="clip-hint">Відео обріжеться лише для полів, які ви змінили. Незмінене поле означає "від початку" / "до кінця".</span>
   </div>
 
-  <div class="field-group" id="subtitles-wrap">
-    <span class="field-label">Субтитри</span>
-    <select name="subtitle_lang" id="subtitle-select">
-      <option value="">Без субтитрів</option>
-    </select>
-    <span class="hint" id="subtitle-hint"></span>
-  </div>
   <label class="checkbox-row" id="premiere-compat-wrap"><input type="checkbox" name="premiere_compat" id="premiere-compat-input"> <span>Сумісність з відеоредакторами (якщо потрібно — файл буде автоматично сконвертовано після завантаження)</span></label>
 
   <button type="submit" class="btn-primary">Завантажити</button>
