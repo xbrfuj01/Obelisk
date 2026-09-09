@@ -22,10 +22,25 @@
 
 {% macro pagination(current, total_pages, param_name) %}
 {% if total_pages > 1 %}
-<nav class="pagination">
-  {% for p in range(1, total_pages + 1) %}
-  <a href="/admin?tab=stats&{{ param_name }}={{ p }}" class="page-link{% if p == current %} active{% endif %}">{{ p }}</a>
-  {% endfor %}
+<nav class="pagination" data-param="{{ param_name }}" data-max="{{ total_pages }}">
+  {% if current > 1 %}
+  <a href="/admin?tab=stats&{{ param_name }}=1" class="page-link" title="Перша сторінка" aria-label="Перша сторінка">«</a>
+  <a href="/admin?tab=stats&{{ param_name }}={{ current - 1 }}" class="page-link" title="Попередня сторінка" aria-label="Попередня сторінка">‹</a>
+  {% else %}
+  <span class="page-link disabled" aria-hidden="true">«</span>
+  <span class="page-link disabled" aria-hidden="true">‹</span>
+  {% endif %}
+  <span class="page-jump">
+    <input type="number" min="1" max="{{ total_pages }}" value="{{ current }}" class="page-jump-input pagination-jump-input" title="Введіть номер сторінки і натисніть Enter" aria-label="Номер сторінки">
+    <span>з {{ total_pages }}</span>
+  </span>
+  {% if current < total_pages %}
+  <a href="/admin?tab=stats&{{ param_name }}={{ current + 1 }}" class="page-link" title="Наступна сторінка" aria-label="Наступна сторінка">›</a>
+  <a href="/admin?tab=stats&{{ param_name }}={{ total_pages }}" class="page-link" title="Остання сторінка" aria-label="Остання сторінка">»</a>
+  {% else %}
+  <span class="page-link disabled" aria-hidden="true">›</span>
+  <span class="page-link disabled" aria-hidden="true">»</span>
+  {% endif %}
 </nav>
 {% endif %}
 {% endmacro %}
@@ -843,6 +858,19 @@
   document.addEventListener("click", function (e) {
     var titleBtn = e.target.closest(".table-title-btn");
     if (titleBtn) titleBtn.classList.toggle("expanded");
+  });
+
+  // ---------------- Pagination: jump to a typed page number ----------------
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter") return;
+    var input = e.target.closest(".pagination-jump-input");
+    if (!input) return;
+    e.preventDefault();
+    var nav = input.closest(".pagination");
+    var max = parseInt(nav.dataset.max, 10) || 1;
+    var page = Math.max(1, Math.min(max, parseInt(input.value, 10) || 1));
+    window.location.href = "/admin?tab=stats&" + nav.dataset.param + "=" + page;
   });
 
   // ---------------- Refresh data (no page reload) ----------------

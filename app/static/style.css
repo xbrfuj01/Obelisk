@@ -1205,10 +1205,37 @@ section h3 { margin: 22px 0 4px; font-size: 1rem; }
 
 .page-link:hover { color: var(--text); border-color: var(--border-hover); }
 
-.page-link.active {
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  border-color: transparent;
-  color: #fff;
+.page-link:disabled,
+.page-link.disabled {
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
+}
+
+.page-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 4px;
+  font-size: 0.86rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.page-jump-input {
+  width: 46px;
+  height: 30px;
+  padding: 0 4px;
+  text-align: center;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.page-jump-input::-webkit-outer-spin-button,
+.page-jump-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .back-link {

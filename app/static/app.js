@@ -542,11 +542,18 @@ let recentPage = 1;
 
 function renderPagination(page, totalPages) {
   if (totalPages <= 1) return "";
-  let html = '<nav class="pagination">';
-  for (let p = 1; p <= totalPages; p++) {
-    html += `<button type="button" class="page-link${p === page ? " active" : ""}" data-page="${p}">${p}</button>`;
-  }
-  return html + "</nav>";
+  const atFirst = page <= 1;
+  const atLast = page >= totalPages;
+  return `<nav class="pagination" data-max="${totalPages}">
+    <button type="button" class="page-link" data-page="1"${atFirst ? " disabled" : ""} title="Перша сторінка" aria-label="Перша сторінка">«</button>
+    <button type="button" class="page-link" data-page="${page - 1}"${atFirst ? " disabled" : ""} title="Попередня сторінка" aria-label="Попередня сторінка">‹</button>
+    <span class="page-jump">
+      <input type="number" min="1" max="${totalPages}" value="${page}" class="page-jump-input" title="Введіть номер сторінки і натисніть Enter" aria-label="Номер сторінки">
+      <span>з ${totalPages}</span>
+    </span>
+    <button type="button" class="page-link" data-page="${page + 1}"${atLast ? " disabled" : ""} title="Наступна сторінка" aria-label="Наступна сторінка">›</button>
+    <button type="button" class="page-link" data-page="${totalPages}"${atLast ? " disabled" : ""} title="Остання сторінка" aria-label="Остання сторінка">»</button>
+  </nav>`;
 }
 
 async function refreshRecent() {
@@ -574,6 +581,16 @@ document.addEventListener("click", (e) => {
   const pageBtn = e.target.closest("#recent-pagination .page-link");
   if (!pageBtn) return;
   recentPage = parseInt(pageBtn.dataset.page, 10) || 1;
+  refreshRecent();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  const input = e.target.closest("#recent-pagination .page-jump-input");
+  if (!input) return;
+  e.preventDefault();
+  const max = parseInt(input.closest(".pagination").dataset.max, 10) || 1;
+  recentPage = Math.max(1, Math.min(max, parseInt(input.value, 10) || 1));
   refreshRecent();
 });
 
