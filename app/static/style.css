@@ -990,9 +990,9 @@ button.stat-card:hover { border-color: var(--border-hover); }
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  align-items: flex-start;
+  align-items: center;
   gap: 28px;
-  margin: 10px 0 4px;
+  margin: 14px 0 4px;
 }
 
 .gauge-donut-wrap {
@@ -1020,19 +1020,6 @@ button.stat-card:hover { border-color: var(--border-hover); }
 .gauge-fill.mem-cached { stroke: var(--warning); }
 .gauge-fill.mem-available { stroke: var(--success); }
 
-.legend-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-right: 5px;
-  vertical-align: middle;
-}
-
-.legend-dot.mem-used { background: var(--accent); }
-.legend-dot.mem-cached { background: var(--warning); }
-.legend-dot.mem-available { background: var(--success); }
-
 .gauge-center {
   position: absolute;
   inset: 0;
@@ -1045,43 +1032,6 @@ button.stat-card:hover { border-color: var(--border-hover); }
 
 .gauge-value { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.02em; }
 .gauge-sublabel { font-size: 0.72rem; color: var(--text-dim); }
-
-.gauge-speedo-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 160px;
-}
-
-.gauge-speedo { width: 100%; height: auto; aspect-ratio: 12 / 10; display: block; }
-
-.gauge-speedo .gauge-track { stroke-width: 10; }
-
-.gauge-speedo .gauge-fill { stroke-width: 10; }
-
-.gauge-needle {
-  stroke: var(--text-dim);
-  stroke-width: 2.5;
-  stroke-linecap: round;
-  /* Rotated via the SVG transform ATTRIBUTE (rotate(angle cx cy), set in
-     the Jinja macro and updateSpeedo()), not a CSS transform - so there's
-     no transform-origin here, and no transition on it either since CSS
-     transitions don't apply to changes made via setAttribute. */
-  transition: stroke 0.3s ease;
-}
-
-.gauge-needle.warn { stroke: var(--warning); }
-.gauge-needle.danger { stroke: var(--error); }
-
-.gauge-hub { fill: var(--text-dim); }
-
-.gauge-speedo-label {
-  margin-top: -8px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-}
 
 .settings-group-title {
   margin: 10px 0 -6px;
