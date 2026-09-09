@@ -434,8 +434,26 @@ label {
 
 .hint.hint-error { color: var(--error); opacity: 1; }
 
-.activity-modal-header { display: flex; flex-direction: column; gap: 0; }
+.activity-modal-header { display: flex; flex-direction: row; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.activity-modal-header-info { display: flex; flex-direction: column; gap: 0; min-width: 0; }
 .activity-modal-meta { font-size: 0.68rem; margin: 0; }
+
+.activity-modal-note {
+  flex: 0 0 auto;
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.activity-modal-note textarea {
+  font-size: 0.82rem;
+  padding: 8px 10px;
+  resize: vertical;
+}
 
 input.field-invalid {
   border-color: var(--error);

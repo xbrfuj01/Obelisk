@@ -550,9 +550,14 @@
   <div class="modal-box wide">
     <button type="button" class="modal-close" id="activity-modal-close" aria-label="Закрити">&times;</button>
     <div class="activity-modal-header">
-      <h3>Журнал дій — <span id="activity-modal-username"></span></h3>
-      <p class="hint activity-modal-meta" id="activity-modal-created"></p>
-      <p class="hint activity-modal-meta" id="activity-modal-login"></p>
+      <div class="activity-modal-header-info">
+        <h3>Журнал дій — <span id="activity-modal-username"></span></h3>
+        <p class="hint activity-modal-meta" id="activity-modal-created"></p>
+        <p class="hint activity-modal-meta" id="activity-modal-login"></p>
+      </div>
+      <label class="activity-modal-note">Нотатка
+        <textarea id="activity-modal-note-input" rows="2" placeholder="напр. Прізвище Ім'я"></textarea>
+      </label>
     </div>
     <div id="activity-modal-body">
       <p class="hint">Завантаження...</p>
@@ -931,8 +936,26 @@
   var activityCreated = document.getElementById("activity-modal-created");
   var activityLogin = document.getElementById("activity-modal-login");
   var activityBody = document.getElementById("activity-modal-body");
+  var activityNoteInput = document.getElementById("activity-modal-note-input");
+  var activityNoteUserId = null;
+  var activityNoteSaved = "";
+
+  function saveActivityNote() {
+    if (!activityNoteUserId || activityNoteInput.value === activityNoteSaved) return;
+    var userId = activityNoteUserId;
+    var note = activityNoteInput.value;
+    activityNoteSaved = note;
+    fetch("/admin/api/user-activity/" + userId + "/note", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "note=" + encodeURIComponent(note),
+    }).catch(function () {
+      // ignore — worst case the note reverts to its previous value next open
+    });
+  }
 
   function closeActivityModal() {
+    saveActivityNote();
     activityModal.hidden = true;
   }
 
@@ -983,6 +1006,9 @@
     activityCreated.textContent = "";
     activityLogin.textContent = "";
     activityBody.innerHTML = '<p class="hint">Завантаження...</p>';
+    activityNoteInput.value = "";
+    activityNoteUserId = btn.dataset.userId;
+    activityNoteSaved = "";
     activityModal.hidden = false;
     try {
       const res = await fetch("/admin/api/user-activity/" + btn.dataset.userId);
@@ -993,6 +1019,8 @@
       }
       activityCreated.textContent = "Створено: " + data.created_at;
       activityLogin.textContent = "Авторизація: " + (data.last_login || "—");
+      activityNoteInput.value = data.note || "";
+      activityNoteSaved = activityNoteInput.value;
       activityBody.innerHTML =
         renderActivitySection("Завантаження", data.downloads) +
         renderActivitySection("Конвертації", data.conversions);
@@ -1008,6 +1036,7 @@
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && !activityModal.hidden) closeActivityModal();
   });
+  activityNoteInput.addEventListener("blur", saveActivityNote);
 
   // ---------------- Error list popup (stats tab "Помилок" cards) ----------------
 

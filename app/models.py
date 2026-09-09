@@ -87,6 +87,9 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
     last_active = Column(DateTime, nullable=True)
+    # Free-text, admin-only (e.g. the person's real name) - purely a memory
+    # aid shown in their activity log, never surfaced to the user themselves.
+    note = Column(Text, nullable=True)
 
 
 class Notification(Base):

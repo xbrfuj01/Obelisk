@@ -1051,6 +1051,7 @@ def admin_user_activity(user_id: str, db: Session = Depends(get_db), _=Depends(r
         "username": user.username,
         "created_at": timeutil.format_local(user.created_at, tz),
         "last_login": timeutil.format_local(user.last_login, tz) if user.last_login else None,
+        "note": user.note or "",
         "downloads": [
             {
                 "id": h.id,
@@ -1072,6 +1073,21 @@ def admin_user_activity(user_id: str, db: Session = Depends(get_db), _=Depends(r
             for c in conversions
         ],
     }
+
+
+@app.post("/admin/api/user-activity/{user_id}/note")
+def admin_save_user_note(
+    user_id: str,
+    note: str = Form(""),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_dep),
+):
+    user = db.get(User, user_id)
+    if not user:
+        return JSONResponse({"error": "Користувача не знайдено"}, status_code=404)
+    user.note = note.strip()[:500] or None
+    db.commit()
+    return {"ok": True}
 
 
 @app.get("/admin/api/errors/{kind}")
