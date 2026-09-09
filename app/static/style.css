@@ -1187,13 +1187,13 @@ button.stat-card:hover { border-color: var(--border-hover); }
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  font-size: 0.9rem;
+  color: var(--text-dim);
   text-decoration: none;
   background: var(--bg-input);
   border: 1px solid var(--border);
 }
 
-.dl-source-btn:hover { border-color: var(--border-hover); }
+.dl-source-btn:hover { color: var(--text); border-color: var(--border-hover); }
 
 .dl-title {
   flex: 1;

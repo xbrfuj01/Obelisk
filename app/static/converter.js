@@ -104,6 +104,13 @@ const STATUS_LABELS = {
 
 const DOWNLOAD_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
 const STATUS_CANCEL_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+// Same icon set as admin.html's status_badge macro / STATUS_ICONS, so a
+// given status looks identical whether it's rendered by the server (admin)
+// or here on the client.
+const STATUS_ICON_FINISHED = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+const STATUS_ICON_ERROR = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+const STATUS_ICON_EXPIRED = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2h4"/><path d="M12 14v-4"/><circle cx="12" cy="14" r="8"/></svg>';
+const STATUS_ICON_CANCELLED = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 8 8 8"/></svg>';
 
 function statusCancelBtn(id) {
   return `<button type="button" class="status-cancel-corner" data-cancel-id="${id}" title="Скасувати" aria-label="Скасувати">${STATUS_CANCEL_ICON}</button>`;
@@ -256,9 +263,10 @@ function pollConvertStatus(id, durationSeconds, inputSummary) {
 const CANCELLABLE_STATUSES = { queued: true, converting: true };
 
 function statusIcon(status) {
-  if (status === "finished") return "✓";
-  if (status === "error") return "✕";
-  if (status === "cancelled") return "⊘";
+  if (status === "finished") return STATUS_ICON_FINISHED;
+  if (status === "error") return STATUS_ICON_ERROR;
+  if (status === "expired") return STATUS_ICON_EXPIRED;
+  if (status === "cancelled") return STATUS_ICON_CANCELLED;
   if (status === "converting") return '<span class="spinner"></span>';
   if (status === "queued") return "⏳";
   return "–";
