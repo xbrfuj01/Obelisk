@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from . import config
 from .database import init_db, SessionLocal
-from .models import Conversion, Download, User
+from .models import Conversion, Download, Notification, User
 from . import auth
 from . import converter
 from . import metadata_tool
@@ -460,6 +460,36 @@ def download_file(job_id: str, db: Session = Depends(get_db), _=Depends(require_
     if not job or job.status != "finished" or not job.filepath or not os.path.exists(job.filepath):
         return JSONResponse({"error": "Файл недоступний"}, status_code=404)
     return FileResponse(job.filepath, filename=_download_filename(job))
+
+
+# ---------------- Notifications (admin -> one specific user) ----------------
+# No inbox/history - a notification is a one-shot popup for whoever is
+# logged in as that username, deleted the moment they dismiss it.
+
+@app.get("/api/notifications/next")
+def next_notification(request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_api)):
+    username = request.session.get("site_username")
+    if not username:
+        return {}
+    notif = (
+        db.query(Notification)
+        .filter(Notification.username == username)
+        .order_by(Notification.created_at)
+        .first()
+    )
+    if not notif:
+        return {}
+    return {"id": notif.id, "message": notif.message}
+
+
+@app.post("/api/notifications/{notif_id}/dismiss")
+def dismiss_notification(notif_id: str, request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_api)):
+    username = request.session.get("site_username")
+    notif = db.get(Notification, notif_id)
+    if notif and notif.username == username:
+        db.delete(notif)
+        db.commit()
+    return {"ok": True}
 
 
 # ---------------- Video converter ----------------
@@ -1147,6 +1177,24 @@ def admin_reset_user_password(
         return RedirectResponse("/admin?tab=users&user_error=mismatch", status_code=303)
     auth.reset_user_password(db, user_id, new_password)
     return RedirectResponse("/admin?tab=users&pw_reset=1", status_code=303)
+
+
+@app.post("/admin/users/notify/{user_id}")
+def admin_notify_user(
+    user_id: str,
+    message: str = Form(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_dep),
+):
+    message = message.strip()
+    if not message:
+        return RedirectResponse("/admin?tab=users&notify_error=empty", status_code=303)
+    user = db.get(User, user_id)
+    if not user:
+        return RedirectResponse("/admin?tab=users", status_code=303)
+    db.add(Notification(username=user.username, message=message[:2000]))
+    db.commit()
+    return RedirectResponse("/admin?tab=users&notify_sent=1", status_code=303)
 
 
 @app.post("/admin/users/set-admin/{user_id}")

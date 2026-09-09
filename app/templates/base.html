@@ -43,7 +43,20 @@
 <main class="container">
 {% block content %}{% endblock %}
 </main>
+
+<div class="modal-overlay" id="notification-modal" hidden>
+  <div class="modal-box">
+    <button type="button" class="modal-close" id="notification-modal-close" aria-label="Закрити">&times;</button>
+    <h3>Сповіщення</h3>
+    <p id="notification-modal-message"></p>
+    <div class="modal-actions">
+      <button type="button" class="btn-primary" id="notification-modal-ok">Гаразд</button>
+    </div>
+  </div>
+</div>
+
 {% block scripts %}{% endblock %}
 <script src="/static/processes.js"></script>
+<script src="/static/notifications.js"></script>
 </body>
 </html>

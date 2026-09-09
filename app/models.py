@@ -87,3 +87,15 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
     last_active = Column(DateTime, nullable=True)
+
+
+class Notification(Base):
+    """An admin-composed message for one specific user, shown as a one-time
+    popup the next time that user's browser polls for it - the row is
+    deleted once they dismiss it, there's no persistent inbox."""
+    __tablename__ = "notifications"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    username = Column(String, nullable=False, index=True)
+    message = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
