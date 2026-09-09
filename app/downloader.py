@@ -3,9 +3,11 @@ import os
 import re
 import shutil
 import socket
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -14,6 +16,53 @@ import yt_dlp
 from . import auth, config
 from .database import SessionLocal
 from .models import Download
+
+# yt-dlp writes some of its own error/traceback output straight to the
+# process's real stdout/stderr (e.g. under verbose=True) rather than going
+# through the "logger" ydl_opt below - which is exactly the noise the
+# anonymous-attempt-then-cookie-retry dance in _extract_with_cookie_fallback
+# produces on the container's own logs for a failure the retry immediately
+# fixes. sys.stdout/stderr are process-global, so with several downloads
+# running in their own threads a plain contextlib.redirect_stdout would also
+# swallow an unrelated thread's output for the overlap - this instead mutes
+# per-thread, checking the CURRENT thread on every write, which is safe to
+# use concurrently.
+class _ThreadAwareMuter:
+    def __init__(self, real_stream):
+        self._real = real_stream
+
+    def write(self, data):
+        with _mute_lock:
+            muted = threading.get_ident() in _muted_threads
+        if not muted:
+            self._real.write(data)
+
+    def flush(self):
+        self._real.flush()
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+_mute_lock = threading.Lock()
+_muted_threads = set()
+sys.stdout = _ThreadAwareMuter(sys.stdout)
+sys.stderr = _ThreadAwareMuter(sys.stderr)
+
+
+@contextmanager
+def _mute_console_output():
+    """Silences whatever the current thread writes to stdout/stderr for the
+    duration of the block - other threads' output is unaffected."""
+    tid = threading.get_ident()
+    with _mute_lock:
+        _muted_threads.add(tid)
+    try:
+        yield
+    finally:
+        with _mute_lock:
+            _muted_threads.discard(tid)
+
 
 # Sized generously and fixed — the actual concurrency cap is admin-configurable
 # (max_concurrent_downloads, stored in the DB) and enforced by _ConcurrencyGate
@@ -279,9 +328,17 @@ def _extract_with_cookie_fallback(ydl_opts, url, *, download, should_retry=lambd
     exercised sparingly than spent on every single request. Only retries
     with cookies if the anonymous attempt actually fails, and only when
     should_retry() still allows it (e.g. not for a job that was cancelled
-    mid-flight, which isn't a real failure to retry)."""
+    mid-flight, which isn't a real failure to retry).
+
+    The anonymous attempt's own console output is muted regardless of
+    outcome - quiet=True already hides its normal progress/info lines, so
+    what's left is verbose=True diagnostic noise and error tracebacks that
+    are either harmless (retry below fixes it) or already captured in full
+    via the logger ydl_opt for the error_message shown in the app itself -
+    the container's own logs don't need a copy of a failure the retry just
+    resolved."""
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with _mute_console_output(), yt_dlp.YoutubeDL(ydl_opts) as ydl:
             return ydl.extract_info(url, download=download)
     except Exception:
         cookies_path = auth.get_cookies_path()
