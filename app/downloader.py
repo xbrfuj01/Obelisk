@@ -656,6 +656,13 @@ def _run_job(job_id: str):
             # always grab the best available, then check the actual codec
             # after downloading and re-encode only if it turns out to
             # matter (see the premiere_compat block after the download).
+            #
+            # The "best" fallback can land on a combined video+audio format
+            # when no separate video-only stream is available (some sites,
+            # or a restricted player_client) - "Лише відео" should never
+            # come back with sound regardless of which format got picked,
+            # so strip audio during the remux unconditionally instead of
+            # trusting format selection alone to guarantee that.
             ydl_opts["format"] = f"bestvideo{height_filter}/best{height_filter}"
             if job.container in VIDEO_FORMATS:
                 ydl_opts.setdefault("postprocessors", [])
@@ -663,6 +670,7 @@ def _run_job(job_id: str):
                     "key": "FFmpegVideoRemuxer",
                     "preferedformat": job.container,
                 })
+                ydl_opts.setdefault("postprocessor_args", {})["ffmpeg_o"] = ["-an"]
         else:
             ydl_opts["format"] = f"bestvideo{height_filter}+bestaudio/best{height_filter}"
             if job.container in VIDEO_FORMATS:
