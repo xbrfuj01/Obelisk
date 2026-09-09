@@ -175,6 +175,20 @@ def create_user(db: Session, username: str, password: str) -> User:
     return user
 
 
+def create_first_admin(db: Session, username: str, password: str) -> User | None:
+    """Bootstraps the very first site user as an admin. There's otherwise no
+    way in on a brand-new /data volume: admin_add_user requires an existing
+    admin session, and a fresh database has none. Re-checks the user count
+    itself (not just is_site_gate_enabled at the call site) to stay safe if
+    two people hit /setup at the same moment - only the first commit wins."""
+    if db.query(User).count() > 0:
+        return None
+    user = User(username=username, password_hash=pwd_context.hash(password), is_admin=True)
+    db.add(user)
+    db.commit()
+    return user
+
+
 def delete_user(db: Session, user_id: str) -> bool:
     """Refuses to delete the last remaining admin — same reasoning as
     set_user_admin: there's no separate admin login to fall back on."""

@@ -847,6 +847,45 @@ def site_logout(request: Request):
     return RedirectResponse("/site-login", status_code=303)
 
 
+# One-time bootstrap for a brand-new /data volume: with zero users the site
+# gate is off (see is_site_gate_enabled) but that also means there's no
+# admin session to create one through /admin/users/add. This route is the
+# only door in on a fresh database, and it locks itself the moment a user
+# exists - same self-closing pattern /site-login already uses.
+@app.get("/setup", response_class=HTMLResponse)
+def setup_form(request: Request, db: Session = Depends(get_db)):
+    if auth.is_site_gate_enabled(db):
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse("setup.html", {"request": request, "error": None})
+
+
+@app.post("/setup")
+def setup_submit(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    password_confirm: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    if auth.is_site_gate_enabled(db):
+        return RedirectResponse("/", status_code=303)
+    username = username.strip()
+    if not username or not password:
+        return templates.TemplateResponse(
+            "setup.html", {"request": request, "error": "Заповніть усі поля"}, status_code=400
+        )
+    if password != password_confirm:
+        return templates.TemplateResponse(
+            "setup.html", {"request": request, "error": "Паролі не збігаються"}, status_code=400
+        )
+    user = auth.create_first_admin(db, username, password)
+    if not user:
+        return RedirectResponse("/", status_code=303)
+    request.session["site_access"] = True
+    request.session["site_username"] = user.username
+    return RedirectResponse("/admin", status_code=303)
+
+
 # ---------------- Admin ----------------
 # Access is entirely user-based now (User.is_admin, granted from the Users
 # tab) — there's no separate admin login. Whoever is logged into the site
