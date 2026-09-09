@@ -282,6 +282,7 @@ def job_status(job_id: str, db: Session = Depends(get_db), _=Depends(require_sit
         "error": job.error_message,
         "filesize": job.filesize,
         "auto_convert_id": job.auto_convert_id,
+        "premiere_compat": bool(job.premiere_compat),
     }
 
 
@@ -360,6 +361,7 @@ def recent_jobs(
                 "source": r.source,
                 "mode": r.mode,
                 "filesize": r.filesize,
+                "premiere_compat": bool(r.premiere_compat),
             }
             for r in rows
         ],

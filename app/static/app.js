@@ -416,12 +416,17 @@ function pollStatus(id, estimatedBytes, isClipped) {
       } else if (job.status === "finished") {
         const finalSize = formatSize(job.filesize) || estimatedSize;
         if (claimAutoDownload("download:" + id)) triggerAutoDownload(`/api/file/${id}`);
+        // Only offered when premiere_compat was off - if it was on, the file
+        // either got auto-converted already (the auto_convert_id branch
+        // above) or was already compatible, so a manual convert option here
+        // would just be redundant.
         const convertHref = `/converter?from_download=${id}&filename=${encodeURIComponent(job.title || "")}`;
+        const convertBtn = job.premiere_compat ? "" : `<a class="btn-convert" href="${convertHref}">${CONVERT_ICON} Конвертувати для Premiere</a>`;
         statusBox.innerHTML = `<div class="card status-card">
           <p class="success">✓ Готово: ${escapeHtml(job.title || "")}${finalSize ? ` (${finalSize})` : ""}</p>
           <div class="status-actions">
             <a class="btn-download" href="/api/file/${id}">${DOWNLOAD_ICON} Завантажити ще раз</a>
-            <a class="btn-convert" href="${convertHref}">${CONVERT_ICON} Конвертувати для Premiere</a>
+            ${convertBtn}
           </div>
         </div>`;
         clearInterval(interval);
@@ -523,7 +528,9 @@ function renderRow(r) {
   let btn;
   if (r.status === "finished") {
     const convertHref = `/converter?from_download=${r.id}&filename=${encodeURIComponent(r.title || "")}`;
-    btn = `<a class="dl-convert-btn" href="${convertHref}" title="Конвертувати для Premiere">${CONVERT_ICON}</a>
+    // Same reasoning as pollStatus: only useful when premiere_compat was off.
+    const convertBtn = r.premiere_compat ? "" : `<a class="dl-convert-btn" href="${convertHref}" title="Конвертувати для Premiere">${CONVERT_ICON}</a>`;
+    btn = `${convertBtn}
       <a class="dl-download-btn" href="/api/file/${r.id}" title="Завантажити">${DOWNLOAD_ICON}</a>`;
   } else {
     btn = `<span class="dl-download-btn disabled" title="Ще не готово">${DOWNLOAD_ICON}</span>`;
