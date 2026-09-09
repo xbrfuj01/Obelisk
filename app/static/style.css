@@ -780,10 +780,24 @@ button:active { transform: translateY(1px); }
 
 .mode-icon {
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
   gap: 4px;
   color: var(--text-dim);
   vertical-align: middle;
+}
+
+/* History tables: the size column sits right before the row-action icons -
+   tighten that one gap instead of the table's normal cell padding, which
+   would also widen every other column's spacing. */
+.history-table th:nth-last-child(2),
+.history-table td:nth-last-child(2) {
+  padding-right: 4px;
+}
+
+.history-table th:last-child,
+.history-table td:last-child {
+  padding-left: 4px;
 }
 
 .admin-header {
@@ -926,6 +940,21 @@ section h3 { margin: 22px 0 4px; font-size: 1rem; }
   gap: 4px;
 }
 
+/* A .stat-card that's also a real <button> (e.g. the clickable "Помилок"
+   cards) - resets the generic button styling (gradient fill, glow, fixed
+   width) back to a plain stat-card look, same convention as .dl-title. */
+button.stat-card {
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  box-shadow: none;
+  transition: border-color 0.15s;
+}
+
+button.stat-card:hover { border-color: var(--border-hover); }
+
 .stat-value { font-size: 1.7rem; font-weight: 800; letter-spacing: -0.02em; }
 .stat-label { color: var(--text-dim); font-size: 0.82rem; }
 
@@ -954,6 +983,82 @@ section h3 { margin: 22px 0 4px; font-size: 1rem; }
 .stats-grid.compact .stat-card { padding: 12px 14px; gap: 2px; }
 .stats-grid.compact .stat-value { font-size: 1.25rem; }
 .stats-grid.compact .stat-label { font-size: 0.74rem; }
+
+/* System tab gauges */
+
+.gauge-row {
+  display: flex;
+  justify-content: center;
+  margin: 10px 0 4px;
+}
+
+.gauge-donut-wrap {
+  position: relative;
+  width: 120px;
+  height: 120px;
+}
+
+.gauge-donut { width: 100%; height: 100%; transform: rotate(-90deg); }
+
+.gauge-track { fill: none; stroke: var(--bg-input); stroke-width: 12; }
+
+.gauge-fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 12;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.4s ease, stroke 0.3s ease;
+}
+
+.gauge-fill.warn { stroke: var(--warning); }
+.gauge-fill.danger { stroke: var(--error); }
+
+.gauge-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.gauge-value { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.02em; }
+.gauge-sublabel { font-size: 0.72rem; color: var(--text-dim); }
+
+.gauge-speedo-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 160px;
+}
+
+.gauge-speedo { width: 100%; height: auto; display: block; }
+
+.gauge-speedo .gauge-track { stroke-width: 10; }
+
+.gauge-speedo .gauge-fill { stroke-width: 10; }
+
+.gauge-needle {
+  stroke: var(--text-dim);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  transform-origin: 60px 100px;
+  transition: transform 0.4s ease, stroke 0.3s ease;
+}
+
+.gauge-needle.warn { stroke: var(--warning); }
+.gauge-needle.danger { stroke: var(--error); }
+
+.gauge-hub { fill: var(--text-dim); }
+
+.gauge-speedo-label {
+  margin-top: -8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
 
 .settings-group-title {
   margin: 10px 0 -6px;
@@ -1374,6 +1479,9 @@ a.tool-card:hover {
 }
 .activity-row .activity-date { flex: 0 0 auto; color: var(--text-dim); }
 .activity-row .activity-size { flex: 0 0 auto; color: var(--text-dim); width: 64px; text-align: right; }
+
+a.activity-title { color: var(--text); text-decoration: none; }
+a.activity-title:hover { color: var(--accent); text-decoration: underline; }
 
 .modal-close {
   position: absolute;

@@ -45,6 +45,49 @@
 {% endif %}
 {% endmacro %}
 
+{% macro donut_gauge(pct, id_prefix, label, warn_at=70, danger_at=90) %}
+{% set circumference = 314.159 %}
+{% set safe_pct = [pct or 0, 0] | max %}
+{% set safe_pct = [safe_pct, 100] | min %}
+{% set offset = circumference * (1 - safe_pct / 100) %}
+<div class="gauge-donut-wrap">
+  <svg viewBox="0 0 120 120" class="gauge-donut" aria-hidden="true">
+    <circle cx="60" cy="60" r="50" class="gauge-track"></circle>
+    <circle cx="60" cy="60" r="50"
+            class="gauge-fill{% if safe_pct >= danger_at %} danger{% elif safe_pct >= warn_at %} warn{% endif %}"
+            id="{{ id_prefix }}-fill" stroke-dasharray="{{ circumference }}" stroke-dashoffset="{{ offset }}"></circle>
+  </svg>
+  <div class="gauge-center">
+    <span class="gauge-value" id="{{ id_prefix }}-pct">{{ safe_pct | round | int }}%</span>
+    <span class="gauge-sublabel">{{ label }}</span>
+  </div>
+</div>
+{% endmacro %}
+
+{% macro speedo_gauge(value, max_value, display_text, id_prefix, label, warn_at, danger_at) %}
+{% set path_length = 141.37 %}
+{% set fraction = ((value / max_value) if (value is not none and max_value) else 0) %}
+{% set fraction = [fraction, 0] | max %}
+{% set fraction = [fraction, 1] | min %}
+{% set offset = path_length * (1 - fraction) %}
+{% set deg = (fraction - 0.5) * 180 %}
+{% set zone = "danger" if (value is not none and value >= danger_at) else ("warn" if (value is not none and value >= warn_at) else "") %}
+<div class="gauge-speedo-wrap">
+  <svg viewBox="0 0 120 100" class="gauge-speedo" aria-hidden="true">
+    <path d="M 15 100 A 45 45 0 0 1 105 100" class="gauge-track"></path>
+    <path d="M 15 100 A 45 45 0 0 1 105 100" class="gauge-fill {{ zone }}"
+          id="{{ id_prefix }}-fill" stroke-dasharray="{{ path_length }}" stroke-dashoffset="{{ offset }}"></path>
+    <line x1="60" y1="100" x2="60" y2="58" class="gauge-needle {{ zone }}"
+          id="{{ id_prefix }}-needle" style="transform: rotate({{ deg }}deg)"></line>
+    <circle cx="60" cy="100" r="4" class="gauge-hub"></circle>
+  </svg>
+  <div class="gauge-speedo-label">
+    <span class="gauge-value" id="{{ id_prefix }}-value">{{ display_text }}</span>
+    <span class="gauge-sublabel">{{ label }}</span>
+  </div>
+</div>
+{% endmacro %}
+
 {% block content %}
 <div class="admin-header">
   <div class="admin-header-title">
@@ -71,7 +114,7 @@
         <div class="stats-grid compact">
           <div class="stat-card"><span class="stat-value">{{ total }}</span><span class="stat-label">Всього завантажень</span></div>
           <div class="stat-card"><span class="stat-value">{{ finished }}</span><span class="stat-label">Успішних</span></div>
-          <div class="stat-card"><span class="stat-value">{{ errors }}</span><span class="stat-label">Помилок</span></div>
+          <button type="button" class="stat-card open-error-modal" data-kind="download"><span class="stat-value">{{ errors }}</span><span class="stat-label">Помилок</span></button>
           <div class="stat-card"><span class="stat-value">{{ format_bytes(total_size) }}</span><span class="stat-label">Займано місця</span></div>
         </div>
       </div>
@@ -80,7 +123,7 @@
         <div class="stats-grid compact">
           <div class="stat-card"><span class="stat-value">{{ conversion_total }}</span><span class="stat-label">Всього конвертацій</span></div>
           <div class="stat-card"><span class="stat-value">{{ conversion_finished }}</span><span class="stat-label">Успішних</span></div>
-          <div class="stat-card"><span class="stat-value">{{ conversion_errors }}</span><span class="stat-label">Помилок</span></div>
+          <button type="button" class="stat-card open-error-modal" data-kind="conversion"><span class="stat-value">{{ conversion_errors }}</span><span class="stat-label">Помилок</span></button>
           <div class="stat-card"><span class="stat-value">{{ format_bytes(conversion_total_size) }}</span><span class="stat-label">Займано місця</span></div>
         </div>
       </div>
@@ -138,11 +181,12 @@
   <section>
     <h2>Історія завантажень</h2>
     <div class="table-wrap card">
-    <table class="table">
-      <thead><tr><th>Назва</th><th>Джерело</th><th>Тип</th><th>Статус</th><th>Юзер</th><th>Дата</th><th>Розмір</th><th></th></tr></thead>
+    <table class="table history-table">
+      <thead><tr><th>Статус</th><th>Назва</th><th>Джерело</th><th>Тип</th><th>Юзер</th><th>Дата</th><th>Розмір</th><th></th></tr></thead>
       <tbody>
       {% for h in history %}
         <tr>
+          <td>{{ status_badge(h.status) }}</td>
           <td><button type="button" class="table-title-btn">{{ h.title or h.url }}</button></td>
           <td>{{ h.source or '' }}</td>
           <td>
@@ -159,7 +203,6 @@
             {{ h.mode }}
             {% endif %}
           </td>
-          <td>{{ status_badge(h.status) }}</td>
           <td>{{ h.username or '—' }}</td>
           <td>{{ format_dt(h.created_at, timezone)|replace(' ', '<br>')|safe }}</td>
           <td>{{ format_bytes(h.filesize) if h.filesize else '' }}</td>
@@ -199,15 +242,15 @@
   <section>
     <h2>Історія конвертацій</h2>
     <div class="table-wrap card">
-    <table class="table">
-      <thead><tr><th>Файл</th><th>Якість</th><th>Аудіо</th><th>Статус</th><th>Користувач</th><th>Дата</th><th>Розмір</th><th></th></tr></thead>
+    <table class="table history-table">
+      <thead><tr><th>Статус</th><th>Файл</th><th>Якість</th><th>Аудіо</th><th>Користувач</th><th>Дата</th><th>Розмір</th><th></th></tr></thead>
       <tbody>
       {% for c in conversion_history %}
         <tr>
+          <td>{{ status_badge(c.status) }}</td>
           <td><button type="button" class="table-title-btn">{{ c.original_filename or "video" }}</button></td>
           <td>{{ c.quality }}</td>
           <td>{{ c.audio_option }}</td>
-          <td>{{ status_badge(c.status) }}</td>
           <td>{{ c.username or '—' }}</td>
           <td>{{ format_dt(c.created_at, timezone) }}</td>
           <td>{{ format_bytes(c.filesize) if c.filesize else '' }}</td>
@@ -301,31 +344,33 @@
 <div class="tab-panel" data-tab-panel="system">
   <section>
     <h2>Система</h2>
-    <p class="hint">Показники самого сервера (TrueNAS), а не лише контейнера — оскільки Obelisk єдиний процес у своєму контейнері, мережевий трафік нижче фактично і є трафіком сервісу. Деякі значення можуть бути недоступні залежно від того, що Docker відкриває контейнеру.</p>
-    <div class="stats-grid">
-      <div class="stat-card">
-        <span class="stat-value" id="sysinfo-cpu-temp">{{ "%.1f°C"|format(sys_info.cpu_temp) if sys_info.cpu_temp is not none else "—" }}</span>
-        <span class="stat-label">Температура CPU</span>
-      </div>
+
+    <h3>Температура CPU</h3>
+    <div class="gauge-row">
+      {{ speedo_gauge(sys_info.cpu_temp, 100, ("%.1f°C"|format(sys_info.cpu_temp) if sys_info.cpu_temp is not none else "—"), "sysinfo-cpu", "", 60, 80) }}
     </div>
 
-    <h3>Пам'ять</h3>
+    <h3>ОЗП</h3>
     {% if sys_info.memory %}
-    <div class="stats-grid">
-      <div class="stat-card"><span class="stat-value" id="sysinfo-mem-total">{{ format_bytes(sys_info.memory.total) }}</span><span class="stat-label">Всього RAM</span></div>
+    {% set mem_pct = ((sys_info.memory.used / sys_info.memory.total * 100) if (sys_info.memory.used is not none and sys_info.memory.total) else 0) %}
+    <div class="gauge-row">
+      {{ donut_gauge(mem_pct, "sysinfo-mem", "використано") }}
+    </div>
+    <div class="stats-grid compact">
+      <div class="stat-card"><span class="stat-value" id="sysinfo-mem-total">{{ format_bytes(sys_info.memory.total) }}</span><span class="stat-label">Всього</span></div>
       <div class="stat-card"><span class="stat-value" id="sysinfo-mem-used">{{ format_bytes(sys_info.memory.used) }}</span><span class="stat-label">Використано</span></div>
       <div class="stat-card"><span class="stat-value" id="sysinfo-mem-cached">{{ format_bytes(sys_info.memory.cached) }}</span><span class="stat-label">Кеш/буфери</span></div>
       <div class="stat-card"><span class="stat-value" id="sysinfo-mem-available">{{ format_bytes(sys_info.memory.available) }}</span><span class="stat-label">Доступно</span></div>
     </div>
     {% else %}
-    <p class="hint">Інформація про пам'ять недоступна в цьому середовищі.</p>
+    <p class="hint">Інформація про ОЗП недоступна в цьому середовищі.</p>
     {% endif %}
 
-    <h3>Мережа (з моменту старту контейнера)</h3>
+    <h3>Мережа</h3>
     {% if sys_info.network %}
-    <div class="stats-grid">
-      <div class="stat-card"><span class="stat-value" id="sysinfo-net-rx">{{ format_bytes(sys_info.network.rx_bytes) }}</span><span class="stat-label">Отримано</span></div>
-      <div class="stat-card"><span class="stat-value" id="sysinfo-net-tx">{{ format_bytes(sys_info.network.tx_bytes) }}</span><span class="stat-label">Надіслано</span></div>
+    <div class="stats-grid compact">
+      <div class="stat-card"><span class="stat-value" id="sysinfo-net-rx">{{ format_bytes(sys_info.network.rx_bytes) }}</span><span class="stat-label">Отримано (всього)</span></div>
+      <div class="stat-card"><span class="stat-value" id="sysinfo-net-tx">{{ format_bytes(sys_info.network.tx_bytes) }}</span><span class="stat-label">Надіслано (всього)</span></div>
     </div>
     {% else %}
     <p class="hint">Інформація про мережу недоступна в цьому середовищі.</p>
@@ -500,6 +545,16 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="error-modal" hidden>
+  <div class="modal-box wide">
+    <button type="button" class="modal-close" id="error-modal-close" aria-label="Закрити">&times;</button>
+    <h3 id="error-modal-title">Помилки</h3>
+    <div class="activity-list" id="error-modal-body">
+      <p class="hint">Завантаження...</p>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 {% block scripts %}
 <script>
@@ -532,12 +587,61 @@
     if (el) el.textContent = text;
   }
 
+  // Same geometry as the donut_gauge/speedo_gauge Jinja macros below - kept
+  // in sync by hand since one draws the first paint server-side and this
+  // redraws it on every poll tick.
+  var DONUT_CIRCUMFERENCE = 314.159;
+  var SPEEDO_PATH_LENGTH = 141.37;
+
+  function gaugeZoneClass(value, warnAt, dangerAt) {
+    if (value == null) return "";
+    if (value >= dangerAt) return "danger";
+    if (value >= warnAt) return "warn";
+    return "";
+  }
+
+  function updateDonut(prefix, pct, warnAt, dangerAt) {
+    pct = Math.max(0, Math.min(100, pct || 0));
+    var fill = document.getElementById(prefix + "-fill");
+    if (fill) {
+      fill.style.strokeDashoffset = (DONUT_CIRCUMFERENCE * (1 - pct / 100)).toFixed(2);
+      fill.classList.remove("warn", "danger");
+      var zone = gaugeZoneClass(pct, warnAt, dangerAt);
+      if (zone) fill.classList.add(zone);
+    }
+    setText(prefix + "-pct", Math.round(pct) + "%");
+  }
+
+  function updateSpeedo(prefix, value, max, displayText, warnAt, dangerAt) {
+    var fraction = value == null ? 0 : Math.max(0, Math.min(1, value / max));
+    var fill = document.getElementById(prefix + "-fill");
+    var needle = document.getElementById(prefix + "-needle");
+    var zone = gaugeZoneClass(value, warnAt, dangerAt);
+    if (fill) {
+      fill.style.strokeDashoffset = (SPEEDO_PATH_LENGTH * (1 - fraction)).toFixed(2);
+      fill.classList.remove("warn", "danger");
+      if (zone) fill.classList.add(zone);
+    }
+    if (needle) {
+      needle.style.transform = "rotate(" + ((fraction - 0.5) * 180).toFixed(1) + "deg)";
+      needle.classList.remove("warn", "danger");
+      if (zone) needle.classList.add(zone);
+    }
+    setText(prefix + "-value", displayText);
+  }
+
   async function refreshSysinfo() {
     try {
       const res = await fetch("/admin/api/sysinfo");
       const data = await res.json();
-      setText("sysinfo-cpu-temp", data.cpu_temp != null ? data.cpu_temp.toFixed(1) + "°C" : "—");
-      if (data.memory) {
+      updateSpeedo(
+        "sysinfo-cpu", data.cpu_temp, 100,
+        data.cpu_temp != null ? data.cpu_temp.toFixed(1) + "°C" : "—",
+        60, 80
+      );
+      if (data.memory && data.memory.total) {
+        var memPct = (data.memory.used / data.memory.total) * 100;
+        updateDonut("sysinfo-mem", memPct, 70, 90);
         setText("sysinfo-mem-total", formatBytes(data.memory.total));
         setText("sysinfo-mem-used", formatBytes(data.memory.used));
         setText("sysinfo-mem-cached", formatBytes(data.memory.cached));
@@ -851,6 +955,57 @@
   });
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && !activityModal.hidden) closeActivityModal();
+  });
+
+  // ---------------- Error list popup (stats tab "Помилок" cards) ----------------
+
+  var errorModal = document.getElementById("error-modal");
+  var errorModalTitle = document.getElementById("error-modal-title");
+  var errorModalBody = document.getElementById("error-modal-body");
+
+  function closeErrorModal() {
+    errorModal.hidden = true;
+  }
+
+  function renderErrorRow(it) {
+    var titleHtml = it.url
+      ? '<a class="activity-title" href="' + escapeHtmlAttr(it.url) + '" target="_blank" rel="noopener noreferrer" title="' + escapeHtmlAttr(it.url) + '">' + escapeHtmlAttr(it.title) + '</a>'
+      : '<span class="activity-title" title="' + escapeHtmlAttr(it.title) + '">' + escapeHtmlAttr(it.title) + '</span>';
+    return '<div class="activity-row">' +
+      titleHtml +
+      '<span class="activity-date">' + escapeHtmlAttr(it.username) + '</span>' +
+      '<span class="activity-date">' + escapeHtmlAttr(it.date) + '</span>' +
+      '</div>';
+  }
+
+  document.addEventListener("click", async function (e) {
+    var btn = e.target.closest(".open-error-modal");
+    if (!btn) return;
+    var isConversion = btn.dataset.kind === "conversion";
+    errorModalTitle.textContent = isConversion ? "Помилки конвертацій" : "Помилки завантажень";
+    errorModalBody.innerHTML = '<p class="hint">Завантаження...</p>';
+    errorModal.hidden = false;
+    try {
+      const res = await fetch("/admin/api/errors/" + btn.dataset.kind);
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        errorModalBody.innerHTML = '<p class="error">' + escapeHtmlAttr(data.error || "Помилка завантаження") + '</p>';
+        return;
+      }
+      errorModalBody.innerHTML = data.items.length
+        ? data.items.map(renderErrorRow).join("")
+        : '<p class="empty-hint">Немає помилок</p>';
+    } catch (err) {
+      errorModalBody.innerHTML = '<p class="error">Помилка з\'єднання</p>';
+    }
+  });
+
+  document.getElementById("error-modal-close").addEventListener("click", closeErrorModal);
+  errorModal.addEventListener("click", function (e) {
+    if (e.target === errorModal) closeErrorModal();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !errorModal.hidden) closeErrorModal();
   });
 
   // ---------------- Expandable history titles ----------------

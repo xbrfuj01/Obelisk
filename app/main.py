@@ -868,7 +868,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
     sys_info = {
         "memory": sysinfo.get_memory_stats(),
         "cpu_temp": sysinfo.get_cpu_temperature(),
-        "network": sysinfo.get_network_stats(),
+        "network": sysinfo.get_persisted_network_stats(db),
     }
 
     retention_hours = auth.get_retention_hours(db)
@@ -926,11 +926,11 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
 
 
 @app.get("/admin/api/sysinfo")
-def admin_sysinfo(_=Depends(require_admin_dep)):
+def admin_sysinfo(db: Session = Depends(get_db), _=Depends(require_admin_dep)):
     return {
         "memory": sysinfo.get_memory_stats(),
         "cpu_temp": sysinfo.get_cpu_temperature(),
-        "network": sysinfo.get_network_stats(),
+        "network": sysinfo.get_persisted_network_stats(db),
     }
 
 
@@ -1017,6 +1017,33 @@ def admin_user_activity(user_id: str, db: Session = Depends(get_db), _=Depends(r
                 "size": sysinfo.format_bytes(c.filesize) if c.filesize else "",
             }
             for c in conversions
+        ],
+    }
+
+
+@app.get("/admin/api/errors/{kind}")
+def admin_errors(kind: str, db: Session = Depends(get_db), _=Depends(require_admin_dep)):
+    if kind not in ("download", "conversion"):
+        return JSONResponse({"error": "invalid kind"}, status_code=400)
+    tz = auth.get_timezone(db)
+    model = Download if kind == "download" else Conversion
+    rows = (
+        db.query(model)
+        .filter(model.status == "error")
+        .order_by(model.created_at.desc())
+        .limit(200)
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "title": (r.title or r.url) if kind == "download" else (r.original_filename or "video"),
+                "url": r.url if kind == "download" else None,
+                "username": r.username or "—",
+                "date": timeutil.format_local(r.created_at, tz),
+            }
+            for r in rows
         ],
     }
 

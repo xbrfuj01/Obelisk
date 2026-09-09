@@ -203,7 +203,7 @@ function updateSubtitleAvailability() {
   } else if (lastSubtitles.length) {
     if (subtitleHint) subtitleHint.textContent = `Знайдено ${lastSubtitles.length} мов(и) субтитрів для цього відео.`;
   } else if (subtitleHint) {
-    subtitleHint.textContent = "Встав посилання, щоб побачити доступні мови. Вшиваються у файл — лише для MP4/MKV.";
+    subtitleHint.textContent = "";
   }
 }
 containerSelect.addEventListener("change", updateSubtitleAvailability);
@@ -313,7 +313,7 @@ if (urlClearBtn) {
     resetPerVideoOptions();
     urlStatus.innerHTML = "";
     urlStatus.className = "url-status";
-    qualityHint.textContent = "Встав посилання, щоб побачити реальні доступні роздільні здатності (в т.ч. 4K/8K)";
+    qualityHint.textContent = "";
     updateUrlClearButton();
     urlInput.focus();
   });
