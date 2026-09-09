@@ -64,6 +64,28 @@
 </div>
 {% endmacro %}
 
+{% macro mem_donut_gauge(used_pct, cached_pct, available_pct, id_prefix, label) %}
+{% set circumference = 314.159 %}
+{% set used_len = circumference * ([used_pct or 0, 0] | max) / 100 %}
+{% set cached_len = circumference * ([cached_pct or 0, 0] | max) / 100 %}
+{% set available_len = circumference * ([available_pct or 0, 0] | max) / 100 %}
+<div class="gauge-donut-wrap">
+  <svg viewBox="0 0 120 120" class="gauge-donut" aria-hidden="true">
+    <circle cx="60" cy="60" r="50" class="gauge-track"></circle>
+    <circle cx="60" cy="60" r="50" class="gauge-fill mem-used" id="{{ id_prefix }}-used"
+            stroke-dasharray="{{ used_len }} {{ circumference - used_len }}" stroke-dashoffset="0"></circle>
+    <circle cx="60" cy="60" r="50" class="gauge-fill mem-cached" id="{{ id_prefix }}-cached"
+            stroke-dasharray="{{ cached_len }} {{ circumference - cached_len }}" stroke-dashoffset="{{ -used_len }}"></circle>
+    <circle cx="60" cy="60" r="50" class="gauge-fill mem-available" id="{{ id_prefix }}-available"
+            stroke-dasharray="{{ available_len }} {{ circumference - available_len }}" stroke-dashoffset="{{ -(used_len + cached_len) }}"></circle>
+  </svg>
+  <div class="gauge-center">
+    <span class="gauge-value" id="{{ id_prefix }}-pct">{{ (used_pct or 0) | round | int }}%</span>
+    <span class="gauge-sublabel">{{ label }}</span>
+  </div>
+</div>
+{% endmacro %}
+
 {% macro speedo_gauge(value, max_value, display_text, id_prefix, label, warn_at, danger_at) %}
 {% set path_length = 141.37 %}
 {% set fraction = ((value / max_value) if (value is not none and max_value) else 0) %}
@@ -78,7 +100,7 @@
     <path d="M 15 100 A 45 45 0 0 1 105 100" class="gauge-fill {{ zone }}"
           id="{{ id_prefix }}-fill" stroke-dasharray="{{ path_length }}" stroke-dashoffset="{{ offset }}"></path>
     <line x1="60" y1="100" x2="60" y2="58" class="gauge-needle {{ zone }}"
-          id="{{ id_prefix }}-needle" style="transform: rotate({{ deg }}deg)"></line>
+          id="{{ id_prefix }}-needle" transform="rotate({{ deg }} 60 100)"></line>
     <circle cx="60" cy="100" r="4" class="gauge-hub"></circle>
   </svg>
   <div class="gauge-speedo-label">
@@ -345,22 +367,24 @@
   <section>
     <h2>Система</h2>
 
-    <h3>Температура CPU</h3>
+    <h3>Процесор та ОЗП</h3>
     <div class="gauge-row">
-      {{ speedo_gauge(sys_info.cpu_temp, 100, ("%.1f°C"|format(sys_info.cpu_temp) if sys_info.cpu_temp is not none else "—"), "sysinfo-cpu", "", 60, 80) }}
+      {{ speedo_gauge(sys_info.cpu_temp, 100, ("%.1f°C"|format(sys_info.cpu_temp) if sys_info.cpu_temp is not none else "—"), "sysinfo-cpu-temp", "температура", 60, 80) }}
+      {% if sys_info.memory and sys_info.memory.total %}
+      {% set used_pct = (sys_info.memory.used / sys_info.memory.total * 100) if sys_info.memory.used is not none else 0 %}
+      {% set cached_pct = (sys_info.memory.cached / sys_info.memory.total * 100) if sys_info.memory.cached is not none else 0 %}
+      {% set available_pct = (sys_info.memory.available / sys_info.memory.total * 100) if sys_info.memory.available is not none else 0 %}
+      {{ mem_donut_gauge(used_pct, cached_pct, available_pct, "sysinfo-mem", "ОЗП") }}
+      {% endif %}
+      {{ donut_gauge(sys_info.cpu_usage, "sysinfo-cpu-usage", "завантаження", 80, 95) }}
     </div>
 
-    <h3>ОЗП</h3>
     {% if sys_info.memory %}
-    {% set mem_pct = ((sys_info.memory.used / sys_info.memory.total * 100) if (sys_info.memory.used is not none and sys_info.memory.total) else 0) %}
-    <div class="gauge-row">
-      {{ donut_gauge(mem_pct, "sysinfo-mem", "використано") }}
-    </div>
     <div class="stats-grid compact">
       <div class="stat-card"><span class="stat-value" id="sysinfo-mem-total">{{ format_bytes(sys_info.memory.total) }}</span><span class="stat-label">Всього</span></div>
-      <div class="stat-card"><span class="stat-value" id="sysinfo-mem-used">{{ format_bytes(sys_info.memory.used) }}</span><span class="stat-label">Використано</span></div>
-      <div class="stat-card"><span class="stat-value" id="sysinfo-mem-cached">{{ format_bytes(sys_info.memory.cached) }}</span><span class="stat-label">Кеш/буфери</span></div>
-      <div class="stat-card"><span class="stat-value" id="sysinfo-mem-available">{{ format_bytes(sys_info.memory.available) }}</span><span class="stat-label">Доступно</span></div>
+      <div class="stat-card"><span class="stat-value" id="sysinfo-mem-used">{{ format_bytes(sys_info.memory.used) }}</span><span class="stat-label"><span class="legend-dot mem-used"></span>Використано</span></div>
+      <div class="stat-card"><span class="stat-value" id="sysinfo-mem-cached">{{ format_bytes(sys_info.memory.cached) }}</span><span class="stat-label"><span class="legend-dot mem-cached"></span>Кеш/буфери</span></div>
+      <div class="stat-card"><span class="stat-value" id="sysinfo-mem-available">{{ format_bytes(sys_info.memory.available) }}</span><span class="stat-label"><span class="legend-dot mem-available"></span>Доступно</span></div>
     </div>
     {% else %}
     <p class="hint">Інформація про ОЗП недоступна в цьому середовищі.</p>
@@ -612,6 +636,31 @@
     setText(prefix + "-pct", Math.round(pct) + "%");
   }
 
+  // RAM's donut is three stacked segments (used/cached/available) rather
+  // than one - each is its own <circle> sharing the same radius, with a
+  // dasharray covering just that slice and a dashoffset that starts it
+  // right where the previous slice ended.
+  function setDonutSegment(id, len, offset) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    len = Math.max(0, len);
+    el.style.strokeDasharray = len.toFixed(2) + " " + (DONUT_CIRCUMFERENCE - len).toFixed(2);
+    el.style.strokeDashoffset = (-offset).toFixed(2);
+  }
+
+  function updateMemDonut(prefix, usedPct, cachedPct, availablePct) {
+    usedPct = Math.max(0, usedPct || 0);
+    cachedPct = Math.max(0, cachedPct || 0);
+    availablePct = Math.max(0, availablePct || 0);
+    var usedLen = DONUT_CIRCUMFERENCE * usedPct / 100;
+    var cachedLen = DONUT_CIRCUMFERENCE * cachedPct / 100;
+    var availableLen = DONUT_CIRCUMFERENCE * availablePct / 100;
+    setDonutSegment(prefix + "-used", usedLen, 0);
+    setDonutSegment(prefix + "-cached", cachedLen, usedLen);
+    setDonutSegment(prefix + "-available", availableLen, usedLen + cachedLen);
+    setText(prefix + "-pct", Math.round(usedPct) + "%");
+  }
+
   function updateSpeedo(prefix, value, max, displayText, warnAt, dangerAt) {
     var fraction = value == null ? 0 : Math.max(0, Math.min(1, value / max));
     var fill = document.getElementById(prefix + "-fill");
@@ -623,7 +672,10 @@
       if (zone) fill.classList.add(zone);
     }
     if (needle) {
-      needle.style.transform = "rotate(" + ((fraction - 0.5) * 180).toFixed(1) + "deg)";
+      // SVG-native rotate(angle, cx, cy) attribute, not CSS transform - it
+      // pivots around an exact point in the same coordinate space as the
+      // path data with no transform-origin/viewBox-scaling ambiguity.
+      needle.setAttribute("transform", "rotate(" + ((fraction - 0.5) * 180).toFixed(1) + " 60 100)");
       needle.classList.remove("warn", "danger");
       if (zone) needle.classList.add(zone);
     }
@@ -635,13 +687,18 @@
       const res = await fetch("/admin/api/sysinfo");
       const data = await res.json();
       updateSpeedo(
-        "sysinfo-cpu", data.cpu_temp, 100,
+        "sysinfo-cpu-temp", data.cpu_temp, 100,
         data.cpu_temp != null ? data.cpu_temp.toFixed(1) + "°C" : "—",
         60, 80
       );
+      updateDonut(
+        "sysinfo-cpu-usage", data.cpu_usage, 80, 95
+      );
       if (data.memory && data.memory.total) {
-        var memPct = (data.memory.used / data.memory.total) * 100;
-        updateDonut("sysinfo-mem", memPct, 70, 90);
+        var usedPct = (data.memory.used / data.memory.total) * 100;
+        var cachedPct = (data.memory.cached / data.memory.total) * 100;
+        var availablePct = (data.memory.available / data.memory.total) * 100;
+        updateMemDonut("sysinfo-mem", usedPct, cachedPct, availablePct);
         setText("sysinfo-mem-total", formatBytes(data.memory.total));
         setText("sysinfo-mem-used", formatBytes(data.memory.used));
         setText("sysinfo-mem-cached", formatBytes(data.memory.cached));

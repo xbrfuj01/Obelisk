@@ -10,7 +10,6 @@
   var POLL_OPEN_MS = 2000;
   var POLL_CLOSED_MS = 8000;
   var pollTimer = null;
-  var everSucceeded = false;
 
   var DOWNLOAD_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
   var CANCEL_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
@@ -156,11 +155,8 @@
         schedulePoll();
         return;
       }
+      wrap.hidden = false;
       const items = await res.json();
-      if (!everSucceeded) {
-        everSucceeded = true;
-        wrap.hidden = false;
-      }
       autoDownloadFinished(items);
       render(items);
     } catch (err) {

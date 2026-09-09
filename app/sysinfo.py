@@ -44,13 +44,19 @@ def _read_meminfo():
 
 
 def get_memory_stats():
+    """used/cached/available are a mutually-exclusive split of total (they
+    add up to it exactly) so they can be drawn as three slices of one pie -
+    MemAvailable already counts most reclaimable cache as "available", so
+    used is whatever's left over once available and cache are both
+    subtracted, rather than the more common (but overlapping-with-cache)
+    total-minus-available definition."""
     info = _read_meminfo()
     if not info:
         return None
     total = info.get("MemTotal")
     available = info.get("MemAvailable")
     cached = (info.get("Buffers") or 0) + (info.get("Cached") or 0)
-    used = (total - available) if (total is not None and available is not None) else None
+    used = max(0, total - available - cached) if (total is not None and available is not None) else None
     return {"total": total, "available": available, "used": used, "cached": cached}
 
 
@@ -71,6 +77,59 @@ def get_cpu_temperature():
         except (OSError, ValueError):
             continue
     return max(readings) if readings else None
+
+
+# Guards _cpu_last below, same reasoning as _net_lock further down.
+_cpu_lock = threading.Lock()
+
+# (idle, total) jiffies last seen this process's lifetime, or None before
+# the first read - /proc/stat only ever gives cumulative counters since
+# boot, so a single reading can't tell you a percentage on its own, only
+# the delta between two readings can.
+_cpu_last = None
+
+
+def _read_cpu_times():
+    try:
+        with open("/proc/stat") as f:
+            first_line = f.readline()
+    except OSError:
+        return None
+    parts = first_line.split()
+    if len(parts) < 5 or parts[0] != "cpu":
+        return None
+    try:
+        values = [int(x) for x in parts[1:]]
+    except ValueError:
+        return None
+    # Columns: user, nice, system, idle, iowait, irq, softirq, steal, ...
+    # iowait counts as idle (the CPU wasn't doing anything, just waiting on
+    # disk), same convention `top`/`htop` use.
+    idle = values[3] + (values[4] if len(values) > 4 else 0)
+    return idle, sum(values)
+
+
+def get_cpu_usage_percent():
+    """Overall CPU utilization (%) across all cores since the last call.
+    Returns None on the very first call after startup (and if /proc/stat
+    isn't readable) since there's no earlier sample yet to diff against."""
+    sample = _read_cpu_times()
+    if sample is None:
+        return None
+    idle, total = sample
+    global _cpu_last
+    with _cpu_lock:
+        prev = _cpu_last
+        _cpu_last = (idle, total)
+        if prev is None:
+            return None
+        prev_idle, prev_total = prev
+        delta_total = total - prev_total
+        delta_idle = idle - prev_idle
+        if delta_total <= 0:
+            return None
+        usage = (1 - delta_idle / delta_total) * 100
+    return max(0.0, min(100.0, usage))
 
 
 def get_network_stats():

@@ -868,6 +868,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
     sys_info = {
         "memory": sysinfo.get_memory_stats(),
         "cpu_temp": sysinfo.get_cpu_temperature(),
+        "cpu_usage": sysinfo.get_cpu_usage_percent(),
         "network": sysinfo.get_persisted_network_stats(db),
     }
 
@@ -930,6 +931,7 @@ def admin_sysinfo(db: Session = Depends(get_db), _=Depends(require_admin_dep)):
     return {
         "memory": sysinfo.get_memory_stats(),
         "cpu_temp": sysinfo.get_cpu_temperature(),
+        "cpu_usage": sysinfo.get_cpu_usage_percent(),
         "network": sysinfo.get_persisted_network_stats(db),
     }
 

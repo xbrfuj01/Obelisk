@@ -988,7 +988,10 @@ button.stat-card:hover { border-color: var(--border-hover); }
 
 .gauge-row {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
+  align-items: flex-start;
+  gap: 28px;
   margin: 10px 0 4px;
 }
 
@@ -1013,6 +1016,23 @@ button.stat-card:hover { border-color: var(--border-hover); }
 .gauge-fill.warn { stroke: var(--warning); }
 .gauge-fill.danger { stroke: var(--error); }
 
+.gauge-fill.mem-used { stroke: var(--accent); }
+.gauge-fill.mem-cached { stroke: var(--warning); }
+.gauge-fill.mem-available { stroke: var(--success); }
+
+.legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
+.legend-dot.mem-used { background: var(--accent); }
+.legend-dot.mem-cached { background: var(--warning); }
+.legend-dot.mem-available { background: var(--success); }
+
 .gauge-center {
   position: absolute;
   inset: 0;
@@ -1033,7 +1053,7 @@ button.stat-card:hover { border-color: var(--border-hover); }
   width: 160px;
 }
 
-.gauge-speedo { width: 100%; height: auto; display: block; }
+.gauge-speedo { width: 100%; height: auto; aspect-ratio: 12 / 10; display: block; }
 
 .gauge-speedo .gauge-track { stroke-width: 10; }
 
@@ -1043,8 +1063,11 @@ button.stat-card:hover { border-color: var(--border-hover); }
   stroke: var(--text-dim);
   stroke-width: 2.5;
   stroke-linecap: round;
-  transform-origin: 60px 100px;
-  transition: transform 0.4s ease, stroke 0.3s ease;
+  /* Rotated via the SVG transform ATTRIBUTE (rotate(angle cx cy), set in
+     the Jinja macro and updateSpeedo()), not a CSS transform - so there's
+     no transform-origin here, and no transition on it either since CSS
+     transitions don't apply to changes made via setAttribute. */
+  transition: stroke 0.3s ease;
 }
 
 .gauge-needle.warn { stroke: var(--warning); }
