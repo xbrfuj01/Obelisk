@@ -28,6 +28,7 @@ from .downloader import (
     clear_ytdlp_cache,
     parse_timecode,
     request_cancel as request_download_cancel,
+    check_proxy_connection,
 )
 from .cleanup import start_cleanup_thread, wipe_all_data
 from . import timeutil
@@ -879,6 +880,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
 
     by_source = (
         db.query(Download.source, func.count(Download.id))
+        .filter(Download.status == "finished")
         .group_by(Download.source)
         .order_by(func.count(Download.id).desc())
         .limit(10)
@@ -1286,6 +1288,14 @@ def admin_settings(
         auth.set_setting(db, "timezone", timezone)
 
     return RedirectResponse("/admin?tab=settings&saved=1", status_code=303)
+
+
+@app.get("/admin/api/proxy-status")
+def admin_proxy_status(db: Session = Depends(get_db), _=Depends(require_admin_dep)):
+    proxy_url = auth.get_proxy_url(db)
+    if not proxy_url:
+        return {"configured": False, "active": False}
+    return {"configured": True, "active": check_proxy_connection(proxy_url)}
 
 
 @app.post("/admin/settings/cookies")

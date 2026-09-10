@@ -1072,6 +1072,27 @@ button.stat-card:hover { border-color: var(--border-hover); }
   border-top: none;
 }
 
+.settings-group-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.settings-group-title-row .settings-group-title { margin-bottom: 0; }
+
+.proxy-status {
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.proxy-status.checking { color: var(--text-dim); background: var(--bg-input); }
+.proxy-status.active { color: var(--success); background: rgba(62, 207, 142, 0.15); }
+.proxy-status.inactive { color: var(--error); background: rgba(255, 107, 125, 0.15); }
+
 .maintenance-actions {
   flex-direction: row;
   flex-wrap: wrap;

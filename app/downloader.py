@@ -438,6 +438,24 @@ def _should_use_proxy(url: str, db) -> bool:
     return any(d in source for d in domains)
 
 
+def check_proxy_connection(proxy_url: str, timeout: float = 6.0) -> bool:
+    """Quick end-to-end reachability check for the "Проксі для заблокованих
+    сайтів" admin setting - routed through yt-dlp's own request machinery
+    (the same SOCKS/TLS path a real download would use) rather than a raw
+    socket check, so it actually proves traffic gets through. Targets a
+    small, unrelated, always-up host instead of one of the actual blocked
+    sites, so the result reflects the proxy itself, not that site's own
+    uptime or anti-bot behavior."""
+    if not proxy_url:
+        return False
+    try:
+        with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "proxy": proxy_url, "socket_timeout": timeout}) as ydl:
+            ydl.urlopen("https://api.ipify.org").read()
+        return True
+    except Exception:
+        return False
+
+
 def _is_safe_direct_url(url: str) -> bool:
     """Rejects hosts that resolve to a private/internal IP, so the download
     form can't be used to make the server probe its own local network."""

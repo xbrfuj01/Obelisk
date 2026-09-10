@@ -442,7 +442,10 @@
         </div>
       </div>
 
-      <p class="settings-group-title">Проксі для заблокованих сайтів</p>
+      <div class="settings-group-title-row">
+        <p class="settings-group-title">Проксі для заблокованих сайтів</p>
+        <span class="proxy-status" id="proxy-status" hidden></span>
+      </div>
       <label>Адреса проксі (напр. socks5h://user:pass@host:1080)
         <input type="text" name="proxy_url" value="{{ proxy_url }}" placeholder="залиште порожнім, щоб не використовувати проксі" autocomplete="off">
       </label>
@@ -702,11 +705,40 @@
     sysinfoTimer = null;
   }
 
+  // ---------------- Proxy connection status ----------------
+  // Checked on demand (whenever the Settings tab is opened) rather than on
+  // every admin page load, since it actually dials out through the proxy
+  // and can take a few seconds if it's down.
+
+  var proxyStatusEl = document.getElementById("proxy-status");
+
+  function checkProxyStatus() {
+    if (!proxyStatusEl) return;
+    proxyStatusEl.hidden = false;
+    proxyStatusEl.className = "proxy-status checking";
+    proxyStatusEl.textContent = "Перевірка з'єднання...";
+    fetch("/admin/api/proxy-status")
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (!data.configured) {
+          proxyStatusEl.hidden = true;
+          return;
+        }
+        proxyStatusEl.className = "proxy-status " + (data.active ? "active" : "inactive");
+        proxyStatusEl.textContent = data.active ? "✓ З'єднання активне" : "✕ Немає з'єднання";
+      })
+      .catch(function () {
+        proxyStatusEl.className = "proxy-status inactive";
+        proxyStatusEl.textContent = "✕ Не вдалось перевірити";
+      });
+  }
+
   btns.forEach(function (btn) {
     btn.addEventListener("click", function () {
       activate(btn.dataset.tab);
       if (btn.dataset.tab === "system") startSysinfoPolling();
       else stopSysinfoPolling();
+      if (btn.dataset.tab === "settings") checkProxyStatus();
       // Keep the URL's ?tab= in sync so a page refresh lands back on the
       // same tab instead of always bouncing to the default (stats).
       var tabUrl = new URL(window.location.href);
@@ -720,6 +752,7 @@
   var initialTab = valid.includes(requested) ? requested : "stats";
   activate(initialTab);
   if (initialTab === "system") startSysinfoPolling();
+  if (initialTab === "settings") checkProxyStatus();
 
   var periodBtns = document.querySelectorAll(".period-tab-btn");
   var periodPanels = document.querySelectorAll(".period-panel");
