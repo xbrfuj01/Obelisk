@@ -990,12 +990,23 @@ def admin_sysinfo(db: Session = Depends(get_db), _=Depends(require_admin_dep)):
 @app.get("/admin/api/processes")
 def admin_processes(db: Session = Depends(get_db), _=Depends(require_admin_dep)):
     """Same idea as /api/processes, but site-wide instead of scoped to one
-    browser's client_id - lets an admin see what every user is up to."""
+    browser's client_id - lets an admin see what every regular user is up
+    to. Admins' own jobs are deliberately left out: this tray is for keeping
+    an eye on the userbase, not on other admins (or yourself)."""
+    admin_usernames = [u.username for u in db.query(User).filter(User.is_admin.is_(True)).all()]
     downloads = _hide_stale_cancelled(
-        db.query(Download).filter(Download.status != "expired"), Download
+        db.query(Download).filter(
+            Download.status != "expired",
+            or_(Download.username.is_(None), Download.username.notin_(admin_usernames)),
+        ),
+        Download,
     ).order_by(Download.created_at.desc()).limit(50).all()
     conversions = _hide_stale_cancelled(
-        db.query(Conversion).filter(Conversion.status != "expired"), Conversion
+        db.query(Conversion).filter(
+            Conversion.status != "expired",
+            or_(Conversion.username.is_(None), Conversion.username.notin_(admin_usernames)),
+        ),
+        Conversion,
     ).order_by(Conversion.created_at.desc()).limit(50).all()
     items = [
         {

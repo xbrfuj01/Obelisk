@@ -81,9 +81,13 @@ if (clipStartInput && clipEndInput) {
 const PREMIERE_COMPAT_STORAGE_KEY = "obelisk_premiere_compat";
 if (premiereCompatInput) {
   try {
-    premiereCompatInput.checked = localStorage.getItem(PREMIERE_COMPAT_STORAGE_KEY) === "1";
+    const stored = localStorage.getItem(PREMIERE_COMPAT_STORAGE_KEY);
+    // No stored preference yet (first visit) defaults to checked; once the
+    // user picks a value, that exact choice is honored from then on.
+    premiereCompatInput.checked = stored === null ? true : stored === "1";
   } catch (err) {
-    // ignore — localStorage unavailable, just falls back to unchecked
+    // ignore — localStorage unavailable, just falls back to checked (the default)
+    premiereCompatInput.checked = true;
   }
   premiereCompatInput.addEventListener("change", () => {
     try {

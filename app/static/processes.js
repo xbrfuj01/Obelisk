@@ -198,6 +198,15 @@
   // poll tick (which can be several seconds away if the panel is closed).
   document.addEventListener("obelisk:job-created", refresh);
 
+  // Browsers throttle background-tab timers (sometimes to once a minute or
+  // less), so a job that finishes while the tab isn't focused can leave the
+  // badge stuck on a stale count for a while - refreshing immediately on
+  // return fixes that without waiting for reload.
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) refresh();
+  });
+  window.addEventListener("focus", refresh);
+
   list.addEventListener("click", async function (e) {
     var cancelBtn = e.target.closest(".processes-row-link.cancel");
     if (!cancelBtn) return;
@@ -342,6 +351,13 @@
   // Fired by app.js/converter.js right after a new job is created, so an
   // admin watching the site-wide tray sees it appear immediately too.
   document.addEventListener("obelisk:job-created", refresh);
+
+  // Same reasoning as the personal tray above - don't leave the badge
+  // showing a stale count just because the tab was backgrounded.
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) refresh();
+  });
+  window.addEventListener("focus", refresh);
 
   refresh();
 })();
