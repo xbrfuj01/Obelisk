@@ -875,6 +875,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
         .filter(Download.status == "finished")
         .scalar()
     )
+    cookies_used_count = db.query(func.count(Download.id)).filter(Download.used_cookies.is_(True)).scalar()
 
     by_source = (
         db.query(Download.source, func.count(Download.id))
@@ -903,6 +904,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
         .filter(Conversion.status == "finished")
         .scalar()
     )
+    auto_conversion_count = db.query(func.count(Conversion.id)).filter(Conversion.is_auto.is_(True)).scalar()
     conversion_total_pages = max(1, -(-conversion_total // HISTORY_PAGE_SIZE))
     conversion_page = min(_page_param(request, "conversion_page"), conversion_total_pages)
     conversion_history = (
@@ -948,6 +950,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
             "finished": finished,
             "errors": errors,
             "total_size": total_size,
+            "cookies_used_count": cookies_used_count,
             "by_source": by_source,
             "history": history,
             "history_page": history_page,
@@ -956,6 +959,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
             "conversion_finished": conversion_finished,
             "conversion_errors": conversion_errors,
             "conversion_total_size": conversion_total_size,
+            "auto_conversion_count": auto_conversion_count,
             "conversion_history": conversion_history,
             "conversion_page": conversion_page,
             "conversion_total_pages": conversion_total_pages,
