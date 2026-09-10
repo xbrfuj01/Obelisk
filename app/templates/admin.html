@@ -111,12 +111,13 @@
 </nav>
 
 <div class="tab-panel" data-tab-panel="stats">
+  <div class="stats-top-row">
   <section>
     <div class="card stats-overview">
       <div class="stats-overview-group">
         <h3>Завантаження</h3>
         <div class="stats-grid compact">
-          <div class="stat-card"><span class="stat-value">{{ total }}</span><span class="stat-label">Всього завантажень</span></div>
+          <button type="button" class="stat-card open-source-modal"><span class="stat-value">{{ total }}</span><span class="stat-label">Всього завантажень</span></button>
           <div class="stat-card"><span class="stat-value">{{ finished }}</span><span class="stat-label">Успішних</span></div>
           <div class="stat-card"><span class="stat-value">{{ cookies_used_count }}</span><span class="stat-label">З куками</span></div>
           <button type="button" class="stat-card open-error-modal" data-kind="download"><span class="stat-value">{{ errors }}</span><span class="stat-label">Помилок</span></button>
@@ -136,7 +137,6 @@
     </div>
   </section>
 
-  <div class="stats-columns">
   <section>
     <div class="section-header-row">
       <h2>Активність користувачів</h2>
@@ -165,22 +165,6 @@
       </table>
       </div>
     {% endfor %}
-  </section>
-
-  <section>
-    <h2>За джерелами</h2>
-    <div class="table-wrap card">
-    <table class="table">
-      <thead><tr><th>Джерело</th><th>Кількість</th></tr></thead>
-      <tbody>
-      {% for source, count in by_source %}
-        <tr><td>{{ source or 'невідомо' }}</td><td>{{ count }}</td></tr>
-      {% else %}
-        <tr><td colspan="2">Немає даних</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    </div>
   </section>
   </div>
 
@@ -581,6 +565,25 @@
     <h3 id="error-modal-title">Помилки</h3>
     <div class="activity-list" id="error-modal-body">
       <p class="hint">Завантаження...</p>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="source-modal" hidden>
+  <div class="modal-box">
+    <button type="button" class="modal-close" id="source-modal-close" aria-label="Закрити">&times;</button>
+    <h3>За джерелами</h3>
+    <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Джерело</th><th>Кількість</th></tr></thead>
+      <tbody>
+      {% for source, count in by_source %}
+        <tr><td>{{ source or 'невідомо' }}</td><td>{{ count }}</td></tr>
+      {% else %}
+        <tr><td colspan="2">Немає даних</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
     </div>
   </div>
 </div>
@@ -1153,6 +1156,27 @@
   });
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && !errorModal.hidden) closeErrorModal();
+  });
+
+  // ---------------- "За джерелами" popup (stats tab "Всього завантажень" card) ----------------
+  // The table is already rendered server-side (by_source is small and
+  // static per page load), so this just toggles visibility - no fetch.
+
+  var sourceModal = document.getElementById("source-modal");
+
+  function closeSourceModal() {
+    sourceModal.hidden = true;
+  }
+
+  document.addEventListener("click", function (e) {
+    if (e.target.closest(".open-source-modal")) sourceModal.hidden = false;
+  });
+  document.getElementById("source-modal-close").addEventListener("click", closeSourceModal);
+  sourceModal.addEventListener("click", function (e) {
+    if (e.target === sourceModal) closeSourceModal();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !sourceModal.hidden) closeSourceModal();
   });
 
   // ---------------- Expandable history titles ----------------
