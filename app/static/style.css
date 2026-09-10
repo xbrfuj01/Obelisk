@@ -930,7 +930,7 @@ button:active { transform: translateY(1px); }
 
 .stats-top-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(300px, 400px) 1fr;
   gap: 0 24px;
   align-items: start;
 }
