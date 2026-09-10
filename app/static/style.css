@@ -1079,6 +1079,24 @@ button.stat-card:hover { border-color: var(--border-hover); }
 
 .maintenance-actions form { margin: 0; }
 
+.cookies-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.cookies-actions form {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 10px;
+  margin: 0;
+}
+
+.cookies-actions label { margin: 0; }
+
 [data-tab-panel="settings"] h2 { margin: 24px 0 10px; }
 [data-tab-panel="settings"] section:first-child h2 { margin-top: 0; }
 [data-tab-panel="settings"] .card { padding: 16px; gap: 10px; }

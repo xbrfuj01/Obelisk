@@ -336,10 +336,13 @@ def _extract_with_cookie_fallback(ydl_opts, url, *, download, should_retry=lambd
     are either harmless (retry below fixes it) or already captured in full
     via the logger ydl_opt for the error_message shown in the app itself -
     the container's own logs don't need a copy of a failure the retry just
-    resolved."""
+    resolved.
+
+    Returns (info, used_cookies) - callers that don't care which path
+    succeeded (e.g. probing) can just discard the second value."""
     try:
         with _mute_console_output(), yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            return ydl.extract_info(url, download=download)
+            return ydl.extract_info(url, download=download), False
     except Exception:
         cookies_path = auth.get_cookies_path()
         if not cookies_path or ydl_opts.get("cookiefile") or not should_retry():
@@ -349,7 +352,7 @@ def _extract_with_cookie_fallback(ydl_opts, url, *, download, should_retry=lambd
         retry_opts = dict(ydl_opts)
         retry_opts["cookiefile"] = cookies_path
         with yt_dlp.YoutubeDL(retry_opts) as ydl:
-            return ydl.extract_info(url, download=download)
+            return ydl.extract_info(url, download=download), True
 
 
 def probe_qualities(url: str, db):
@@ -371,7 +374,7 @@ def probe_qualities(url: str, db):
     }
     if _should_use_proxy(url, db):
         ydl_opts["proxy"] = auth.get_proxy_url(db)
-    info = _extract_with_cookie_fallback(ydl_opts, url, download=False)
+    info, _ = _extract_with_cookie_fallback(ydl_opts, url, download=False)
 
     # dedupe by height only: several formats (different codecs/bitrates) often
     # share the same height, and the download-side quality filter also caps by height
@@ -705,7 +708,7 @@ def _run_job(job_id: str):
                     except OSError:
                         pass
 
-        info = _extract_with_cookie_fallback(
+        info, used_cookies = _extract_with_cookie_fallback(
             ydl_opts, job.url, download=True,
             should_retry=lambda: job_id not in _cancel_requested,
             before_retry=_clear_partial_output,
@@ -747,6 +750,7 @@ def _run_job(job_id: str):
             filepath=filepath,
             filesize=filesize,
             auto_convert_id=auto_convert_id,
+            used_cookies=used_cookies,
             finished_at=datetime.utcnow(),
         )
     except Exception as e:

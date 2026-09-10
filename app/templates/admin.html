@@ -186,7 +186,7 @@
     <h2>Історія завантажень</h2>
     <div class="table-wrap card">
     <table class="table history-table">
-      <thead><tr><th>Статус</th><th>Назва</th><th>Джерело</th><th>Тип</th><th>Юзер</th><th>Дата</th><th>Розмір</th><th></th></tr></thead>
+      <thead><tr><th>Статус</th><th>Назва</th><th>Джерело</th><th>Тип</th><th>Кукі</th><th>Юзер</th><th>Дата</th><th>Розмір</th><th></th></tr></thead>
       <tbody>
       {% for h in history %}
         <tr>
@@ -207,6 +207,7 @@
             {{ h.mode }}
             {% endif %}
           </td>
+          <td>{{ 'Так' if h.used_cookies else '—' }}</td>
           <td>{{ h.username or '—' }}</td>
           <td>{{ format_dt(h.created_at, timezone)|replace(' ', '<br>')|safe }}</td>
           <td>{{ format_bytes(h.filesize) if h.filesize else '' }}</td>
@@ -235,7 +236,7 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="8">Ще немає завантажень</td></tr>
+        <tr><td colspan="9">Ще немає завантажень</td></tr>
       {% endfor %}
       </tbody>
     </table>
@@ -247,7 +248,7 @@
     <h2>Історія конвертацій</h2>
     <div class="table-wrap card">
     <table class="table history-table">
-      <thead><tr><th>Статус</th><th>Файл</th><th>Якість</th><th>Аудіо</th><th>Користувач</th><th>Дата</th><th>Розмір</th><th></th></tr></thead>
+      <thead><tr><th>Статус</th><th>Файл</th><th>Якість</th><th>Аудіо</th><th>Авто</th><th>Користувач</th><th>Дата</th><th>Розмір</th><th></th></tr></thead>
       <tbody>
       {% for c in conversion_history %}
         <tr>
@@ -255,6 +256,7 @@
           <td><button type="button" class="table-title-btn">{{ c.original_filename or "video" }}</button></td>
           <td>{{ c.quality }}</td>
           <td>{{ c.audio_option }}</td>
+          <td>{{ 'Так' if c.is_auto else '—' }}</td>
           <td>{{ c.username or '—' }}</td>
           <td>{{ format_dt(c.created_at, timezone) }}</td>
           <td>{{ format_bytes(c.filesize) if c.filesize else '' }}</td>
@@ -276,7 +278,7 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="8">Ще немає конвертацій</td></tr>
+        <tr><td colspan="9">Ще немає конвертацій</td></tr>
       {% endfor %}
       </tbody>
     </table>
@@ -463,19 +465,22 @@
       {% else %}
       <p class="hint">Cookies не налаштовано.</p>
       {% endif %}
-      {% if request.query_params.get('cookies_error') == 'empty' %}<p class="error">Встав вміст cookies.txt</p>{% endif %}
-      <form method="post" action="/admin/settings/cookies">
-        <label>Вміст cookies.txt
-          <textarea name="cookies_content" rows="6" placeholder="# Netscape HTTP Cookie File..." autocomplete="off"></textarea>
-        </label>
-        <button type="submit">Зберегти cookies</button>
-      </form>
-      {% if has_cookies %}
-      <form method="post" action="/admin/settings/cookies/clear" class="inline-form" id="clear-cookies-form">
-        <button type="button" class="btn-secondary open-confirm-modal" data-form-id="clear-cookies-form" data-title="Прибрати cookies"
-          data-text="Видалити збережені cookies? Відео, що вимагають авторизації, перестануть качатись.">Прибрати cookies</button>
-      </form>
-      {% endif %}
+      {% if request.query_params.get('cookies_error') == 'empty' %}<p class="error">Оберіть файл cookies.txt</p>{% endif %}
+      <div class="cookies-actions">
+        <form method="post" action="/admin/settings/cookies" id="cookies-form">
+          <label>Файл cookies.txt
+            <input type="file" accept=".txt,text/plain" id="cookies-file-input" required>
+          </label>
+          <textarea name="cookies_content" id="cookies-content-textarea" hidden></textarea>
+          <button type="submit" id="cookies-save-btn">Зберегти cookies</button>
+        </form>
+        {% if has_cookies %}
+        <form method="post" action="/admin/settings/cookies/clear" class="inline-form" id="clear-cookies-form">
+          <button type="button" class="btn-secondary open-confirm-modal" data-form-id="clear-cookies-form" data-title="Прибрати cookies"
+            data-text="Видалити збережені cookies? Відео, що вимагають авторизації, перестануть качатись.">Прибрати cookies</button>
+        </form>
+        {% endif %}
+      </div>
     </div>
   </section>
 </div>
@@ -928,6 +933,32 @@
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && !confirmModal.hidden) closeConfirmModal();
   });
+
+  // ---------------- Cookies file picker ----------------
+  // The backend route still just wants cookies_content as plain text, so
+  // rather than a multipart upload, the chosen file is read client-side
+  // and copied into a hidden textarea before the form submits normally.
+
+  var cookiesFileInput = document.getElementById("cookies-file-input");
+  var cookiesTextarea = document.getElementById("cookies-content-textarea");
+  var cookiesSaveBtn = document.getElementById("cookies-save-btn");
+  if (cookiesFileInput && cookiesTextarea && cookiesSaveBtn) {
+    cookiesFileInput.addEventListener("change", function () {
+      var file = cookiesFileInput.files[0];
+      cookiesTextarea.value = "";
+      if (!file) return;
+      cookiesSaveBtn.disabled = true;
+      var reader = new FileReader();
+      reader.onload = function () {
+        cookiesTextarea.value = String(reader.result || "");
+        cookiesSaveBtn.disabled = false;
+      };
+      reader.onerror = function () {
+        cookiesSaveBtn.disabled = false;
+      };
+      reader.readAsText(file);
+    });
+  }
 
   // ---------------- Per-user activity log ----------------
 

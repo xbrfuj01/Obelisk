@@ -31,6 +31,9 @@ class Download(Base):
     # Set when premiere_compat found the downloaded file's codec unsuitable
     # and auto-started a conversion job for it - id of that Conversion row.
     auto_convert_id = Column(String, nullable=True)
+    # Whether the anonymous attempt failed and this download only succeeded
+    # after retrying with the account cookies configured in admin settings.
+    used_cookies = Column(Boolean, default=False)
 
     title = Column(Text, nullable=True)
     filepath = Column(Text, nullable=True)
@@ -54,6 +57,10 @@ class Conversion(Base):
 
     quality = Column(String, default="high")  # high | medium | low
     audio_option = Column(String, default="original")  # aac | original | none
+    # True when auto-started by the "compatibility" flow right after a
+    # download (see converter.submit_conversion_from_download), as opposed
+    # to a user manually hitting "Конвертувати".
+    is_auto = Column(Boolean, default=False)
 
     status = Column(String, default="queued", index=True)  # queued, converting, finished, error, expired
     progress = Column(Float, default=0.0)
