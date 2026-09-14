@@ -107,6 +107,7 @@
 
 <nav class="admin-tabs">
   <button type="button" class="admin-tab-btn" data-tab="stats">Статистика</button>
+  <button type="button" class="admin-tab-btn" data-tab="history">Історія</button>
   <button type="button" class="admin-tab-btn" data-tab="users">Користувачі</button>
   <button type="button" class="admin-tab-btn" data-tab="system">Система</button>
   <button type="button" class="admin-tab-btn" data-tab="settings">Налаштування</button>
@@ -170,6 +171,43 @@
     {% endfor %}
   </section>
 
+  <section>
+    <h2>Розширення Obelisk Bridge</h2>
+    {% if extension_peers %}
+    <div class="table-wrap card">
+      <table class="table">
+        <thead><tr><th>Користувач</th><th>Стан</th><th>Підключено</th><th>Востаннє на зв'язку</th><th></th></tr></thead>
+        <tbody>
+        {% for peer in extension_peers %}
+          <tr>
+            <td>{{ peer.username }}</td>
+            <td>
+              {% if peer.active %}<span class="proxy-status active">Активний</span>
+              {% else %}<span class="proxy-status inactive">Неактивний</span>{% endif %}
+            </td>
+            <td>{{ format_dt(peer.created_at, timezone) }}</td>
+            <td>{{ format_dt(peer.last_seen_at, timezone) if peer.last_seen_at else "—" }}</td>
+            <td>
+              <form method="post" action="/admin/extension/delete/{{ peer.id }}" class="inline-form" id="ext-delete-form-{{ peer.id }}">
+                <button type="button" class="row-icon-btn danger open-confirm-modal" aria-label="Видалити з'єднання" title="Видалити з'єднання"
+                  data-form-id="ext-delete-form-{{ peer.id }}" data-title="Видалити з'єднання"
+                  data-text="Видалити з'єднання розширення для «{{ peer.username }}»? Йому доведеться увійти в розширенні заново.">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                </button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="hint">Жодного розширення ще не підключали.</p>
+    {% endif %}
+  </section>
+</div>
+
+<div class="tab-panel" data-tab-panel="history" hidden>
   <section>
     <h2>Історія завантажень</h2>
     <div class="table-wrap card">
@@ -433,30 +471,8 @@
         Звичайне завантаження "відео + звук" з YouTube автоматично пробує пройти через розширення Obelisk Bridge
         (якщо воно встановлене й залогінене хоч у когось) — без нього, або якщо воно не встигло відповісти,
         завантаження одразу й непомітно йде стандартним yt-dlp. Кліпи, "лише відео", "лише аудіо" і субтитри
-        завжди йдуть через стандартний рушій.
+        завжди йдуть через стандартний рушій. Список підключених розширень — на вкладці «Статистика».
       </p>
-      {% if extension_peers %}
-      <div class="table-wrap card">
-        <table class="table">
-          <thead><tr><th>Користувач</th><th>Стан</th><th>Підключено</th><th>Востаннє на зв'язку</th></tr></thead>
-          <tbody>
-          {% for peer in extension_peers %}
-            <tr>
-              <td>{{ peer.username }}</td>
-              <td>
-                {% if peer.active %}<span class="proxy-status active">Активний</span>
-                {% else %}<span class="proxy-status inactive">Неактивний</span>{% endif %}
-              </td>
-              <td>{{ format_dt(peer.created_at, timezone) }}</td>
-              <td>{{ format_dt(peer.last_seen_at, timezone) if peer.last_seen_at else "—" }}</td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% else %}
-      <p class="hint">Жодного розширення ще не підключали.</p>
-      {% endif %}
 
       <div class="settings-group-title-row">
         <p class="settings-group-title">Проксі для заблокованих сайтів</p>

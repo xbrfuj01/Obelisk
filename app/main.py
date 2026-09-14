@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from . import config
 from .database import init_db, SessionLocal
-from .models import Conversion, Download, Notification, User
+from .models import Conversion, Download, ExtensionToken, Notification, User
 from . import auth
 from . import converter
 from . import metadata_tool
@@ -1292,6 +1292,15 @@ def admin_delete_conversion(job_id: str, db: Session = Depends(get_db), _=Depend
             except OSError:
                 pass
         db.delete(job)
+        db.commit()
+    return RedirectResponse("/admin?tab=stats", status_code=303)
+
+
+@app.post("/admin/extension/delete/{token_id}")
+def admin_delete_extension_peer(token_id: str, db: Session = Depends(get_db), _=Depends(require_admin_dep)):
+    row = db.get(ExtensionToken, token_id)
+    if row:
+        db.delete(row)
         db.commit()
     return RedirectResponse("/admin?tab=stats", status_code=303)
 

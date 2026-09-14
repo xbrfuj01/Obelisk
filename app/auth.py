@@ -158,6 +158,7 @@ def list_extension_peers(db: Session) -> list:
     rows = db.query(ExtensionToken).order_by(ExtensionToken.created_at.desc()).all()
     return [
         {
+            "id": row.id,
             "username": row.username,
             "created_at": row.created_at,
             "last_seen_at": row.last_seen_at,

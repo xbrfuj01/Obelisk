@@ -124,16 +124,21 @@ YOUTUBE_EXTRACTOR_ARGS = {
     # web client - it still responds, but every format is missing a usable
     # URL ("YouTube is forcing SABR streaming for this client"), which is
     # exactly what was making otherwise-normal videos come back as
-    # unavailable even with the PO token working. tv/ios/web_safari aren't
-    # (yet) restricted this way - keeping "web" in the list too so videos
-    # that don't hit this restriction still get its higher-res formats.
+    # unavailable even with the PO token working. web_safari used to be a
+    # working fallback but (per yt-dlp/yt-dlp#14810) is now SABR-forced the
+    # same way - dropped from the list since querying it just adds latency
+    # for zero usable formats. tv/ios still hand out plain URLs, and "web"
+    # stays in the list too so videos that don't hit the restriction (or a
+    # request carrying a real PO token, e.g. via the extension bridge)
+    # still get its full, higher-resolution (up to 4K/8K) format list -
+    # tv/ios alone tend to cap out around 1080p even when unaffected.
     #
     # Tried adding "formats=missing_pot" and an "android" fallback client
     # here to work around videos where even this list comes up empty -
     # reverted both after they broke YouTube downloads across the board
     # instead of just helping the edge case. Worth revisiting, but only
     # with a way to actually verify the result before it ships again.
-    "youtube": {"player_client": ["web", "tv", "ios", "web_safari"]},
+    "youtube": {"player_client": ["web", "tv", "ios"]},
 }
 
 
