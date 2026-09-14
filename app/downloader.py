@@ -685,6 +685,15 @@ def _run_job(job_id: str):
             # so strip audio during the remux unconditionally instead of
             # trusting format selection alone to guarantee that.
             ydl_opts["format"] = f"bestvideo{height_filter}/best{height_filter}"
+            if job.clip_start is not None or job.clip_end is not None:
+                # A clip (download_ranges + force_keyframes_at_cuts, set
+                # above) is cut by yt-dlp's FFmpegFD downloader, not the
+                # FFmpegVideoRemuxer postprocessor below - it reads its own
+                # ffmpeg args from external_downloader_args, completely
+                # separate from postprocessor_args, so the "-an" there alone
+                # never reaches it and a combined-format fallback keeps its
+                # audio even after remuxing.
+                ydl_opts.setdefault("external_downloader_args", {})["ffmpeg_o"] = ["-an"]
             if job.container in VIDEO_FORMATS:
                 ydl_opts.setdefault("postprocessors", [])
                 ydl_opts["postprocessors"].append({
