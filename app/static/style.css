@@ -950,17 +950,6 @@ button:active { transform: translateY(1px); }
 .period-panel[hidden] { display: none; }
 .period-panel { margin-top: 12px; }
 
-.stats-top-row {
-  display: grid;
-  grid-template-columns: minmax(300px, 400px) 1fr;
-  gap: 0 24px;
-  align-items: start;
-}
-
-@media (max-width: 900px) {
-  .stats-top-row { grid-template-columns: 1fr; }
-}
-
 section h3 { margin: 22px 0 4px; font-size: 1rem; }
 
 .stats-grid {
