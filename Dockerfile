@@ -35,7 +35,8 @@ RUN echo "cachebust=${CACHEBUST}" \
 RUN python -m venv /opt/venv-sabr \
     && echo "cachebust=${CACHEBUST}" \
     && /opt/venv-sabr/bin/pip install --no-cache-dir \
-       "yt-dlp[default] @ git+https://github.com/coletdjnz/yt-dlp-dev@feat/youtube/sabr"
+       "yt-dlp[default] @ git+https://github.com/coletdjnz/yt-dlp-dev@feat/youtube/sabr" \
+       bgutil-ytdlp-pot-provider
 
 COPY app ./app
 
