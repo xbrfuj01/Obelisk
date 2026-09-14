@@ -105,7 +105,17 @@ YOUTUBE_EXTRACTOR_ARGS = {
     # unavailable even with the PO token working. tv/ios/web_safari aren't
     # (yet) restricted this way - keeping "web" in the list too so videos
     # that don't hit this restriction still get its higher-res formats.
-    "youtube": {"player_client": ["web", "tv", "ios", "web_safari"]},
+    #
+    # This restriction has since spread to ios/web_safari too (and tv often
+    # comes back UNPLAYABLE outright without a signed-in session), so a
+    # video can now end up with zero usable formats across every client
+    # even with valid cookies. "formats=missing_pot" is yt-dlp's own
+    # documented escape hatch (see the PO-Token-Guide wiki, and
+    # yt-dlp/yt-dlp#12482) - it stops yt-dlp from discarding formats just
+    # because they're technically missing a PO token, letting it try them
+    # anyway instead of failing outright with "The page needs to be
+    # reloaded".
+    "youtube": {"player_client": ["web", "tv", "ios", "web_safari"], "formats": ["missing_pot"]},
 }
 
 
