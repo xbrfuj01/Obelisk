@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -580,6 +581,35 @@ def _find_main_file(out_dir: str):
     return max(candidates, key=os.path.getsize)
 
 
+def _ensure_no_audio(filepath: str) -> None:
+    """Guaranteed safety net for "Лише відео" - yt-dlp's own remux
+    postprocessor (where the actual -an gets applied, see the video_only
+    branch above) sometimes skips itself when it decides the file's
+    already in the target container, silently skipping the -an along with
+    it, so a combined-format fallback can still slip through with audio
+    intact. Runs unconditionally after either engine, since the bug isn't
+    specific to one of them. A stream copy (-c copy -an, no re-encode) is
+    just a container rewrite - seconds, not proportional to video length
+    or file size - so this is cheap enough to always check for."""
+    from . import converter  # deferred: see the existing circular-import note on the premiere_compat import below
+    probed = converter.probe_input(filepath)
+    if not probed or not probed.get("acodec"):
+        return
+    tmp_path = filepath + ".noaudio.tmp"
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", filepath, "-c", "copy", "-an", tmp_path],
+            capture_output=True, timeout=120,
+        )
+        if result.returncode == 0 and os.path.exists(tmp_path):
+            os.replace(tmp_path, filepath)
+        elif os.path.exists(tmp_path):
+            os.remove(tmp_path)
+    except (OSError, subprocess.SubprocessError):
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+
 def _combine_leg_progress(leg: int, leg_pct: float) -> float:
     """Maps progress within one download leg to a spot on the overall bar.
 
@@ -873,6 +903,13 @@ def _run_job(job_id: str):
 
         if not filepath:
             raise RuntimeError("Не вдалося знайти завантажений файл")
+
+        if job.mode == "video_only":
+            try:
+                _ensure_no_audio(filepath)
+                filesize = os.path.getsize(filepath)
+            except Exception:
+                pass  # best-effort - format-selection/postprocessor -an already covers the common case
 
         # Resolved *before* the job is marked "finished" (and committed
         # together with it below) so a poll landing right after "finished"
