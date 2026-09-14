@@ -258,6 +258,17 @@ h1 {
   font-size: 1rem;
 }
 
+.hero-extension-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0 0;
+  font-size: 0.86rem;
+}
+
+.hero-extension-row a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.hero-extension-row a:hover { text-decoration: underline; }
+
 h2 {
   font-size: 1.05rem;
   margin: 36px 0 12px;
@@ -680,6 +691,17 @@ button:active { transform: translateY(1px); }
 .success { color: var(--success); margin: 0; font-weight: 500; }
 .error { color: var(--error); margin: 0; font-weight: 500; }
 
+.site-banner {
+  background: rgba(232, 179, 57, 0.12);
+  color: var(--warning);
+  border-bottom: 1px solid rgba(232, 179, 57, 0.3);
+  padding: 10px 20px;
+  font-size: 0.86rem;
+  text-align: center;
+}
+
+.site-banner a { color: inherit; text-decoration: underline; font-weight: 600; }
+
 .table-wrap { overflow-x: auto; padding: 0; }
 
 .table {
@@ -1091,6 +1113,18 @@ button.stat-card:hover { border-color: var(--border-hover); }
 
 .proxy-status.checking { color: var(--text-dim); background: var(--bg-input); }
 .proxy-status.active { color: var(--success); background: rgba(62, 207, 142, 0.15); }
+
+.logs-box {
+  margin: 0;
+  max-height: 520px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
 .proxy-status.inactive { color: var(--error); background: rgba(255, 107, 125, 0.15); }
 
 .maintenance-actions {

@@ -9,9 +9,12 @@ It registers as the same "yt_dlp" package as stable yt-dlp, so it can't be
 pip-installed into the main environment without replacing it - it's built
 into its own venv (see Dockerfile) and driven here as a CLI subprocess
 instead of a Python import. Only handles plain, non-clip video+audio
-downloads (see downloader.py's _should_use_sabr_engine) - the fork itself
+downloads (see downloader.py's _is_extension_eligible) - the fork itself
 doesn't yet support --download-sections, so clips/"лише відео"/"лише
 аудіо" always stay on the stable engine regardless of this module.
+Dispatch is fully automatic (downloader.py's _run_job) - there's no admin
+setting choosing this path, it's just what happens when an eligible
+YouTube job finds a live Obelisk Bridge extension to supply a token.
 """
 
 import re

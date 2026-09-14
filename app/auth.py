@@ -110,23 +110,12 @@ def get_proxy_youtube_test(db: Session) -> bool:
     return get_setting(db, "proxy_youtube_test") == "1"
 
 
-YOUTUBE_ENGINES = ("ytdlp", "ytdlp_sabr", "extension")
-
-
-def get_youtube_engine(db: Session) -> str:
-    """Which downloader handles plain (non-clip, video+audio) YouTube jobs:
-    "ytdlp" (default, the same engine used for every other site),
-    "ytdlp_sabr" (experimental - a separate yt-dlp fork with native SABR
-    protocol support, see app/youtube_sabr.py), or "extension" (the Obelisk
-    Bridge Chrome extension supplies a real browser-minted PO token, which
-    gets fed into the same SABR fork). Clips and "лише відео"/"лише аудіо"
-    always use "ytdlp" regardless of this setting - neither alternate
-    engine supports them yet."""
-    value = get_setting(db, "youtube_engine", "ytdlp")
-    return value if value in YOUTUBE_ENGINES else "ytdlp"
-
-
 # ---------------- Obelisk Bridge extension tokens ----------------
+# No admin setting decides whether YouTube downloads try the extension -
+# dispatch is automatic (see downloader.py's _is_extension_eligible): any
+# eligible YouTube job tries the bridge first if one looks alive, and
+# falls back to plain yt-dlp otherwise. Non-YouTube URLs are never
+# affected either way.
 
 def create_extension_token(db: Session, username: str) -> str:
     token = secrets.token_hex(32)
@@ -142,6 +131,22 @@ def get_extension_token_owner(db: Session, token: str) -> str | None:
     row.last_seen_at = datetime.utcnow()
     db.commit()
     return row.username
+
+
+# How recently an extension must have polled for it to count as "live" -
+# generous enough to survive a full gap between chrome.alarms firings
+# (every ~1 minute) without a false negative.
+EXTENSION_RECENTLY_SEEN_SECONDS = 90
+
+
+def has_recent_extension_activity(db: Session) -> bool:
+    """Whether *any* Obelisk Bridge install has polled recently - used to
+    decide whether a YouTube job is even worth making wait for a token.
+    Without this, a user with no extension installed at all would have
+    every YouTube download stall for the full wait window before falling
+    back, for no benefit."""
+    cutoff = datetime.utcnow() - timedelta(seconds=EXTENSION_RECENTLY_SEEN_SECONDS)
+    return db.query(ExtensionToken).filter(ExtensionToken.last_seen_at >= cutoff).first() is not None
 
 
 def get_timezone(db: Session) -> str:

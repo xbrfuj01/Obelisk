@@ -646,3 +646,19 @@ document.addEventListener("click", async (e) => {
     // ignore — the next poll tick will just show whatever state actually stuck
   }
 });
+
+(async function () {
+  const counterEl = document.getElementById("extension-counter");
+  if (!counterEl) return;
+  try {
+    const res = await fetch("/api/my-extension-stats");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.count > 0) {
+      counterEl.textContent = "Ви допомогли завантажити " + data.count + " відео завдяки розширенню!";
+      counterEl.hidden = false;
+    }
+  } catch (err) {
+    // ignore — just don't show the counter this load
+  }
+})();

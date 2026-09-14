@@ -26,12 +26,13 @@ RUN echo "cachebust=${CACHEBUST}" \
     && pip install --no-cache-dir --upgrade yt-dlp yt-dlp-ejs bgutil-ytdlp-pot-provider \
     && cpanm --notest Image::ExifTool
 
-# Experimental SABR-capable yt-dlp fork (youtube_sabr.py's admin-selectable
-# alternate engine, see that module) - it's a fork of the same "yt_dlp"
-# package, so it can't be pip-installed into the main environment above
-# without clobbering the stable one. Isolated in its own venv and invoked
-# as a CLI subprocess instead. Re-pulled every build (same CACHEBUST) since
-# it's an actively-changing, unreleased branch.
+# Experimental SABR-capable yt-dlp fork (youtube_sabr.py - automatically
+# used for eligible YouTube jobs when the Obelisk Bridge extension supplies
+# a PO token, see downloader.py's _is_extension_eligible) - it's a fork of
+# the same "yt_dlp" package, so it can't be pip-installed into the main
+# environment above without clobbering the stable one. Isolated in its own
+# venv and invoked as a CLI subprocess instead. Re-pulled every build (same
+# CACHEBUST) since it's an actively-changing, unreleased branch.
 RUN python -m venv /opt/venv-sabr \
     && echo "cachebust=${CACHEBUST}" \
     && /opt/venv-sabr/bin/pip install --no-cache-dir \
@@ -39,6 +40,9 @@ RUN python -m venv /opt/venv-sabr \
        bgutil-ytdlp-pot-provider
 
 COPY app ./app
+# The Obelisk Bridge Chrome extension's source - served as a zip by
+# GET /extension/download (main.py), not run in this container itself.
+COPY extension ./extension
 
 RUN mkdir -p /data /downloads
 

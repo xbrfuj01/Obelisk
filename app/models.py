@@ -37,8 +37,12 @@ class Download(Base):
     # Set by POST /api/extension/po-token once the Obelisk Bridge extension
     # captures a real, browser-minted PO token for this job - _run_job polls
     # for this to appear while status="waiting_extension" (see downloader.py's
-    # _should_use_extension_engine).
+    # _is_extension_eligible).
     po_token = Column(Text, nullable=True)
+    # Which engine actually handled this job - "extension" (Obelisk Bridge
+    # supplied a real PO token) or left None for the stable yt-dlp path
+    # (the default, and the automatic fallback when no extension is live).
+    engine = Column(String, nullable=True)
 
     title = Column(Text, nullable=True)
     filepath = Column(Text, nullable=True)

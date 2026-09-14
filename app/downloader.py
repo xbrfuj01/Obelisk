@@ -1,3 +1,4 @@
+import collections
 import ipaddress
 import os
 import re
@@ -37,6 +38,9 @@ class _ThreadAwareMuter:
             muted = threading.get_ident() in _muted_threads
         if not muted:
             self._real.write(data)
+            if data:
+                with _log_buffer_lock:
+                    _log_buffer.append(data)
 
     def flush(self):
         self._real.flush()
@@ -47,6 +51,22 @@ class _ThreadAwareMuter:
 
 _mute_lock = threading.Lock()
 _muted_threads = set()
+# Feeds the admin "Логи" tab (GET /admin/api/logs) - a bounded, in-memory
+# record of this process's own (unmuted) console output, since there's no
+# Docker-socket access to just ask for `docker compose logs` directly.
+# Individual write() calls aren't necessarily whole lines (print() itself
+# issues more than one write per call), so this holds raw chunks and joins
+# them back into one stream when read rather than pretending each entry is
+# a line.
+_log_buffer_lock = threading.Lock()
+_log_buffer = collections.deque(maxlen=5000)
+
+
+def get_recent_logs() -> str:
+    with _log_buffer_lock:
+        return "".join(_log_buffer)
+
+
 sys.stdout = _ThreadAwareMuter(sys.stdout)
 sys.stderr = _ThreadAwareMuter(sys.stderr)
 
@@ -452,39 +472,23 @@ def _should_use_proxy(url: str, db) -> bool:
     return any(d in source for d in domains)
 
 
-def _should_use_sabr_engine(job, db) -> bool:
-    """The experimental SABR-fork engine only handles the plain, common
-    case: a non-clip video+audio YouTube download. Everything else (clips,
-    "лише відео", "лише аудіо") stays on the stable engine regardless of
-    the admin's chosen youtube_engine setting - the fork doesn't support
-    --download-sections yet, and audio-only/video-only aren't worth the
-    extra format-string complexity for something this experimental."""
-    return (
-        job.mode == "video"
-        and job.clip_start is None
-        and job.clip_end is None
-        and _is_youtube(job.url)
-        and auth.get_youtube_engine(db) == "ytdlp_sabr"
-    )
-
-
-def _should_use_extension_engine(job, db) -> bool:
-    """Same eligibility boundary as _should_use_sabr_engine (plain,
-    non-clip video+audio YouTube only) - the "extension" engine is really
-    just the SABR engine plus a real PO token, so it inherits that
-    engine's limitations exactly."""
-    return (
-        job.mode == "video"
-        and job.clip_start is None
-        and job.clip_end is None
-        and _is_youtube(job.url)
-        and auth.get_youtube_engine(db) == "extension"
-    )
+def _is_extension_eligible(job) -> bool:
+    """Structural eligibility for the extension-assisted path - plain,
+    non-clip video+audio YouTube only. Everything else (clips, "лише
+    відео", "лише аудіо") always uses the stable engine - the SABR fork
+    behind the extension doesn't support --download-sections yet, and
+    audio-only/video-only aren't worth the extra format-string complexity.
+    No admin setting is involved: dispatch is automatic (see _run_job) -
+    an eligible job tries the extension first if one looks alive, and
+    silently falls back to plain yt-dlp otherwise."""
+    return job.mode == "video" and job.clip_start is None and job.clip_end is None and _is_youtube(job.url)
 
 
 # How long _run_job waits for the Obelisk Bridge extension to poll, open
-# the video, capture a PO token and post it back before giving up.
-EXTENSION_TOKEN_TIMEOUT_SECONDS = 120
+# the video, capture a PO token and post it back before giving up and
+# falling back to the stable engine. Short, since a real fallback exists -
+# this isn't a hard failure the way it would be without one.
+EXTENSION_TOKEN_TIMEOUT_SECONDS = 45
 
 
 def _wait_for_extension_token(job_id: str, should_cancel) -> str | None:
@@ -701,52 +705,56 @@ def _run_job(job_id: str):
 
         height_filter = _height_filter(job.quality)
 
-        use_extension = _should_use_extension_engine(job, db)
-        if _should_use_sabr_engine(job, db) or use_extension:
-            po_token = None
-            if use_extension:
-                # Wait for the Obelisk Bridge extension to poll, open the
-                # video, capture a real PO token and post it back - this
-                # can take a while (the extension only polls every few
-                # seconds, then has to load a real page), so the gate slot
-                # is released for the wait instead of blocking other
-                # downloads from starting in the meantime.
-                _update(db, job, status="waiting_extension")
-                _gate.release()
-                try:
-                    po_token = _wait_for_extension_token(job_id, lambda: job_id in _cancel_requested)
-                finally:
-                    _gate.acquire(limit)
-                if job_id in _cancel_requested:
-                    raise RuntimeError("cancelled")
-                if not po_token:
-                    raise RuntimeError(
-                        "Розширення Obelisk Bridge не встигло надати токен — "
-                        "перевірте, що воно встановлене, увімкнене і залогінене."
-                    )
-                _update(db, job, status="downloading")
+        engine_used = None
 
-            # Experimental engine(s) - see youtube_sabr.py. Only reachable
-            # for plain video+audio, non-clip YouTube jobs (already
-            # filtered above), so none of the mode/clip/subtitle
-            # format-string logic below applies here at all.
-            filepath, sabr_error = youtube_sabr.download_via_sabr(
-                url=job.url,
-                out_dir=out_dir,
-                outtmpl=outtmpl,
-                height_filter=height_filter,
-                container=job.container if job.container in VIDEO_FORMATS else None,
-                cookies_path=auth.get_cookies_path(),
-                proxy_url=auth.get_proxy_url(db) if _should_use_proxy(job.url, db) else None,
-                job_id=job_id,
-                should_cancel=lambda: job_id in _cancel_requested,
-                po_token=po_token,
-            )
-            if sabr_error:
-                raise RuntimeError(f"[SABR] {sabr_error}")
-            used_cookies = auth.has_cookies()
-            title = os.path.splitext(os.path.basename(filepath))[0] if filepath else "video"
-        else:
+        if _is_extension_eligible(job) and auth.has_recent_extension_activity(db):
+            # An Obelisk Bridge install has polled recently, so it's worth
+            # waiting for it - release the gate slot for the wait so a
+            # stalled/slow extension can't block other downloads from
+            # starting. If no extension has been seen recently at all,
+            # this whole block is skipped and the job goes straight to the
+            # stable path below with no delay.
+            _update(db, job, status="waiting_extension")
+            _gate.release()
+            try:
+                po_token = _wait_for_extension_token(job_id, lambda: job_id in _cancel_requested)
+            finally:
+                _gate.acquire(limit)
+            if job_id in _cancel_requested:
+                raise RuntimeError("cancelled")
+
+            if po_token:
+                _update(db, job, status="downloading")
+                filepath, sabr_error = youtube_sabr.download_via_sabr(
+                    url=job.url,
+                    out_dir=out_dir,
+                    outtmpl=outtmpl,
+                    height_filter=height_filter,
+                    container=job.container if job.container in VIDEO_FORMATS else None,
+                    cookies_path=auth.get_cookies_path(),
+                    proxy_url=auth.get_proxy_url(db) if _should_use_proxy(job.url, db) else None,
+                    job_id=job_id,
+                    should_cancel=lambda: job_id in _cancel_requested,
+                    po_token=po_token,
+                )
+                if sabr_error:
+                    # Falls through to the stable path below instead of
+                    # failing outright - clear whatever the failed attempt
+                    # may have partially written first, so _find_main_file
+                    # down there can't mistake leftovers for the real result.
+                    for name in os.listdir(out_dir):
+                        path = os.path.join(out_dir, name)
+                        try:
+                            os.remove(path) if os.path.isfile(path) else shutil.rmtree(path, ignore_errors=True)
+                        except OSError:
+                            pass
+                else:
+                    engine_used = "extension"
+                    used_cookies = auth.has_cookies()
+                    title = os.path.splitext(os.path.basename(filepath))[0] if filepath else "video"
+
+        if engine_used is None:
+            _update(db, job, status="downloading")
             progress_state = {"leg": 0, "leg_active": False}
             ydl_opts = {
                 "outtmpl": outtmpl,
@@ -896,6 +904,7 @@ def _run_job(job_id: str):
             filesize=filesize,
             auto_convert_id=auto_convert_id,
             used_cookies=used_cookies,
+            engine=engine_used,
             finished_at=datetime.utcnow(),
         )
     except Exception as e:

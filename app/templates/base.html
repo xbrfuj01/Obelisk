@@ -40,6 +40,10 @@
     {% endif %}
   </nav>
 </header>
+<div class="site-banner" id="extension-banner" hidden>
+  Розширення Obelisk Bridge не виявлено — без нього завантаження з YouTube може працювати гірше/повільніше.
+  <a href="/extension/download">Встановити розширення</a>
+</div>
 <main class="container">
 {% block content %}{% endblock %}
 </main>
@@ -58,5 +62,6 @@
 {% block scripts %}{% endblock %}
 <script src="/static/processes.js"></script>
 <script src="/static/notifications.js"></script>
+<script src="/static/extension-detect.js"></script>
 </body>
 </html>

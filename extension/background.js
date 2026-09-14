@@ -4,14 +4,16 @@
 // video -> wait for content-script.js/capture.js's relay to report a PO
 // token for that tab -> POST /api/extension/po-token -> close the tab.
 //
-// Polling every few seconds via setInterval, not chrome.alarms - simpler,
-// and MV3 service workers stay alive while there's other activity in the
-// browser, which matches how this is meant to be used (the person is
-// actively at their computer when they submit a download, per the
-// project's own design notes). A more bulletproof version would add
-// chrome.alarms as a wake-up safety net, but that's not needed for v1.
-
+// Polls two ways: a plain setInterval for fast response whenever the
+// worker happens to already be alive, PLUS chrome.alarms as a guaranteed
+// floor - MV3 can terminate an idle service worker at any time (nothing
+// to do with whether the browser *window* has OS focus - a background
+// tab keeps running either way), which silently clears setInterval
+// timers. chrome.alarms is redelivered even after the worker was killed
+// and gets restarted for the alarm event, so polling can't go silent for
+// longer than the alarm period even through a suspension.
 const POLL_INTERVAL_MS = 5000;
+const ALARM_NAME = "obelisk-bridge-poll";
 const TOKEN_WAIT_TIMEOUT_MS = 30000;
 
 let pollTimer = null;
@@ -96,13 +98,21 @@ chrome.runtime.onMessage.addListener(function (message, sender) {
 function startPolling() {
   if (pollTimer) return;
   pollTimer = setInterval(pollOnce, POLL_INTERVAL_MS);
+  // periodInMinutes: 1 is the safe, portable minimum (unpacked/dev-mode
+  // extensions can go shorter, but this works the same everywhere).
+  chrome.alarms.create(ALARM_NAME, { periodInMinutes: 1 });
   pollOnce();
 }
 
 function stopPolling() {
   clearInterval(pollTimer);
   pollTimer = null;
+  chrome.alarms.clear(ALARM_NAME);
 }
+
+chrome.alarms.onAlarm.addListener(function (alarm) {
+  if (alarm.name === ALARM_NAME) pollOnce();
+});
 
 chrome.storage.local.get(["token"], function (stored) {
   if (stored.token) startPolling();
@@ -112,4 +122,17 @@ chrome.storage.onChanged.addListener(function (changes, area) {
   if (area !== "local" || !("token" in changes)) return;
   if (changes.token.newValue) startPolling();
   else stopPolling();
+});
+
+// Lets the Obelisk site itself (see app/static/extension-detect.js) check
+// whether this extension is installed and logged in, via
+// chrome.runtime.sendMessage(EXTENSION_ID, ...) from a normal page script -
+// allowed cross-origin only because manifest.json's externally_connectable
+// whitelists the site's own origin.
+chrome.runtime.onMessageExternal.addListener(function (message, sender, sendResponse) {
+  if (!message || message.type !== "ping") return;
+  chrome.storage.local.get(["token", "username"], function (stored) {
+    sendResponse({ ok: !!stored.token, username: stored.username || null });
+  });
+  return true; // keep the message channel open for the async sendResponse above
 });

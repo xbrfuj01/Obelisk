@@ -1,7 +1,9 @@
+import io
 import os
 import re
 import shutil
 import uuid
+import zipfile
 from datetime import datetime, timedelta
 
 from fastapi import (
@@ -29,6 +31,7 @@ from .downloader import (
     parse_timecode,
     request_cancel as request_download_cancel,
     check_proxy_connection,
+    get_recent_logs,
 )
 from .cleanup import start_cleanup_thread, wipe_all_data
 from . import timeutil
@@ -36,6 +39,7 @@ from . import stats as stats_module
 from . import sysinfo
 
 BASE_DIR = os.path.dirname(__file__)
+EXTENSION_DIR = os.path.normpath(os.path.join(BASE_DIR, "..", "extension"))
 
 
 class StaticFiles(_StaticFiles):
@@ -510,8 +514,9 @@ def dismiss_notification(notif_id: str, request: Request, db: Session = Depends(
 
 # ---------------- Obelisk Bridge extension ----------------
 # The Chrome extension that captures a real, browser-minted YouTube PO
-# token and hands it to the "extension" download engine (see downloader.py's
-# _should_use_extension_engine / _run_job). It authenticates with the same
+# token and hands it to the extension-assisted download path (see
+# downloader.py's _is_extension_eligible / _run_job - dispatch is fully
+# automatic, no admin setting involved). It authenticates with the same
 # username/password as the site, but as a bearer token (require_extension_token
 # above) rather than a cookie session - a browser extension's background
 # worker has no tab/session to attach a cookie to.
@@ -565,6 +570,38 @@ def extension_po_token(
     job.po_token = po_token.strip()
     db.commit()
     return {"ok": True}
+
+
+@app.get("/api/my-extension-stats")
+def my_extension_stats(request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_api)):
+    username = request.session.get("site_username")
+    if not username:
+        return {"count": 0}
+    count = (
+        db.query(func.count(Download.id))
+        .filter(Download.username == username, Download.engine == "extension")
+        .scalar()
+    )
+    return {"count": count}
+
+
+@app.get("/extension/download")
+def extension_download(_=Depends(require_site_access_page)):
+    """Zips extension/ on the fly so it's always in sync with whatever's
+    actually in that folder - no separate build/packaging step to forget."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, _dirs, files in os.walk(EXTENSION_DIR):
+            for name in files:
+                path = os.path.join(root, name)
+                arcname = os.path.join("obelisk-bridge-extension", os.path.relpath(path, EXTENSION_DIR))
+                zf.write(path, arcname)
+    buffer.seek(0)
+    return Response(
+        buffer.read(),
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="obelisk-bridge-extension.zip"'},
+    )
 
 
 # ---------------- Video converter ----------------
@@ -1013,7 +1050,6 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
     proxy_url = auth.get_proxy_url(db)
     proxy_domains = ",".join(auth.get_proxy_domains(db))
     proxy_youtube_test = auth.get_proxy_youtube_test(db)
-    youtube_engine = auth.get_youtube_engine(db)
     timezone = auth.get_timezone(db)
     has_cookies = auth.has_cookies()
 
@@ -1053,7 +1089,6 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
             "proxy_url": proxy_url,
             "proxy_domains": proxy_domains,
             "proxy_youtube_test": proxy_youtube_test,
-            "youtube_engine": youtube_engine,
             "timezone": timezone,
             "timezones": timeutil.COMMON_TIMEZONES,
             "has_cookies": has_cookies,
@@ -1351,7 +1386,6 @@ def admin_settings(
     proxy_url: str = Form(""),
     proxy_domains: str = Form(""),
     proxy_youtube_test: bool = Form(False),
-    youtube_engine: str = Form("ytdlp"),
     timezone: str = Form(""),
     db: Session = Depends(get_db),
     _=Depends(require_admin_dep),
@@ -1365,7 +1399,6 @@ def admin_settings(
     auth.set_setting(db, "proxy_url", proxy_url.strip())
     auth.set_setting(db, "proxy_domains", proxy_domains.strip())
     auth.set_setting(db, "proxy_youtube_test", "1" if proxy_youtube_test else "0")
-    auth.set_setting(db, "youtube_engine", youtube_engine if youtube_engine in auth.YOUTUBE_ENGINES else "ytdlp")
     if timeutil.is_valid_timezone(timezone):
         auth.set_setting(db, "timezone", timezone)
 
@@ -1378,6 +1411,16 @@ def admin_proxy_status(db: Session = Depends(get_db), _=Depends(require_admin_de
     if not proxy_url:
         return {"configured": False, "active": False}
     return {"configured": True, "active": check_proxy_connection(proxy_url)}
+
+
+@app.get("/admin/api/logs")
+def admin_logs(_=Depends(require_admin_dep)):
+    """In-memory only - resets on every container restart, and only ever
+    holds what this process itself printed (not uvicorn's own access log,
+    already disabled via --no-access-log, and not the bgutil-provider
+    sidecar). Good for "what just happened", not a durable record - use
+    `docker compose logs` for that."""
+    return Response(get_recent_logs(), media_type="text/plain")
 
 
 @app.post("/admin/settings/cookies")

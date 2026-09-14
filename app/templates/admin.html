@@ -110,6 +110,7 @@
   <button type="button" class="admin-tab-btn" data-tab="users">Користувачі</button>
   <button type="button" class="admin-tab-btn" data-tab="system">Система</button>
   <button type="button" class="admin-tab-btn" data-tab="settings">Налаштування</button>
+  <button type="button" class="admin-tab-btn" data-tab="logs">Логи</button>
 </nav>
 
 <div class="tab-panel" data-tab-panel="stats">
@@ -151,7 +152,7 @@
     {% for key, label in activity_periods %}
       <div class="table-wrap card period-panel" data-period-panel="{{ key }}">
       <table class="table">
-        <thead><tr><th>Користувач</th><th>Завантажень</th><th>Конвертацій</th><th>Розмір</th></tr></thead>
+        <thead><tr><th>Користувач</th><th>Завантажень</th><th>Конвертацій</th><th>Розмір</th><th>Через розширення</th></tr></thead>
         <tbody>
         {% for row in user_activity[key] %}
           <tr>
@@ -159,9 +160,10 @@
             <td>{{ row.downloads }}</td>
             <td>{{ row.conversions }}</td>
             <td>{{ format_bytes(row.size) }}</td>
+            <td>{{ row.extension_downloads }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="4">Немає активності за цей період</td></tr>
+          <tr><td colspan="5">Немає активності за цей період</td></tr>
         {% endfor %}
         </tbody>
       </table>
@@ -429,19 +431,11 @@
       </div>
 
       <p class="settings-group-title">Завантаження YouTube</p>
-      <label>Рушій завантаження
-        <select name="youtube_engine">
-          <option value="ytdlp" {% if youtube_engine == "ytdlp" %}selected{% endif %}>yt-dlp (стандартний)</option>
-          <option value="ytdlp_sabr" {% if youtube_engine == "ytdlp_sabr" %}selected{% endif %}>yt-dlp SABR (експериментальний)</option>
-          <option value="extension" {% if youtube_engine == "extension" %}selected{% endif %}>Obelisk Bridge (розширення браузера)</option>
-        </select>
-      </label>
       <p class="hint">
-        Обидва експериментальні рушії вміють те, чого не вміє стандартний yt-dlp зараз (обхід деяких обмежень YouTube SABR),
-        але поки підтримують лише звичайне завантаження "відео + звук" без таймкодів — кліпи, "лише відео", "лише аудіо"
-        і субтитри завжди йдуть через стандартний рушій незалежно від цього вибору.
-        "Obelisk Bridge" додатково вимагає встановленого й залогіненого розширення в браузері — без нього завдання
-        буде чекати в черзі до 2 хвилин, а тоді впаде з помилкою.
+        Звичайне завантаження "відео + звук" з YouTube автоматично пробує пройти через розширення Obelisk Bridge
+        (якщо воно встановлене й залогінене хоч у когось) — без нього, або якщо воно не встигло відповісти,
+        завантаження одразу й непомітно йде стандартним yt-dlp. Кліпи, "лише відео", "лише аудіо" і субтитри
+        завжди йдуть через стандартний рушій.
       </p>
 
       <div class="settings-group-title-row">
@@ -492,6 +486,19 @@
         </form>
         {% endif %}
       </div>
+    </div>
+  </section>
+</div>
+
+<div class="tab-panel" data-tab-panel="logs" hidden>
+  <section>
+    <h2>Логи</h2>
+    <p class="hint">
+      Лише вивід цього процесу з моменту останнього запуску контейнера — не заміна <code>docker compose logs</code>,
+      а швидкий спосіб побачити, що щойно відбулось, не виходячи з адмінки.
+    </p>
+    <div class="card">
+      <pre id="logs-box" class="logs-box"></pre>
     </div>
   </section>
 </div>
@@ -730,6 +737,39 @@
     sysinfoTimer = null;
   }
 
+  // ---------------- Logs tab ----------------
+
+  var logsBox = document.getElementById("logs-box");
+  var logsTimer = null;
+
+  async function refreshLogs() {
+    if (!logsBox) return;
+    try {
+      const res = await fetch("/admin/api/logs");
+      if (!res.ok) return;
+      const text = await res.text();
+      // Only follow the tail automatically if the admin hasn't scrolled
+      // up to read something further back.
+      var atBottom = logsBox.scrollHeight - logsBox.scrollTop - logsBox.clientHeight < 40;
+      logsBox.textContent = text;
+      if (atBottom) logsBox.scrollTop = logsBox.scrollHeight;
+    } catch (err) {
+      // ignore — keep showing the last known content
+    }
+  }
+
+  function startLogsPolling() {
+    if (logsTimer) return;
+    refreshLogs();
+    logsTimer = setInterval(refreshLogs, 2000);
+  }
+
+  function stopLogsPolling() {
+    if (!logsTimer) return;
+    clearInterval(logsTimer);
+    logsTimer = null;
+  }
+
   // ---------------- Proxy connection status ----------------
   // Checked on demand (whenever the Settings tab is opened) rather than on
   // every admin page load, since it actually dials out through the proxy
@@ -763,6 +803,8 @@
       activate(btn.dataset.tab);
       if (btn.dataset.tab === "system") startSysinfoPolling();
       else stopSysinfoPolling();
+      if (btn.dataset.tab === "logs") startLogsPolling();
+      else stopLogsPolling();
       if (btn.dataset.tab === "settings") checkProxyStatus();
       // Keep the URL's ?tab= in sync so a page refresh lands back on the
       // same tab instead of always bouncing to the default (stats).
@@ -777,6 +819,7 @@
   var initialTab = valid.includes(requested) ? requested : "stats";
   activate(initialTab);
   if (initialTab === "system") startSysinfoPolling();
+  if (initialTab === "logs") startLogsPolling();
   if (initialTab === "settings") checkProxyStatus();
 
   var periodBtns = document.querySelectorAll(".period-tab-btn");
