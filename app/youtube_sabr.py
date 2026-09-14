@@ -75,7 +75,17 @@ def _build_command(url, outtmpl, height_filter, container, cookies_path, proxy_u
         "--newline",
         "--extractor-args", "youtube:formats=duplicate;player-client=web,web_safari,tv,ios",
         "--extractor-args", "youtubepot-bgutilhttp:base_url=http://bgutil-provider:4416",
-        "-f", f"bv[protocol=sabr]{height_filter}+ba[protocol=sabr]/best{height_filter}/best",
+        # Order matters: try a SABR-tagged adaptive pair first (for videos
+        # that are only available that way), then a plain adaptive pair
+        # with no protocol filter (this is what a valid PO token actually
+        # unlocks for the "web" client - confirmed from a real run's log,
+        # which showed the token being accepted and the "SABR forcing"
+        # warning gone entirely, yet still landing on format 18 because
+        # this selector had no term between the sabr-only pair and the
+        # single-file "best" floor to catch those now-available formats),
+        # and only fall back to a single progressive file (capped around
+        # 480p) as the last resort.
+        "-f", f"bv[protocol=sabr]{height_filter}+ba[protocol=sabr]/bestvideo{height_filter}+bestaudio/best{height_filter}/best",
         "-o", outtmpl,
     ]
     if container:
