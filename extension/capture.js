@@ -52,6 +52,37 @@
     return null;
   }
 
+  // The tab background.js opens for this is created with active:false, so
+  // document.visibilityState is "hidden" for its whole life (that's a
+  // property of the tab itself, unrelated to the earlier chrome.alarms
+  // fix for the *window* not having OS focus) - and YouTube's player, like
+  // most video sites, defers actually starting playback while hidden to
+  // save bandwidth. The fetch/XHR hooks below are purely passive, so if
+  // playback never starts, the player-API request carrying a PO token
+  // never fires either and this whole capture is a no-op. Nudge it
+  // directly instead of waiting for autoplay that a hidden tab won't get:
+  // muted playback isn't blocked by Chrome's autoplay policy, and once
+  // yt-dlp/downloader.py has the token it never touches the video's own
+  // bytes anyway, so it doesn't matter that this "watches" nothing.
+  function forcePlayback() {
+    try {
+      const video = document.querySelector("video");
+      if (!video) return;
+      video.muted = true;
+      const p = video.play();
+      if (p && typeof p.catch === "function") p.catch(function () {});
+    } catch (err) {
+      // never let this break the page - worst case the passive hooks
+      // below still catch a token if the page starts playback on its own
+    }
+  }
+  let playbackNudgeAttempts = 0;
+  const playbackNudgeTimer = setInterval(function () {
+    playbackNudgeAttempts += 1;
+    forcePlayback();
+    if (playbackNudgeAttempts > 40) clearInterval(playbackNudgeTimer);
+  }, 250);
+
   const originalFetch = window.fetch;
   window.fetch = function (input, init) {
     try {
