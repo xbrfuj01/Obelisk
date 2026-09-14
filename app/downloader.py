@@ -151,14 +151,23 @@ class _YdlLogCapture:
     def __init__(self):
         self.lines = []
 
+    def _emit(self, line):
+        self.lines.append(line)
+        # Also surfaced live (not just on failure, via summary() below) so
+        # a *successful* download's own SABR/PO-token diagnostics reach the
+        # admin "Логи" tab too - otherwise a download that quietly landed
+        # on a lower quality than expected leaves no trace anywhere to
+        # explain why.
+        print(line, flush=True)
+
     def debug(self, msg):
-        self.lines.append(msg)
+        self._emit(msg)
 
     def warning(self, msg):
-        self.lines.append(f"WARNING: {msg}")
+        self._emit(f"WARNING: {msg}")
 
     def error(self, msg):
-        self.lines.append(f"ERROR: {msg}")
+        self._emit(f"ERROR: {msg}")
 
     def summary(self, max_lines=60):
         """Collapses consecutive repeats (yt-dlp logs the same SABR/format
@@ -772,6 +781,7 @@ def _run_job(job_id: str):
             # starting. If no extension has been seen recently at all,
             # this whole block is skipped and the job goes straight to the
             # stable path below with no delay.
+            print(f"[extension] {job_id}: очікуємо PO-токен від розширення (до {EXTENSION_TOKEN_TIMEOUT_SECONDS}с)", flush=True)
             _update(db, job, status="waiting_extension")
             _gate.release()
             try:
@@ -782,6 +792,7 @@ def _run_job(job_id: str):
                 raise RuntimeError("cancelled")
 
             if po_token:
+                print(f"[extension] {job_id}: токен отримано, пробуємо SABR-рушій", flush=True)
                 _update(db, job, status="downloading")
                 filepath, sabr_error = youtube_sabr.download_via_sabr(
                     url=job.url,
@@ -796,6 +807,7 @@ def _run_job(job_id: str):
                     po_token=po_token,
                 )
                 if sabr_error:
+                    print(f"[extension] {job_id}: SABR-рушій не впорався ({sabr_error}), переходимо на стандартний рушій", flush=True)
                     # Falls through to the stable path below instead of
                     # failing outright - clear whatever the failed attempt
                     # may have partially written first, so _find_main_file
@@ -807,9 +819,12 @@ def _run_job(job_id: str):
                         except OSError:
                             pass
                 else:
+                    print(f"[extension] {job_id}: успішно завантажено через розширення", flush=True)
                     engine_used = "extension"
                     used_cookies = auth.has_cookies()
                     title = os.path.splitext(os.path.basename(filepath))[0] if filepath else "video"
+            else:
+                print(f"[extension] {job_id}: токен не надійшов за {EXTENSION_TOKEN_TIMEOUT_SECONDS}с, переходимо на стандартний рушій", flush=True)
 
         if engine_used is None:
             _update(db, job, status="downloading")
@@ -818,7 +833,7 @@ def _run_job(job_id: str):
                 "outtmpl": outtmpl,
                 "noplaylist": True,
                 "quiet": True,
-                "no_warnings": True,
+                "no_warnings": False,  # otherwise "YouTube is forcing SABR streaming..." never even reaches the logger below
                 "verbose": True,  # otherwise yt-dlp's own debug lines (incl. PO token status) never reach the logger at all
                 "logger": log_capture,
                 "progress_hooks": [lambda d: _progress_hook(job_id, d, progress_state)],
