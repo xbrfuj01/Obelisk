@@ -440,10 +440,12 @@ def _should_use_proxy(url: str, db) -> bool:
     proxy_url = auth.get_proxy_url(db)
     if not proxy_url:
         return False
+    source = _source_from_url(url)
+    if auth.get_proxy_youtube_test(db) and ("youtube.com" in source or source == "youtu.be"):
+        return True
     domains = auth.get_proxy_domains(db)
     if not domains:
         return True
-    source = _source_from_url(url)
     return any(d in source for d in domains)
 
 

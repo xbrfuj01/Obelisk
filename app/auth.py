@@ -100,6 +100,16 @@ def get_proxy_domains(db: Session) -> list:
     return [d.strip().lower() for d in raw.split(",") if d.strip()]
 
 
+def get_proxy_youtube_test(db: Session) -> bool:
+    """Experimental toggle: route YouTube through the proxy too, regardless
+    of the domain list above (which is meant for the sites it was actually
+    built for - vk/ok/rutube/mail.ru). Kept as its own checkbox rather than
+    just adding youtube.com to that list, since this is a test to see if a
+    proxy IP helps with YouTube's anti-bot/SABR restrictions at all, not a
+    permanent routing decision."""
+    return get_setting(db, "proxy_youtube_test") == "1"
+
+
 def get_timezone(db: Session) -> str:
     return get_setting(db, "timezone", config.DEFAULT_TIMEZONE)
 

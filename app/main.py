@@ -938,6 +938,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
     session_max_age_days = auth.get_session_max_age_days(db)
     proxy_url = auth.get_proxy_url(db)
     proxy_domains = ",".join(auth.get_proxy_domains(db))
+    proxy_youtube_test = auth.get_proxy_youtube_test(db)
     timezone = auth.get_timezone(db)
     has_cookies = auth.has_cookies()
 
@@ -976,6 +977,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
             "session_max_age_days": session_max_age_days,
             "proxy_url": proxy_url,
             "proxy_domains": proxy_domains,
+            "proxy_youtube_test": proxy_youtube_test,
             "timezone": timezone,
             "timezones": timeutil.COMMON_TIMEZONES,
             "has_cookies": has_cookies,
@@ -1272,6 +1274,7 @@ def admin_settings(
     session_max_age_days: int = Form(...),
     proxy_url: str = Form(""),
     proxy_domains: str = Form(""),
+    proxy_youtube_test: bool = Form(False),
     timezone: str = Form(""),
     db: Session = Depends(get_db),
     _=Depends(require_admin_dep),
@@ -1284,6 +1287,7 @@ def admin_settings(
     auth.set_setting(db, "session_max_age_days", str(session_max_age_days))
     auth.set_setting(db, "proxy_url", proxy_url.strip())
     auth.set_setting(db, "proxy_domains", proxy_domains.strip())
+    auth.set_setting(db, "proxy_youtube_test", "1" if proxy_youtube_test else "0")
     if timeutil.is_valid_timezone(timezone):
         auth.set_setting(db, "timezone", timezone)
 

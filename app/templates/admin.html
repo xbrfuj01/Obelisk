@@ -436,6 +436,10 @@
       <label>Домени через проксі (через кому)
         <input type="text" name="proxy_domains" value="{{ proxy_domains }}" autocomplete="off">
       </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="proxy_youtube_test" {% if proxy_youtube_test %}checked{% endif %}>
+        <span>Тестово: використовувати цей проксі і для YouTube (незалежно від списку доменів вище)</span>
+      </label>
 
       <button type="submit">Зберегти</button>
     </form>
