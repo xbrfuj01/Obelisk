@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -355,7 +355,7 @@ def _subtitle_options(info):
     return result
 
 
-def _extract_with_cookie_fallback(ydl_opts, url, *, download, should_retry=lambda: True, before_retry=None):
+def _extract_with_cookie_fallback(ydl_opts, url, *, download, should_retry=lambda: True, before_retry=None, mute=True):
     """Tries anonymously first - most videos don't need an authenticated
     session, and the cookies belong to one specific account that's better
     exercised sparingly than spent on every single request. Only retries
@@ -363,18 +363,20 @@ def _extract_with_cookie_fallback(ydl_opts, url, *, download, should_retry=lambd
     should_retry() still allows it (e.g. not for a job that was cancelled
     mid-flight, which isn't a real failure to retry).
 
-    The anonymous attempt's own console output is muted regardless of
-    outcome - quiet=True already hides its normal progress/info lines, so
-    what's left is verbose=True diagnostic noise and error tracebacks that
-    are either harmless (retry below fixes it) or already captured in full
-    via the logger ydl_opt for the error_message shown in the app itself -
-    the container's own logs don't need a copy of a failure the retry just
-    resolved.
+    The anonymous attempt's own console output is muted by default
+    regardless of outcome - quiet=True already hides its normal progress/
+    info lines, so what's left is verbose=True diagnostic noise and error
+    tracebacks that are either harmless (retry below fixes it) or already
+    captured in full via the logger ydl_opt for the error_message shown in
+    the app itself - the container's own logs don't need a copy of a
+    failure the retry just resolved. probe_qualities passes mute=False
+    since it never shows an error_message of its own - the admin "Логи"
+    tab is the only way to see why a video came back short on formats.
 
     Returns (info, used_cookies) - callers that don't care which path
     succeeded (e.g. probing) can just discard the second value."""
     try:
-        with _mute_console_output(), yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with _mute_console_output() if mute else nullcontext(), yt_dlp.YoutubeDL(ydl_opts) as ydl:
             return ydl.extract_info(url, download=download), False
     except Exception:
         cookies_path = auth.get_cookies_path()
@@ -408,7 +410,14 @@ def probe_qualities(url: str, db):
         raise RuntimeError("Це посилання вказує на заборонену адресу")
     ydl_opts = {
         "quiet": True,
-        "no_warnings": True,
+        # Warnings (e.g. "YouTube is forcing SABR streaming for this
+        # client") and verbose diagnostic lines are deliberately left ON
+        # and unmuted (see mute=False below) for this call specifically -
+        # a short format list here has no error_message of its own to show
+        # anywhere else, so the admin "Логи" tab is the only way to see
+        # *why* a given video came back short.
+        "no_warnings": False,
+        "verbose": True,
         "noplaylist": True,
         "skip_download": True,
         "extractor_args": YOUTUBE_EXTRACTOR_ARGS,
@@ -421,7 +430,7 @@ def probe_qualities(url: str, db):
     }
     if _should_use_proxy(url, db):
         ydl_opts["proxy"] = auth.get_proxy_url(db)
-    info, _ = _extract_with_cookie_fallback(ydl_opts, url, download=False)
+    info, _ = _extract_with_cookie_fallback(ydl_opts, url, download=False, mute=False)
 
     # dedupe by height only: several formats (different codecs/bitrates) often
     # share the same height, and the download-side quality filter also caps by height
