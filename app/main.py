@@ -417,9 +417,7 @@ def processes(
     # sweep) jobs are done and gone, not something still worth downloading -
     # only ready-to-download or in-progress work belongs in this tray.
     downloads = _hide_stale_cancelled(
-        db.query(Download).filter(
-            Download.client_id == client_id, Download.status != "expired", Download.mode != "probe"
-        ),
+        db.query(Download).filter(Download.client_id == client_id, Download.status != "expired"),
         Download,
     ).order_by(Download.created_at.desc()).limit(20).all()
     conversions = _hide_stale_cancelled(
@@ -1133,7 +1131,6 @@ def admin_processes(db: Session = Depends(get_db), _=Depends(require_admin_dep))
     downloads = _hide_stale_cancelled(
         db.query(Download).filter(
             Download.status != "expired",
-            Download.mode != "probe",
             or_(Download.username.is_(None), Download.username.notin_(admin_usernames)),
         ),
         Download,

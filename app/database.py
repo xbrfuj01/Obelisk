@@ -45,8 +45,20 @@ def _auto_migrate():
             index.create(bind=engine, checkfirst=True)
 
 
+def _cleanup_stray_probe_rows():
+    """One-time sweep for orphaned Download rows a short-lived, reverted
+    experiment could have left behind (a throwaway waiting_extension row
+    per format-probe request, normally self-deleted within ~8s - but a
+    container restart mid-wait would have skipped that cleanup). Safe to
+    run on every startup: it's a no-op once none are left, and mode never
+    gets set to "probe" anymore."""
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM downloads WHERE mode = 'probe'"))
+
+
 def init_db():
     from . import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     _auto_migrate()
+    _cleanup_stray_probe_rows()

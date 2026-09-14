@@ -1,5 +1,4 @@
 import collections
-import copy
 import ipaddress
 import os
 import re
@@ -389,53 +388,30 @@ def _extract_with_cookie_fallback(ydl_opts, url, *, download, should_retry=lambd
             return ydl.extract_info(url, download=download), True
 
 
-def _probe_extension_po_token(url: str, db) -> str | None:
-    """Best-effort: if an Obelisk Bridge install looks alive, ask it for a
-    real PO token for THIS url the same way a real download would (a
-    throwaway "waiting_extension" row the extension's existing next-job/
-    po-token flow can't tell apart from a real job), but capped at a much
-    shorter timeout since this only powers the quality-list preview, not an
-    actual download - a user with no extension installed must not have
-    every pasted link stall on this. The row is deleted again immediately
-    regardless of outcome so it never shows up in the admin history."""
-    if not auth.has_recent_extension_activity(db):
-        return None
-    probe_job = Download(url=url, mode="probe", status="waiting_extension")
-    db.add(probe_job)
-    db.commit()
-    job_id = probe_job.id
-    try:
-        return _wait_for_extension_token(job_id, lambda: False, timeout=PROBE_TOKEN_TIMEOUT_SECONDS)
-    finally:
-        leftover = db.get(Download, job_id)
-        if leftover:
-            db.delete(leftover)
-            db.commit()
-
-
 def probe_qualities(url: str, db):
-    """Fetch the real (width x height) resolutions and subtitle languages available for this URL."""
+    """Fetch the real (width x height) resolutions and subtitle languages available for this URL.
+
+    Tried making this extension-assisted too - opening a throwaway
+    waiting_extension row so a live Obelisk Bridge install would fetch a
+    real PO token for the url being probed, the same way a real download
+    does. Reverted: it opened a real (sometimes visible, non-closing)
+    background tab on every pasted link instead of just on actual
+    downloads, and the token it got back made results *worse*, not
+    better - quality lists came back capped at 640x480 instead of the
+    tv/ios clients' usual ~1080p. Likely cause: the po_token extractor-arg
+    's SABR-avoidance behavior was only verified against the coletdjnz
+    SABR-fork (used for actual downloads via youtube_sabr.py) - plain
+    stable yt-dlp (what this function uses) may not handle a manually
+    supplied "web" po_token the same way during a normal extract_info
+    call. Worth revisiting, but only with real log evidence next time."""
     if not is_url_allowed(url, db):
         raise RuntimeError("Це посилання вказує на заборонену адресу")
-
-    extractor_args = YOUTUBE_EXTRACTOR_ARGS
-    if _is_youtube(url):
-        po_token = _probe_extension_po_token(url, db)
-        if po_token:
-            # A real PO token unlocks the "web" client's full format list
-            # (including anything above 1080p) instead of it being SABR-
-            # forced - deep-copied since YOUTUBE_EXTRACTOR_ARGS is a shared
-            # module-level constant also used, unmodified, by every plain
-            # download.
-            extractor_args = copy.deepcopy(YOUTUBE_EXTRACTOR_ARGS)
-            extractor_args["youtube"]["po_token"] = [f"web.gvs+{po_token}"]
-
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
         "skip_download": True,
-        "extractor_args": extractor_args,
+        "extractor_args": YOUTUBE_EXTRACTOR_ARGS,
         # Solving YouTube's JS challenge needs the actual challenge-solving
         # script (EJS) - yt-dlp-ejs (installed in the image) should provide
         # it locally, but allow fetching it from yt-dlp's own GitHub as a
@@ -533,13 +509,6 @@ def _is_extension_eligible(job) -> bool:
 # falling back to the stable engine. Short, since a real fallback exists -
 # this isn't a hard failure the way it would be without one.
 EXTENSION_TOKEN_TIMEOUT_SECONDS = 45
-
-# Same idea for _probe_extension_po_token, but much shorter - this runs
-# synchronously inside GET /api/formats on every pasted/changed link, not
-# just on an actual download, so it can't afford anywhere near the full
-# download-time budget without making the quality checkmark feel broken
-# for everyone (extension or not).
-PROBE_TOKEN_TIMEOUT_SECONDS = 8
 
 
 def _wait_for_extension_token(job_id: str, should_cancel, timeout: float = EXTENSION_TOKEN_TIMEOUT_SECONDS) -> str | None:
