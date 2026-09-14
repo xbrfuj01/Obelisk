@@ -132,6 +132,13 @@ def download_via_sabr(
     cancelled = False
     try:
         for line in proc.stdout:
+            # Unlike the stable engine (muted via _ThreadAwareMuter, only
+            # ever surfaced through error_message on failure), this
+            # subprocess's own output is forwarded to the container's real
+            # logs live - which format actually got picked (SABR+token vs
+            # a "best" fallback like the always-available 480p format 18)
+            # is otherwise invisible on a *successful* run.
+            print("[SABR]", line, end="", flush=True)
             output_lines.append(line.rstrip("\n"))
             if len(output_lines) > _ERROR_TAIL_LINES:
                 output_lines.pop(0)
