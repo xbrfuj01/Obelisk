@@ -141,6 +141,21 @@ def require_admin_dep(request: Request, db: Session = Depends(get_db)):
     auth.record_activity(db, request.session.get("site_username"))
 
 
+def require_extension_token(request: Request, db: Session = Depends(get_db)) -> str:
+    """Auth for the Obelisk Bridge Chrome extension's own API calls - a
+    bearer token instead of the cookie-based site session, since a browser
+    extension's background worker isn't part of any tab's session. Same
+    raise-HTTPException-directly style as require_site_access_api (a JSON
+    API caller, not a page navigation - no redirect-to-login makes sense
+    here)."""
+    header = request.headers.get("Authorization", "")
+    token = header[7:] if header.startswith("Bearer ") else ""
+    username = auth.get_extension_token_owner(db, token) if token else None
+    if not username:
+        raise HTTPException(status_code=401, detail="Недійсний токен розширення")
+    return username
+
+
 @app.on_event("startup")
 def on_startup():
     start_cleanup_thread()
@@ -490,6 +505,65 @@ def dismiss_notification(notif_id: str, request: Request, db: Session = Depends(
     if notif and notif.username == username:
         db.delete(notif)
         db.commit()
+    return {"ok": True}
+
+
+# ---------------- Obelisk Bridge extension ----------------
+# The Chrome extension that captures a real, browser-minted YouTube PO
+# token and hands it to the "extension" download engine (see downloader.py's
+# _should_use_extension_engine / _run_job). It authenticates with the same
+# username/password as the site, but as a bearer token (require_extension_token
+# above) rather than a cookie session - a browser extension's background
+# worker has no tab/session to attach a cookie to.
+
+@app.post("/api/extension/login")
+def extension_login(request: Request, username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+    ip = request.client.host if request.client else "unknown"
+    key = f"ext:{ip}"
+    locked, remaining = auth.check_lockout(key)
+    if locked:
+        minutes = max(1, remaining // 60)
+        return JSONResponse({"error": f"Забагато спроб. Спробуйте ще раз через {minutes} хв."}, status_code=429)
+    if not auth.verify_site_credentials(db, username, password):
+        auth.register_failed_attempt(key)
+        return JSONResponse({"error": "Невірний логін або пароль"}, status_code=401)
+    auth.register_successful_attempt(key)
+    token = auth.create_extension_token(db, username)
+    return {"token": token, "username": username}
+
+
+@app.get("/api/extension/next-job")
+def extension_next_job(db: Session = Depends(get_db), _=Depends(require_extension_token)):
+    """Polled every few seconds by the extension's background worker. Any
+    waiting job is fair game for any authenticated extension instance -
+    there's no per-user job ownership here, which is fine at the scale
+    this is meant for (a handful of personal installs)."""
+    job = (
+        db.query(Download)
+        .filter(Download.status == "waiting_extension", Download.po_token.is_(None))
+        .order_by(Download.created_at)
+        .first()
+    )
+    if not job:
+        return {}
+    return {"job_id": job.id, "url": job.url}
+
+
+@app.post("/api/extension/po-token")
+def extension_po_token(
+    job_id: str = Form(...),
+    po_token: str = Form(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_extension_token),
+):
+    job = db.get(Download, job_id)
+    if not job or job.status != "waiting_extension":
+        # Not an error worth surfacing to the extension - the job may have
+        # simply been cancelled or already timed out while the token was
+        # in flight.
+        return JSONResponse({"error": "Завдання неактуальне"}, status_code=404)
+    job.po_token = po_token.strip()
+    db.commit()
     return {"ok": True}
 
 

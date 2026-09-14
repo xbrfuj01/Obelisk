@@ -8,7 +8,7 @@ from fastapi import Request
 from sqlalchemy.orm import Session
 
 from . import config
-from .models import Setting, User
+from .models import ExtensionToken, Setting, User
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -110,18 +110,38 @@ def get_proxy_youtube_test(db: Session) -> bool:
     return get_setting(db, "proxy_youtube_test") == "1"
 
 
-YOUTUBE_ENGINES = ("ytdlp", "ytdlp_sabr")
+YOUTUBE_ENGINES = ("ytdlp", "ytdlp_sabr", "extension")
 
 
 def get_youtube_engine(db: Session) -> str:
     """Which downloader handles plain (non-clip, video+audio) YouTube jobs:
-    "ytdlp" (default, the same engine used for every other site) or
+    "ytdlp" (default, the same engine used for every other site),
     "ytdlp_sabr" (experimental - a separate yt-dlp fork with native SABR
-    protocol support, see app/youtube_sabr.py). Clips and "лише відео"/
-    "лише аудіо" always use "ytdlp" regardless of this setting - the fork
-    doesn't support them yet."""
+    protocol support, see app/youtube_sabr.py), or "extension" (the Obelisk
+    Bridge Chrome extension supplies a real browser-minted PO token, which
+    gets fed into the same SABR fork). Clips and "лише відео"/"лише аудіо"
+    always use "ytdlp" regardless of this setting - neither alternate
+    engine supports them yet."""
     value = get_setting(db, "youtube_engine", "ytdlp")
     return value if value in YOUTUBE_ENGINES else "ytdlp"
+
+
+# ---------------- Obelisk Bridge extension tokens ----------------
+
+def create_extension_token(db: Session, username: str) -> str:
+    token = secrets.token_hex(32)
+    db.add(ExtensionToken(username=username, token=token))
+    db.commit()
+    return token
+
+
+def get_extension_token_owner(db: Session, token: str) -> str | None:
+    row = db.query(ExtensionToken).filter(ExtensionToken.token == token).first()
+    if not row:
+        return None
+    row.last_seen_at = datetime.utcnow()
+    db.commit()
+    return row.username
 
 
 def get_timezone(db: Session) -> str:

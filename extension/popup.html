@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>Obelisk Bridge</title>
+<style>
+  body { width: 260px; font-family: system-ui, sans-serif; padding: 14px; background: #15181e; color: #e6e8ec; }
+  h1 { font-size: 15px; margin: 0 0 10px; }
+  label { display: block; font-size: 12px; color: #9aa2b1; margin: 8px 0 4px; }
+  input { width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 6px; border: 1px solid #333844; background: #0e1017; color: #e6e8ec; font-size: 13px; }
+  button { width: 100%; margin-top: 12px; padding: 8px; border-radius: 6px; border: none; background: #3e6ae1; color: #fff; font-size: 13px; cursor: pointer; }
+  button:hover { background: #345bc4; }
+  button.secondary { background: transparent; border: 1px solid #333844; color: #e6e8ec; }
+  p.status { font-size: 12px; margin: 0 0 10px; }
+  p.status.ok { color: #3ecf8e; }
+  p.status.err { color: #ff6b7d; }
+</style>
+</head>
+<body>
+  <h1>Obelisk Bridge</h1>
+  <div id="logged-out">
+    <label>Адреса Obelisk<input type="text" id="server-url" placeholder="https://obelisk.example.com"></label>
+    <label>Логін<input type="text" id="username" autocomplete="username"></label>
+    <label>Пароль<input type="password" id="password" autocomplete="current-password"></label>
+    <p class="status err" id="error" hidden></p>
+    <button type="button" id="login-btn">Увійти</button>
+  </div>
+  <div id="logged-in" hidden>
+    <p class="status ok" id="connected-as"></p>
+    <button type="button" class="secondary" id="logout-btn">Вийти</button>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

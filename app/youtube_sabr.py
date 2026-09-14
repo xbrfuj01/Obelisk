@@ -64,7 +64,7 @@ def _parse_eta(text: str):
     return seconds
 
 
-def _build_command(url, outtmpl, height_filter, container, cookies_path, proxy_url):
+def _build_command(url, outtmpl, height_filter, container, cookies_path, proxy_url, po_token=None):
     cmd = [
         SABR_YTDLP_BIN,
         "--no-warnings",
@@ -81,19 +81,26 @@ def _build_command(url, outtmpl, height_filter, container, cookies_path, proxy_u
         cmd += ["--cookies", cookies_path]
     if proxy_url:
         cmd += ["--proxy", proxy_url]
+    if po_token:
+        # A real, browser-minted token from the Obelisk Bridge extension
+        # (see downloader.py's _wait_for_extension_token) - the "web.gvs+"
+        # prefix is yt-dlp's own convention for a GVS PO token scoped to
+        # the "web" client; may need adjusting once tested against an
+        # actual captured token.
+        cmd += ["--extractor-args", f"youtube:po_token=web.gvs+{po_token}"]
     cmd.append(url)
     return cmd
 
 
 def download_via_sabr(
     *, url, out_dir, outtmpl, height_filter, container, cookies_path, proxy_url,
-    job_id, should_cancel,
+    job_id, should_cancel, po_token=None,
 ):
     """Runs the SABR-fork yt-dlp as a subprocess. Returns (filepath, error) -
     exactly one of which is None. Progress is written straight to the
     Download row as it's parsed, same fields _progress_hook uses, so the
     existing /api/status polling needs no changes to see it."""
-    cmd = _build_command(url, outtmpl, height_filter, container, cookies_path, proxy_url)
+    cmd = _build_command(url, outtmpl, height_filter, container, cookies_path, proxy_url, po_token)
     state = {"last_write": 0.0}
 
     def handle_line(line: str):

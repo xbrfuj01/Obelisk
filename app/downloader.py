@@ -468,6 +468,47 @@ def _should_use_sabr_engine(job, db) -> bool:
     )
 
 
+def _should_use_extension_engine(job, db) -> bool:
+    """Same eligibility boundary as _should_use_sabr_engine (plain,
+    non-clip video+audio YouTube only) - the "extension" engine is really
+    just the SABR engine plus a real PO token, so it inherits that
+    engine's limitations exactly."""
+    return (
+        job.mode == "video"
+        and job.clip_start is None
+        and job.clip_end is None
+        and _is_youtube(job.url)
+        and auth.get_youtube_engine(db) == "extension"
+    )
+
+
+# How long _run_job waits for the Obelisk Bridge extension to poll, open
+# the video, capture a PO token and post it back before giving up.
+EXTENSION_TOKEN_TIMEOUT_SECONDS = 120
+
+
+def _wait_for_extension_token(job_id: str, should_cancel) -> str | None:
+    """Polls the Download row for job.po_token to appear - the extension
+    writes it via POST /api/extension/po-token from a completely separate
+    request, so this is cross-thread (really cross-process-from-the-
+    browser's perspective) coordination through the DB, same idiom
+    _progress_hook already uses elsewhere in this file. Returns the token,
+    or None on cancellation/timeout."""
+    deadline = time.time() + EXTENSION_TOKEN_TIMEOUT_SECONDS
+    while time.time() < deadline:
+        if should_cancel():
+            return None
+        db = SessionLocal()
+        try:
+            job = db.get(Download, job_id)
+            if job and job.po_token:
+                return job.po_token
+        finally:
+            db.close()
+        time.sleep(1)
+    return None
+
+
 def check_proxy_connection(proxy_url: str, timeout: float = 6.0) -> bool:
     """Quick end-to-end reachability check for the "Проксі для заблокованих
     сайтів" admin setting - routed through yt-dlp's own request machinery
@@ -660,10 +701,34 @@ def _run_job(job_id: str):
 
         height_filter = _height_filter(job.quality)
 
-        if _should_use_sabr_engine(job, db):
-            # Experimental engine - see youtube_sabr.py. Only reachable for
-            # plain video+audio, non-clip YouTube jobs (_should_use_sabr_engine
-            # already filtered that), so none of the mode/clip/subtitle
+        use_extension = _should_use_extension_engine(job, db)
+        if _should_use_sabr_engine(job, db) or use_extension:
+            po_token = None
+            if use_extension:
+                # Wait for the Obelisk Bridge extension to poll, open the
+                # video, capture a real PO token and post it back - this
+                # can take a while (the extension only polls every few
+                # seconds, then has to load a real page), so the gate slot
+                # is released for the wait instead of blocking other
+                # downloads from starting in the meantime.
+                _update(db, job, status="waiting_extension")
+                _gate.release()
+                try:
+                    po_token = _wait_for_extension_token(job_id, lambda: job_id in _cancel_requested)
+                finally:
+                    _gate.acquire(limit)
+                if job_id in _cancel_requested:
+                    raise RuntimeError("cancelled")
+                if not po_token:
+                    raise RuntimeError(
+                        "Розширення Obelisk Bridge не встигло надати токен — "
+                        "перевірте, що воно встановлене, увімкнене і залогінене."
+                    )
+                _update(db, job, status="downloading")
+
+            # Experimental engine(s) - see youtube_sabr.py. Only reachable
+            # for plain video+audio, non-clip YouTube jobs (already
+            # filtered above), so none of the mode/clip/subtitle
             # format-string logic below applies here at all.
             filepath, sabr_error = youtube_sabr.download_via_sabr(
                 url=job.url,
@@ -675,6 +740,7 @@ def _run_job(job_id: str):
                 proxy_url=auth.get_proxy_url(db) if _should_use_proxy(job.url, db) else None,
                 job_id=job_id,
                 should_cancel=lambda: job_id in _cancel_requested,
+                po_token=po_token,
             )
             if sabr_error:
                 raise RuntimeError(f"[SABR] {sabr_error}")

@@ -34,6 +34,11 @@ class Download(Base):
     # Whether the anonymous attempt failed and this download only succeeded
     # after retrying with the account cookies configured in admin settings.
     used_cookies = Column(Boolean, default=False)
+    # Set by POST /api/extension/po-token once the Obelisk Bridge extension
+    # captures a real, browser-minted PO token for this job - _run_job polls
+    # for this to appear while status="waiting_extension" (see downloader.py's
+    # _should_use_extension_engine).
+    po_token = Column(Text, nullable=True)
 
     title = Column(Text, nullable=True)
     filepath = Column(Text, nullable=True)
@@ -109,3 +114,19 @@ class Notification(Base):
     username = Column(String, nullable=False, index=True)
     message = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ExtensionToken(Base):
+    """A bearer credential for the Obelisk Bridge Chrome extension - issued
+    by POST /api/extension/login after verifying the same username/password
+    used on the site, stored in the extension's chrome.storage.local, and
+    sent as "Authorization: Bearer <token>" on every extension API call
+    since a browser extension can't participate in the cookie-based site
+    session the web UI uses."""
+    __tablename__ = "extension_tokens"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    username = Column(String, nullable=False, index=True)
+    token = Column(String, unique=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_seen_at = Column(DateTime, nullable=True)

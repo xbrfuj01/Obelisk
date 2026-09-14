@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Obelisk Bridge",
+  "version": "0.1.0",
+  "description": "Captures a real, browser-minted YouTube PO token and hands it to your self-hosted Obelisk instance.",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": [
+    "*://*.youtube.com/*",
+    "https://*/*",
+    "http://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["capture.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["relay.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ]
+}

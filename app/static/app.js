@@ -354,6 +354,7 @@ form.addEventListener("submit", async (e) => {
 const STATUS_LABELS = {
   queued: "У черзі",
   downloading: "Підготовка",
+  waiting_extension: "Очікує на розширення",
 };
 
 const DOWNLOAD_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
@@ -508,14 +509,14 @@ function pollAutoConvert(convertId, title) {
   }, 1500);
 }
 
-const CANCELLABLE_STATUSES = { queued: true, downloading: true };
+const CANCELLABLE_STATUSES = { queued: true, downloading: true, waiting_extension: true };
 
 function statusIcon(status) {
   if (status === "finished") return STATUS_ICON_FINISHED;
   if (status === "error") return STATUS_ICON_ERROR;
   if (status === "expired") return STATUS_ICON_EXPIRED;
   if (status === "cancelled") return STATUS_ICON_CANCELLED;
-  if (status === "downloading") return '<span class="spinner"></span>';
+  if (status === "downloading" || status === "waiting_extension") return '<span class="spinner"></span>';
   if (status === "queued") return "⏳";
   return "–";
 }

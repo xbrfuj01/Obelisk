@@ -6,7 +6,7 @@
   var list = document.getElementById("processes-list");
   if (!wrap || !btn || !panel || !list) return;
 
-  var ACTIVE_STATUSES = { queued: true, downloading: true, converting: true };
+  var ACTIVE_STATUSES = { queued: true, downloading: true, converting: true, waiting_extension: true };
   var POLL_OPEN_MS = 2000;
   var POLL_CLOSED_MS = 8000;
   var pollTimer = null;
@@ -94,7 +94,7 @@
     if (status === "error") return STATUS_ICON_ERROR;
     if (status === "expired") return STATUS_ICON_EXPIRED;
     if (status === "cancelled") return STATUS_ICON_CANCELLED;
-    if (status === "downloading" || status === "converting") return '<span class="spinner"></span>';
+    if (status === "downloading" || status === "converting" || status === "waiting_extension") return '<span class="spinner"></span>';
     if (status === "queued") return "⏳";
     return "–";
   }
@@ -105,6 +105,7 @@
     var fileUrl = item.kind === "download" ? "/api/file/" + item.id : "/api/convert/file/" + item.id;
     var metaBits = [];
     if (item.status === "queued") metaBits.push("У черзі");
+    else if (item.status === "waiting_extension") metaBits.push("Очікує на розширення");
     else if (isActive && item.eta_seconds != null) metaBits.push(formatEta(item.eta_seconds) + " до завершення");
     if (item.status === "finished" && isAutoConverting) metaBits.push("Конвертується для сумісності з відеоредакторами");
     else if (item.status === "finished" && item.filesize) metaBits.push(formatSize(item.filesize));
@@ -239,7 +240,7 @@
   var list = document.getElementById("admin-processes-list");
   if (!btn || !badge || !panel || !list) return;
 
-  var ACTIVE_STATUSES = { queued: true, downloading: true, converting: true };
+  var ACTIVE_STATUSES = { queued: true, downloading: true, converting: true, waiting_extension: true };
   var POLL_OPEN_MS = 3000;
   var POLL_CLOSED_MS = 15000;
   var pollTimer = null;
@@ -273,7 +274,7 @@
     if (status === "error") return STATUS_ICON_ERROR;
     if (status === "expired") return STATUS_ICON_EXPIRED;
     if (status === "cancelled") return STATUS_ICON_CANCELLED;
-    if (status === "downloading" || status === "converting") return '<span class="spinner"></span>';
+    if (status === "downloading" || status === "converting" || status === "waiting_extension") return '<span class="spinner"></span>';
     if (status === "queued") return "⏳";
     return "–";
   }
@@ -283,6 +284,7 @@
     var kindLabel = item.kind === "download" ? "Завантаження" : "Конвертація";
     var metaBits = [kindLabel];
     if (item.status === "queued") metaBits.push("У черзі");
+    else if (item.status === "waiting_extension") metaBits.push("Очікує на розширення");
     else if (isActive && item.eta_seconds != null) metaBits.push(formatEta(item.eta_seconds) + " до завершення");
     if (item.status === "error") metaBits.push("Помилка");
     if (item.status === "cancelled") metaBits.push("Скасовано");
