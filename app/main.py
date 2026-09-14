@@ -939,6 +939,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
     proxy_url = auth.get_proxy_url(db)
     proxy_domains = ",".join(auth.get_proxy_domains(db))
     proxy_youtube_test = auth.get_proxy_youtube_test(db)
+    youtube_engine = auth.get_youtube_engine(db)
     timezone = auth.get_timezone(db)
     has_cookies = auth.has_cookies()
 
@@ -978,6 +979,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
             "proxy_url": proxy_url,
             "proxy_domains": proxy_domains,
             "proxy_youtube_test": proxy_youtube_test,
+            "youtube_engine": youtube_engine,
             "timezone": timezone,
             "timezones": timeutil.COMMON_TIMEZONES,
             "has_cookies": has_cookies,
@@ -1275,6 +1277,7 @@ def admin_settings(
     proxy_url: str = Form(""),
     proxy_domains: str = Form(""),
     proxy_youtube_test: bool = Form(False),
+    youtube_engine: str = Form("ytdlp"),
     timezone: str = Form(""),
     db: Session = Depends(get_db),
     _=Depends(require_admin_dep),
@@ -1288,6 +1291,7 @@ def admin_settings(
     auth.set_setting(db, "proxy_url", proxy_url.strip())
     auth.set_setting(db, "proxy_domains", proxy_domains.strip())
     auth.set_setting(db, "proxy_youtube_test", "1" if proxy_youtube_test else "0")
+    auth.set_setting(db, "youtube_engine", youtube_engine if youtube_engine in auth.YOUTUBE_ENGINES else "ytdlp")
     if timeutil.is_valid_timezone(timezone):
         auth.set_setting(db, "timezone", timezone)
 

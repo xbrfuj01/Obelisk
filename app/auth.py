@@ -110,6 +110,20 @@ def get_proxy_youtube_test(db: Session) -> bool:
     return get_setting(db, "proxy_youtube_test") == "1"
 
 
+YOUTUBE_ENGINES = ("ytdlp", "ytdlp_sabr")
+
+
+def get_youtube_engine(db: Session) -> str:
+    """Which downloader handles plain (non-clip, video+audio) YouTube jobs:
+    "ytdlp" (default, the same engine used for every other site) or
+    "ytdlp_sabr" (experimental - a separate yt-dlp fork with native SABR
+    protocol support, see app/youtube_sabr.py). Clips and "лише відео"/
+    "лише аудіо" always use "ytdlp" regardless of this setting - the fork
+    doesn't support them yet."""
+    value = get_setting(db, "youtube_engine", "ytdlp")
+    return value if value in YOUTUBE_ENGINES else "ytdlp"
+
+
 def get_timezone(db: Session) -> str:
     return get_setting(db, "timezone", config.DEFAULT_TIMEZONE)
 

@@ -426,6 +426,19 @@
         </div>
       </div>
 
+      <p class="settings-group-title">Завантаження YouTube</p>
+      <label>Рушій завантаження
+        <select name="youtube_engine">
+          <option value="ytdlp" {% if youtube_engine == "ytdlp" %}selected{% endif %}>yt-dlp (стандартний)</option>
+          <option value="ytdlp_sabr" {% if youtube_engine == "ytdlp_sabr" %}selected{% endif %}>yt-dlp SABR (експериментальний)</option>
+        </select>
+      </label>
+      <p class="hint">
+        Експериментальний рушій вміє те, чого не вміє стандартний yt-dlp зараз (обхід деяких обмежень YouTube SABR),
+        але поки підтримує лише звичайне завантаження "відео + звук" без таймкодів — кліпи, "лише відео", "лише аудіо"
+        і субтитри завжди йдуть через стандартний рушій незалежно від цього вибору.
+      </p>
+
       <div class="settings-group-title-row">
         <p class="settings-group-title">Проксі для заблокованих сайтів</p>
         <span class="proxy-status" id="proxy-status" hidden></span>

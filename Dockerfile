@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg curl unzip make cpanminus \
+    && apt-get install -y --no-install-recommends ffmpeg curl unzip make cpanminus git \
     && rm -rf /var/lib/apt/lists/*
 
 # yt-dlp needs a JS runtime to solve YouTube's player challenge - without
@@ -25,6 +25,17 @@ ARG CACHEBUST=1
 RUN echo "cachebust=${CACHEBUST}" \
     && pip install --no-cache-dir --upgrade yt-dlp yt-dlp-ejs bgutil-ytdlp-pot-provider \
     && cpanm --notest Image::ExifTool
+
+# Experimental SABR-capable yt-dlp fork (youtube_sabr.py's admin-selectable
+# alternate engine, see that module) - it's a fork of the same "yt_dlp"
+# package, so it can't be pip-installed into the main environment above
+# without clobbering the stable one. Isolated in its own venv and invoked
+# as a CLI subprocess instead. Re-pulled every build (same CACHEBUST) since
+# it's an actively-changing, unreleased branch.
+RUN python -m venv /opt/venv-sabr \
+    && echo "cachebust=${CACHEBUST}" \
+    && /opt/venv-sabr/bin/pip install --no-cache-dir \
+       "yt-dlp[default] @ git+https://github.com/coletdjnz/yt-dlp-dev@feat/youtube/sabr"
 
 COPY app ./app
 

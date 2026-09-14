@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 import yt_dlp
 
 from . import auth, config
+from . import youtube_sabr
 from .database import SessionLocal
 from .models import Download
 
@@ -433,17 +434,38 @@ def _source_from_url(url: str) -> str:
         return "unknown"
 
 
+def _is_youtube(url: str) -> bool:
+    source = _source_from_url(url)
+    return "youtube.com" in source or source == "youtu.be"
+
+
 def _should_use_proxy(url: str, db) -> bool:
     proxy_url = auth.get_proxy_url(db)
     if not proxy_url:
         return False
-    source = _source_from_url(url)
-    if auth.get_proxy_youtube_test(db) and ("youtube.com" in source or source == "youtu.be"):
+    if auth.get_proxy_youtube_test(db) and _is_youtube(url):
         return True
     domains = auth.get_proxy_domains(db)
     if not domains:
         return True
+    source = _source_from_url(url)
     return any(d in source for d in domains)
+
+
+def _should_use_sabr_engine(job, db) -> bool:
+    """The experimental SABR-fork engine only handles the plain, common
+    case: a non-clip video+audio YouTube download. Everything else (clips,
+    "лише відео", "лише аудіо") stays on the stable engine regardless of
+    the admin's chosen youtube_engine setting - the fork doesn't support
+    --download-sections yet, and audio-only/video-only aren't worth the
+    extra format-string complexity for something this experimental."""
+    return (
+        job.mode == "video"
+        and job.clip_start is None
+        and job.clip_end is None
+        and _is_youtube(job.url)
+        and auth.get_youtube_engine(db) == "ytdlp_sabr"
+    )
 
 
 def check_proxy_connection(proxy_url: str, timeout: float = 6.0) -> bool:
@@ -638,119 +660,141 @@ def _run_job(job_id: str):
 
         height_filter = _height_filter(job.quality)
 
-        progress_state = {"leg": 0, "leg_active": False}
-        ydl_opts = {
-            "outtmpl": outtmpl,
-            "noplaylist": True,
-            "quiet": True,
-            "no_warnings": True,
-            "verbose": True,  # otherwise yt-dlp's own debug lines (incl. PO token status) never reach the logger at all
-            "logger": log_capture,
-            "progress_hooks": [lambda d: _progress_hook(job_id, d, progress_state)],
-            "extractor_args": YOUTUBE_EXTRACTOR_ARGS,
-        # Solving YouTube's JS challenge needs the actual challenge-solving
-        # script (EJS) - yt-dlp-ejs (installed in the image) should provide
-        # it locally, but allow fetching it from yt-dlp's own GitHub as a
-        # fallback rather than silently failing if that package ever falls
-        # out of sync with the yt-dlp version.
-        "remote_components": {"ejs:github"},
-        }
-        if _should_use_proxy(job.url, db):
-            ydl_opts["proxy"] = auth.get_proxy_url(db)
+        if _should_use_sabr_engine(job, db):
+            # Experimental engine - see youtube_sabr.py. Only reachable for
+            # plain video+audio, non-clip YouTube jobs (_should_use_sabr_engine
+            # already filtered that), so none of the mode/clip/subtitle
+            # format-string logic below applies here at all.
+            filepath, sabr_error = youtube_sabr.download_via_sabr(
+                url=job.url,
+                out_dir=out_dir,
+                outtmpl=outtmpl,
+                height_filter=height_filter,
+                container=job.container if job.container in VIDEO_FORMATS else None,
+                cookies_path=auth.get_cookies_path(),
+                proxy_url=auth.get_proxy_url(db) if _should_use_proxy(job.url, db) else None,
+                job_id=job_id,
+                should_cancel=lambda: job_id in _cancel_requested,
+            )
+            if sabr_error:
+                raise RuntimeError(f"[SABR] {sabr_error}")
+            used_cookies = auth.has_cookies()
+            title = os.path.splitext(os.path.basename(filepath))[0] if filepath else "video"
+        else:
+            progress_state = {"leg": 0, "leg_active": False}
+            ydl_opts = {
+                "outtmpl": outtmpl,
+                "noplaylist": True,
+                "quiet": True,
+                "no_warnings": True,
+                "verbose": True,  # otherwise yt-dlp's own debug lines (incl. PO token status) never reach the logger at all
+                "logger": log_capture,
+                "progress_hooks": [lambda d: _progress_hook(job_id, d, progress_state)],
+                "extractor_args": YOUTUBE_EXTRACTOR_ARGS,
+            # Solving YouTube's JS challenge needs the actual challenge-solving
+            # script (EJS) - yt-dlp-ejs (installed in the image) should provide
+            # it locally, but allow fetching it from yt-dlp's own GitHub as a
+            # fallback rather than silently failing if that package ever falls
+            # out of sync with the yt-dlp version.
+            "remote_components": {"ejs:github"},
+            }
+            if _should_use_proxy(job.url, db):
+                ydl_opts["proxy"] = auth.get_proxy_url(db)
 
-        if job.clip_start is not None or job.clip_end is not None:
-            from yt_dlp.utils import download_range_func
-            start = job.clip_start or 0
-            end = job.clip_end if job.clip_end is not None else float("inf")
-            ydl_opts["download_ranges"] = download_range_func([], [(start, end)])
-            # Without this, ffmpeg trims via stream copy, which requires an
-            # actual keyframe inside the requested range to cut on. Short
-            # clips (YouTube Shorts, or a tight timecode range on a longer
-            # video) often have only one keyframe for the whole clip, so a
-            # stream-copy cut either fails outright ("ffmpeg exited with
-            # code ...") or silently produces a near-empty file. Re-encoding
-            # is slower but always produces a correct, complete clip.
-            ydl_opts["force_keyframes_at_cuts"] = True
-
-        if job.mode == "audio":
-            audio_codec = job.container if job.container in AUDIO_FORMATS else "mp3"
-            ydl_opts["format"] = "bestaudio/best"
-            ydl_opts["postprocessors"] = [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": audio_codec,
-                "preferredquality": "192",
-            }]
-        elif job.mode == "video_only":
-            # premiere_compat no longer restricts the format selection here -
-            # always grab the best available, then check the actual codec
-            # after downloading and re-encode only if it turns out to
-            # matter (see the premiere_compat block after the download).
-            #
-            # The "best" fallback can land on a combined video+audio format
-            # when no separate video-only stream is available (some sites,
-            # or a restricted player_client) - "Лише відео" should never
-            # come back with sound regardless of which format got picked,
-            # so strip audio during the remux unconditionally instead of
-            # trusting format selection alone to guarantee that.
-            ydl_opts["format"] = f"bestvideo{height_filter}/best{height_filter}"
             if job.clip_start is not None or job.clip_end is not None:
-                # A clip (download_ranges + force_keyframes_at_cuts, set
-                # above) is cut by yt-dlp's FFmpegFD downloader, not the
-                # FFmpegVideoRemuxer postprocessor below - it reads its own
-                # ffmpeg args from external_downloader_args, completely
-                # separate from postprocessor_args, so the "-an" there alone
-                # never reaches it and a combined-format fallback keeps its
-                # audio even after remuxing.
-                ydl_opts.setdefault("external_downloader_args", {})["ffmpeg_o"] = ["-an"]
-            if job.container in VIDEO_FORMATS:
+                from yt_dlp.utils import download_range_func
+                start = job.clip_start or 0
+                end = job.clip_end if job.clip_end is not None else float("inf")
+                ydl_opts["download_ranges"] = download_range_func([], [(start, end)])
+                # Without this, ffmpeg trims via stream copy, which requires an
+                # actual keyframe inside the requested range to cut on. Short
+                # clips (YouTube Shorts, or a tight timecode range on a longer
+                # video) often have only one keyframe for the whole clip, so a
+                # stream-copy cut either fails outright ("ffmpeg exited with
+                # code ...") or silently produces a near-empty file. Re-encoding
+                # is slower but always produces a correct, complete clip.
+                ydl_opts["force_keyframes_at_cuts"] = True
+
+            if job.mode == "audio":
+                audio_codec = job.container if job.container in AUDIO_FORMATS else "mp3"
+                ydl_opts["format"] = "bestaudio/best"
+                ydl_opts["postprocessors"] = [{
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": audio_codec,
+                    "preferredquality": "192",
+                }]
+            elif job.mode == "video_only":
+                # premiere_compat no longer restricts the format selection here -
+                # always grab the best available, then check the actual codec
+                # after downloading and re-encode only if it turns out to
+                # matter (see the premiere_compat block after the download).
+                #
+                # The "best" fallback can land on a combined video+audio format
+                # when no separate video-only stream is available (some sites,
+                # or a restricted player_client) - "Лише відео" should never
+                # come back with sound regardless of which format got picked,
+                # so strip audio during the remux unconditionally instead of
+                # trusting format selection alone to guarantee that.
+                ydl_opts["format"] = f"bestvideo{height_filter}/best{height_filter}"
+                if job.clip_start is not None or job.clip_end is not None:
+                    # A clip (download_ranges + force_keyframes_at_cuts, set
+                    # above) is cut by yt-dlp's FFmpegFD downloader, not the
+                    # FFmpegVideoRemuxer postprocessor below - it reads its own
+                    # ffmpeg args from external_downloader_args, completely
+                    # separate from postprocessor_args, so the "-an" there alone
+                    # never reaches it and a combined-format fallback keeps its
+                    # audio even after remuxing.
+                    ydl_opts.setdefault("external_downloader_args", {})["ffmpeg_o"] = ["-an"]
+                if job.container in VIDEO_FORMATS:
+                    ydl_opts.setdefault("postprocessors", [])
+                    ydl_opts["postprocessors"].append({
+                        "key": "FFmpegVideoRemuxer",
+                        "preferedformat": job.container,
+                    })
+                    ydl_opts.setdefault("postprocessor_args", {})["ffmpeg_o"] = ["-an"]
+            else:
+                ydl_opts["format"] = f"bestvideo{height_filter}+bestaudio/best{height_filter}"
+                if job.container in VIDEO_FORMATS:
+                    ydl_opts["merge_output_format"] = job.container
+
+            if job.subtitle_lang and job.mode != "audio" and job.container in EMBEDDABLE_SUBTITLE_CONTAINERS:
+                # Written as .srt and embedded (soft subs) directly into the video so
+                # there's still exactly one output file — no orphaned subtitle file
+                # left behind that nothing ever downloads or cleans up.
+                ydl_opts["writesubtitles"] = True
+                ydl_opts["writeautomaticsub"] = True
+                ydl_opts["subtitleslangs"] = [job.subtitle_lang]
                 ydl_opts.setdefault("postprocessors", [])
                 ydl_opts["postprocessors"].append({
-                    "key": "FFmpegVideoRemuxer",
-                    "preferedformat": job.container,
+                    "key": "FFmpegSubtitlesConvertor",
+                    "format": "srt",
                 })
-                ydl_opts.setdefault("postprocessor_args", {})["ffmpeg_o"] = ["-an"]
-        else:
-            ydl_opts["format"] = f"bestvideo{height_filter}+bestaudio/best{height_filter}"
-            if job.container in VIDEO_FORMATS:
-                ydl_opts["merge_output_format"] = job.container
+                ydl_opts["postprocessors"].append({"key": "FFmpegEmbedSubtitle"})
 
-        if job.subtitle_lang and job.mode != "audio" and job.container in EMBEDDABLE_SUBTITLE_CONTAINERS:
-            # Written as .srt and embedded (soft subs) directly into the video so
-            # there's still exactly one output file — no orphaned subtitle file
-            # left behind that nothing ever downloads or cleans up.
-            ydl_opts["writesubtitles"] = True
-            ydl_opts["writeautomaticsub"] = True
-            ydl_opts["subtitleslangs"] = [job.subtitle_lang]
-            ydl_opts.setdefault("postprocessors", [])
-            ydl_opts["postprocessors"].append({
-                "key": "FFmpegSubtitlesConvertor",
-                "format": "srt",
-            })
-            ydl_opts["postprocessors"].append({"key": "FFmpegEmbedSubtitle"})
+            def _clear_partial_output():
+                # The failed anonymous attempt may have already written a
+                # partial file before erroring out - clear it so the retry
+                # starts clean instead of _find_main_file picking up stale
+                # leftovers below.
+                for name in os.listdir(out_dir):
+                    path = os.path.join(out_dir, name)
+                    if os.path.isdir(path):
+                        shutil.rmtree(path, ignore_errors=True)
+                    else:
+                        try:
+                            os.remove(path)
+                        except OSError:
+                            pass
 
-        def _clear_partial_output():
-            # The failed anonymous attempt may have already written a
-            # partial file before erroring out - clear it so the retry
-            # starts clean instead of _find_main_file picking up stale
-            # leftovers below.
-            for name in os.listdir(out_dir):
-                path = os.path.join(out_dir, name)
-                if os.path.isdir(path):
-                    shutil.rmtree(path, ignore_errors=True)
-                else:
-                    try:
-                        os.remove(path)
-                    except OSError:
-                        pass
+            info, used_cookies = _extract_with_cookie_fallback(
+                ydl_opts, job.url, download=True,
+                should_retry=lambda: job_id not in _cancel_requested,
+                before_retry=_clear_partial_output,
+            )
 
-        info, used_cookies = _extract_with_cookie_fallback(
-            ydl_opts, job.url, download=True,
-            should_retry=lambda: job_id not in _cancel_requested,
-            before_retry=_clear_partial_output,
-        )
+            title = (info or {}).get("title") or "video"
+            filepath = _find_main_file(out_dir)
 
-        title = (info or {}).get("title") or "video"
-        filepath = _find_main_file(out_dir)
         filesize = os.path.getsize(filepath) if filepath and os.path.exists(filepath) else None
 
         if not filepath:
