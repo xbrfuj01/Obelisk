@@ -1,4 +1,5 @@
 import collections
+import copy
 import ipaddress
 import os
 import re
@@ -388,16 +389,53 @@ def _extract_with_cookie_fallback(ydl_opts, url, *, download, should_retry=lambd
             return ydl.extract_info(url, download=download), True
 
 
+def _probe_extension_po_token(url: str, db) -> str | None:
+    """Best-effort: if an Obelisk Bridge install looks alive, ask it for a
+    real PO token for THIS url the same way a real download would (a
+    throwaway "waiting_extension" row the extension's existing next-job/
+    po-token flow can't tell apart from a real job), but capped at a much
+    shorter timeout since this only powers the quality-list preview, not an
+    actual download - a user with no extension installed must not have
+    every pasted link stall on this. The row is deleted again immediately
+    regardless of outcome so it never shows up in the admin history."""
+    if not auth.has_recent_extension_activity(db):
+        return None
+    probe_job = Download(url=url, mode="probe", status="waiting_extension")
+    db.add(probe_job)
+    db.commit()
+    job_id = probe_job.id
+    try:
+        return _wait_for_extension_token(job_id, lambda: False, timeout=PROBE_TOKEN_TIMEOUT_SECONDS)
+    finally:
+        leftover = db.get(Download, job_id)
+        if leftover:
+            db.delete(leftover)
+            db.commit()
+
+
 def probe_qualities(url: str, db):
     """Fetch the real (width x height) resolutions and subtitle languages available for this URL."""
     if not is_url_allowed(url, db):
         raise RuntimeError("Це посилання вказує на заборонену адресу")
+
+    extractor_args = YOUTUBE_EXTRACTOR_ARGS
+    if _is_youtube(url):
+        po_token = _probe_extension_po_token(url, db)
+        if po_token:
+            # A real PO token unlocks the "web" client's full format list
+            # (including anything above 1080p) instead of it being SABR-
+            # forced - deep-copied since YOUTUBE_EXTRACTOR_ARGS is a shared
+            # module-level constant also used, unmodified, by every plain
+            # download.
+            extractor_args = copy.deepcopy(YOUTUBE_EXTRACTOR_ARGS)
+            extractor_args["youtube"]["po_token"] = [f"web.gvs+{po_token}"]
+
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
         "skip_download": True,
-        "extractor_args": YOUTUBE_EXTRACTOR_ARGS,
+        "extractor_args": extractor_args,
         # Solving YouTube's JS challenge needs the actual challenge-solving
         # script (EJS) - yt-dlp-ejs (installed in the image) should provide
         # it locally, but allow fetching it from yt-dlp's own GitHub as a
@@ -496,15 +534,22 @@ def _is_extension_eligible(job) -> bool:
 # this isn't a hard failure the way it would be without one.
 EXTENSION_TOKEN_TIMEOUT_SECONDS = 45
 
+# Same idea for _probe_extension_po_token, but much shorter - this runs
+# synchronously inside GET /api/formats on every pasted/changed link, not
+# just on an actual download, so it can't afford anywhere near the full
+# download-time budget without making the quality checkmark feel broken
+# for everyone (extension or not).
+PROBE_TOKEN_TIMEOUT_SECONDS = 8
 
-def _wait_for_extension_token(job_id: str, should_cancel) -> str | None:
+
+def _wait_for_extension_token(job_id: str, should_cancel, timeout: float = EXTENSION_TOKEN_TIMEOUT_SECONDS) -> str | None:
     """Polls the Download row for job.po_token to appear - the extension
     writes it via POST /api/extension/po-token from a completely separate
     request, so this is cross-thread (really cross-process-from-the-
     browser's perspective) coordination through the DB, same idiom
     _progress_hook already uses elsewhere in this file. Returns the token,
     or None on cancellation/timeout."""
-    deadline = time.time() + EXTENSION_TOKEN_TIMEOUT_SECONDS
+    deadline = time.time() + timeout
     while time.time() < deadline:
         if should_cancel():
             return None

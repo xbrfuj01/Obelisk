@@ -176,11 +176,12 @@
     {% if extension_peers %}
     <div class="table-wrap card">
       <table class="table">
-        <thead><tr><th>Користувач</th><th>Стан</th><th>Підключено</th><th>Востаннє на зв'язку</th><th></th></tr></thead>
+        <thead><tr><th>Користувач</th><th>Пристрій</th><th>Стан</th><th>Підключено</th><th>Востаннє на зв'язку</th><th></th></tr></thead>
         <tbody>
         {% for peer in extension_peers %}
           <tr>
             <td>{{ peer.username }}</td>
+            <td>{{ peer.device_label or "—" }}</td>
             <td>
               {% if peer.active %}<span class="proxy-status active">Активний</span>
               {% else %}<span class="proxy-status inactive">Неактивний</span>{% endif %}

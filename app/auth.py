@@ -117,9 +117,44 @@ def get_proxy_youtube_test(db: Session) -> bool:
 # falls back to plain yt-dlp otherwise. Non-YouTube URLs are never
 # affected either way.
 
-def create_extension_token(db: Session, username: str) -> str:
+def _parse_device_label(user_agent: str | None) -> str | None:
+    """Turns a raw User-Agent header into a short "Browser · OS" label for
+    the admin peers list. Good enough to tell apart the same account logged
+    into the extension on several browsers/devices - not meant as a real
+    UA parser, so it only recognizes the Chromium-family browsers this
+    (Chrome MV3) extension can actually run in."""
+    if not user_agent:
+        return None
+    if "Edg/" in user_agent:
+        browser = "Edge"
+    elif "OPR/" in user_agent:
+        browser = "Opera"
+    elif "Vivaldi" in user_agent:
+        browser = "Vivaldi"
+    elif "Chrome" in user_agent:
+        browser = "Chrome"
+    else:
+        browser = "Браузер"
+
+    if "Windows" in user_agent:
+        os_name = "Windows"
+    elif "Mac OS X" in user_agent:
+        os_name = "macOS"
+    elif "Android" in user_agent:
+        os_name = "Android"
+    elif "CrOS" in user_agent:
+        os_name = "Chrome OS"
+    elif "Linux" in user_agent:
+        os_name = "Linux"
+    else:
+        os_name = None
+
+    return f"{browser} · {os_name}" if os_name else browser
+
+
+def create_extension_token(db: Session, username: str, user_agent: str | None = None) -> str:
     token = secrets.token_hex(32)
-    db.add(ExtensionToken(username=username, token=token))
+    db.add(ExtensionToken(username=username, token=token, device_label=_parse_device_label(user_agent)))
     db.commit()
     return token
 
@@ -160,6 +195,7 @@ def list_extension_peers(db: Session) -> list:
         {
             "id": row.id,
             "username": row.username,
+            "device_label": row.device_label,
             "created_at": row.created_at,
             "last_seen_at": row.last_seen_at,
             "active": bool(row.last_seen_at and row.last_seen_at >= cutoff),

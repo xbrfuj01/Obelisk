@@ -9,9 +9,20 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css">
+<script>
+(function () {
+  try {
+    var saved = localStorage.getItem("obelisk-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.dataset.theme = saved;
+    }
+  } catch (err) {}
+})();
+</script>
 </head>
 <body>
 <div class="bg-glow"></div>
+<button type="button" class="theme-toggle-btn" id="theme-toggle-btn" title="Тема оформлення" aria-label="Тема оформлення"></button>
 <header class="topbar">
   <a href="/" class="brand"><span class="brand-icon">◆</span> Obelisk</a>
   <nav>
@@ -60,6 +71,7 @@
 </div>
 
 {% block scripts %}{% endblock %}
+<script src="/static/theme-toggle.js"></script>
 <script src="/static/processes.js"></script>
 <script src="/static/notifications.js"></script>
 <script src="/static/extension-detect.js"></script>

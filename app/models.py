@@ -134,3 +134,10 @@ class ExtensionToken(Base):
     token = Column(String, unique=True, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_seen_at = Column(DateTime, nullable=True)
+    # Friendly "Browser · OS" label parsed from the login request's own
+    # User-Agent header (see auth._parse_device_label) - the same account
+    # can be logged into the extension on several browsers/devices at
+    # once, each getting its own row here, so this is what lets the admin
+    # peers list tell those apart instead of showing indistinguishable
+    # duplicate usernames.
+    device_label = Column(String, nullable=True)
