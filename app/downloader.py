@@ -98,24 +98,23 @@ YOUTUBE_EXTRACTOR_ARGS = {
     # gets iterated character-by-character instead, which is what was
     # producing "Unsupported url scheme: \"\"" against the provider.
     "youtubepot-bgutilhttp": {"base_url": ["http://bgutil-provider:4416"]},
-    # YouTube has been rolling out "SABR-only" streaming for the default
-    # web client - it still responds, but every format is missing a usable
-    # URL ("YouTube is forcing SABR streaming for this client"), which is
-    # exactly what was making otherwise-normal videos come back as
-    # unavailable even with the PO token working. tv/ios/web_safari aren't
-    # (yet) restricted this way - keeping "web" in the list too so videos
-    # that don't hit this restriction still get its higher-res formats.
-    #
-    # This restriction has since spread to ios/web_safari too (and tv often
-    # comes back UNPLAYABLE outright without a signed-in session), so a
-    # video can now end up with zero usable formats across every client
-    # even with valid cookies. "formats=missing_pot" is yt-dlp's own
-    # documented escape hatch (see the PO-Token-Guide wiki, and
-    # yt-dlp/yt-dlp#12482) - it stops yt-dlp from discarding formats just
-    # because they're technically missing a PO token, letting it try them
-    # anyway instead of failing outright with "The page needs to be
-    # reloaded".
-    "youtube": {"player_client": ["web", "tv", "ios", "web_safari"], "formats": ["missing_pot"]},
+    # YouTube's "SABR-only" streaming rollout (yt-dlp/yt-dlp#12482) started
+    # with just the web client, then spread to ios/web_safari/mweb too, and
+    # tv frequently comes back UNPLAYABLE outright without a signed-in
+    # session - a video can now hit zero usable formats across every one of
+    # these even with valid cookies loaded. "formats=missing_pot" only
+    # rescues formats skipped purely for lacking a PO token (a different,
+    # narrower failure than SABR actually omitting the URL entirely), so it
+    # doesn't help here, but it's harmless to leave on for the cases it
+    # does cover. "android" is kept as a last-resort fallback: it currently
+    # can't use cookies and is capped around 480p (format 18), but per
+    # community reports it's still not SABR-restricted - a low-res result
+    # beats "The page needs to be reloaded" when every other client is
+    # empty-handed.
+    "youtube": {
+        "player_client": ["web", "tv", "ios", "web_safari", "android"],
+        "formats": ["missing_pot"],
+    },
 }
 
 
