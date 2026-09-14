@@ -1024,6 +1024,35 @@ button.stat-card:hover { border-color: var(--border-hover); }
 .stats-grid.compact .stat-value { font-size: 1.25rem; }
 .stats-grid.compact .stat-label { font-size: 0.74rem; }
 
+/* Full-width, horizontal, minimal-size layout for the stats tab's top
+   card - both groups sit side by side instead of stacked, and each
+   group's cards fit in one row instead of wrapping. */
+.stats-overview-horizontal {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 20px 32px;
+}
+
+.stats-overview-horizontal .stats-overview-group {
+  flex: 1 1 340px;
+  min-width: 0;
+}
+
+.stats-overview-horizontal .stats-overview-group + .stats-overview-group {
+  padding-top: 0;
+  border-top: none;
+}
+
+.stats-grid-mini {
+  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.stats-grid-mini .stat-card { padding: 7px 9px; gap: 0; }
+.stats-grid-mini .stat-value { font-size: 1rem; }
+.stats-grid-mini .stat-label { font-size: 0.62rem; }
+
 /* System tab gauges */
 
 .gauge-row {

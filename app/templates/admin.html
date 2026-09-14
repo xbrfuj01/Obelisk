@@ -114,12 +114,11 @@
 </nav>
 
 <div class="tab-panel" data-tab-panel="stats">
-  <div class="stats-top-row">
   <section>
-    <div class="card stats-overview">
+    <div class="card stats-overview stats-overview-horizontal">
       <div class="stats-overview-group">
         <h3>Завантаження</h3>
-        <div class="stats-grid compact">
+        <div class="stats-grid compact stats-grid-mini">
           <button type="button" class="stat-card open-source-modal"><span class="stat-value">{{ total }}</span><span class="stat-label">Всього завантажень</span></button>
           <div class="stat-card"><span class="stat-value">{{ finished }}</span><span class="stat-label">Успішних</span></div>
           <div class="stat-card"><span class="stat-value">{{ cookies_used_count }}</span><span class="stat-label">З куками</span></div>
@@ -129,7 +128,7 @@
       </div>
       <div class="stats-overview-group">
         <h3>Конвертації</h3>
-        <div class="stats-grid compact">
+        <div class="stats-grid compact stats-grid-mini">
           <div class="stat-card"><span class="stat-value">{{ conversion_total }}</span><span class="stat-label">Всього конвертацій</span></div>
           <div class="stat-card"><span class="stat-value">{{ conversion_finished }}</span><span class="stat-label">Успішних</span></div>
           <div class="stat-card"><span class="stat-value">{{ auto_conversion_count }}</span><span class="stat-label">Автоматичних</span></div>
@@ -170,7 +169,6 @@
       </div>
     {% endfor %}
   </section>
-  </div>
 
   <section>
     <h2>Історія завантажень</h2>
@@ -437,6 +435,28 @@
         завантаження одразу й непомітно йде стандартним yt-dlp. Кліпи, "лише відео", "лише аудіо" і субтитри
         завжди йдуть через стандартний рушій.
       </p>
+      {% if extension_peers %}
+      <div class="table-wrap card">
+        <table class="table">
+          <thead><tr><th>Користувач</th><th>Стан</th><th>Підключено</th><th>Востаннє на зв'язку</th></tr></thead>
+          <tbody>
+          {% for peer in extension_peers %}
+            <tr>
+              <td>{{ peer.username }}</td>
+              <td>
+                {% if peer.active %}<span class="proxy-status active">Активний</span>
+                {% else %}<span class="proxy-status inactive">Неактивний</span>{% endif %}
+              </td>
+              <td>{{ format_dt(peer.created_at, timezone) }}</td>
+              <td>{{ format_dt(peer.last_seen_at, timezone) if peer.last_seen_at else "—" }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="hint">Жодного розширення ще не підключали.</p>
+      {% endif %}
 
       <div class="settings-group-title-row">
         <p class="settings-group-title">Проксі для заблокованих сайтів</p>

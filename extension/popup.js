@@ -2,6 +2,7 @@
   const loggedOutBox = document.getElementById("logged-out");
   const loggedInBox = document.getElementById("logged-in");
   const connectedAs = document.getElementById("connected-as");
+  const counterEl = document.getElementById("extension-counter");
   const errorEl = document.getElementById("error");
   const serverUrlInput = document.getElementById("server-url");
   const usernameInput = document.getElementById("username");
@@ -12,12 +13,31 @@
     errorEl.hidden = false;
   }
 
+  async function loadCounter(serverUrl, token) {
+    try {
+      const res = await fetch(serverUrl.replace(/\/$/, "") + "/api/extension/my-stats", {
+        headers: { Authorization: "Bearer " + token },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.count > 0) {
+        counterEl.textContent = "Ви допомогли завантажити " + data.count + " відео завдяки розширенню!";
+        counterEl.hidden = false;
+      } else {
+        counterEl.hidden = true;
+      }
+    } catch (err) {
+      counterEl.hidden = true;
+    }
+  }
+
   function render() {
     chrome.storage.local.get(["serverUrl", "token", "username"], function (stored) {
       if (stored.token) {
         loggedOutBox.hidden = true;
         loggedInBox.hidden = false;
         connectedAs.textContent = "Підключено як " + stored.username + " (" + stored.serverUrl + ")";
+        loadCounter(stored.serverUrl, stored.token);
       } else {
         loggedOutBox.hidden = false;
         loggedInBox.hidden = true;

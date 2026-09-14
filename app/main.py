@@ -585,6 +585,19 @@ def my_extension_stats(request: Request, db: Session = Depends(get_db), _=Depend
     return {"count": count}
 
 
+@app.get("/api/extension/my-stats")
+def extension_my_stats(db: Session = Depends(get_db), username: str = Depends(require_extension_token)):
+    """Same idea as /api/my-extension-stats, but for the extension's own
+    popup - it authenticates with its bearer token, not a site session
+    cookie, so it can't call the session-based endpoint above."""
+    count = (
+        db.query(func.count(Download.id))
+        .filter(Download.username == username, Download.engine == "extension")
+        .scalar()
+    )
+    return {"count": count}
+
+
 @app.get("/extension/download")
 def extension_download(_=Depends(require_site_access_page)):
     """Zips extension/ on the fly so it's always in sync with whatever's
@@ -1052,6 +1065,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
     proxy_youtube_test = auth.get_proxy_youtube_test(db)
     timezone = auth.get_timezone(db)
     has_cookies = auth.has_cookies()
+    extension_peers = auth.list_extension_peers(db)
 
     return templates.TemplateResponse(
         "admin.html",
@@ -1089,6 +1103,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
             "proxy_url": proxy_url,
             "proxy_domains": proxy_domains,
             "proxy_youtube_test": proxy_youtube_test,
+            "extension_peers": extension_peers,
             "timezone": timezone,
             "timezones": timeutil.COMMON_TIMEZONES,
             "has_cookies": has_cookies,

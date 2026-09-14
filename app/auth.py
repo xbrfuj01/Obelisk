@@ -149,6 +149,24 @@ def has_recent_extension_activity(db: Session) -> bool:
     return db.query(ExtensionToken).filter(ExtensionToken.last_seen_at >= cutoff).first() is not None
 
 
+def list_extension_peers(db: Session) -> list:
+    """Every registered Obelisk Bridge login (one row per successful
+    /api/extension/login - roughly one per browser profile), newest first,
+    with an "active" flag using the same recency window as
+    has_recent_extension_activity. Powers the admin-facing peers list."""
+    cutoff = datetime.utcnow() - timedelta(seconds=EXTENSION_RECENTLY_SEEN_SECONDS)
+    rows = db.query(ExtensionToken).order_by(ExtensionToken.created_at.desc()).all()
+    return [
+        {
+            "username": row.username,
+            "created_at": row.created_at,
+            "last_seen_at": row.last_seen_at,
+            "active": bool(row.last_seen_at and row.last_seen_at >= cutoff),
+        }
+        for row in rows
+    ]
+
+
 def get_timezone(db: Session) -> str:
     return get_setting(db, "timezone", config.DEFAULT_TIMEZONE)
 
