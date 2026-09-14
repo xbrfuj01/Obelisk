@@ -17,6 +17,7 @@ doesn't yet support --download-sections, so clips/"лише відео"/"лиш�
 import re
 import subprocess
 import time
+from urllib.parse import urlsplit, urlunsplit
 
 from .database import SessionLocal
 from .models import Download
@@ -37,6 +38,21 @@ _PROGRESS_WRITE_INTERVAL_SECONDS = 0.5
 _ERROR_TAIL_LINES = 60
 
 
+def _redact_command(cmd: list) -> str:
+    """For the error-message tail only - the proxy URL can carry a
+    username:password (see the microsocks setup in admin settings), which
+    has no business ending up in a Download row's error_message."""
+    parts = []
+    for arg in cmd:
+        split = urlsplit(arg)
+        if split.scheme and split.password:
+            port = f":{split.port}" if split.port else ""
+            netloc = f"{split.username}:***@{split.hostname or ''}{port}"
+            arg = urlunsplit(split._replace(netloc=netloc))
+        parts.append(arg)
+    return " ".join(parts)
+
+
 def _parse_eta(text: str):
     try:
         parts = [int(p) for p in text.strip().split(":")]
@@ -52,6 +68,7 @@ def _build_command(url, outtmpl, height_filter, container, cookies_path, proxy_u
     cmd = [
         SABR_YTDLP_BIN,
         "--no-warnings",
+        "--verbose",
         "--newline",
         "--extractor-args", "youtube:formats=duplicate;player-client=web,web_safari,tv,ios",
         "--extractor-args", "youtubepot-bgutilhttp:base_url=http://bgutil-provider:4416",
@@ -129,7 +146,8 @@ def download_via_sabr(
         return None, "cancelled"
 
     if proc.returncode != 0:
-        tail = "\n".join(output_lines) or f"yt-dlp-sabr завершився з кодом {proc.returncode}"
+        body = "\n".join(output_lines) or f"yt-dlp-sabr завершився з кодом {proc.returncode}"
+        tail = _redact_command(cmd) + "\n---\n" + body
         return None, tail[:4000]
 
     # Deferred import: downloader.py imports this module, so importing it
