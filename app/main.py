@@ -656,7 +656,14 @@ def extension_download(_=Depends(require_site_access_page)):
     return Response(
         buffer.read(),
         media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="obelisk-bridge-extension.zip"'},
+        headers={
+            "Content-Disposition": 'attachment; filename="obelisk-bridge-extension.zip"',
+            # Same URL every time regardless of what extension/ currently
+            # holds - without this a browser could serve a previously
+            # downloaded copy of the zip from its own cache instead of
+            # actually re-requesting it.
+            "Cache-Control": "no-store",
+        },
     )
 
 
