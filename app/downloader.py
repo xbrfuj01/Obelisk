@@ -14,17 +14,34 @@ from . import auth, config
 from .database import SessionLocal
 from .models import Download
 
+# Confirmed via a real container log (2026-09-15): without a PO token,
+# tv_simply's own formats get skipped outright ("client https formats
+# require a GVS PO Token which was not provided"), "tv" was UNPLAYABLE for
+# the test video, and web/ios both got SABR-forced - zero usable formats
+# from any client. A PO token isn't optional complexity from the earlier
+# SABR era, it's YouTube's current baseline requirement regardless of
+# client. bgutil-provider (docker-compose.yml sidecar) generates one via
+# the youtubepot-bgutilhttp extractor.
+#
+# Values must be lists, matching how --extractor-args "key=value" gets
+# parsed on the CLI ({'base_url': ['http://...']}) - a bare string here
+# gets iterated character-by-character instead.
+#
 # "tv_simply" (TVHTML5_SIMPLY, yt-dlp/yt-dlp#13389) - a real captured
 # videoplayback URL from a third-party downloader site showed this client
 # handing out a plain, direct, non-SABR HTTPS URL (known Content-Length) at
 # very high quality (itag 337, 2160p60), apparently not swept up in
-# YouTube's SABR-forcing rollout the way "web" has been. Listed first since
-# yt-dlp merges formats from every listed client and picks the best by
-# quality regardless of order, so this just gets tried first; web/tv/ios
-# stay as a fallback for anything tv_simply doesn't cover. Harmless to pass
-# for non-YouTube URLs - yt-dlp only applies extractor_args to the matching
+# YouTube's SABR-forcing rollout the way "web" has been - but it still
+# needs the same PO token as everything else. Listed first since yt-dlp
+# merges formats from every listed client and picks the best by quality
+# regardless of order, so this just gets tried first; web/tv/ios stay as a
+# fallback for anything tv_simply doesn't cover. Harmless to pass for
+# non-YouTube URLs - yt-dlp only applies extractor_args to the matching
 # extractor.
-YOUTUBE_EXTRACTOR_ARGS = {"youtube": {"player_client": ["tv_simply", "web", "tv", "ios"]}}
+YOUTUBE_EXTRACTOR_ARGS = {
+    "youtube": {"player_client": ["tv_simply", "web", "tv", "ios"]},
+    "youtubepot-bgutilhttp": {"base_url": ["http://bgutil-provider:4416"]},
+}
 
 # Sized generously and fixed — the actual concurrency cap is admin-configurable
 # (max_concurrent_downloads, stored in the DB) and enforced by _ConcurrencyGate
