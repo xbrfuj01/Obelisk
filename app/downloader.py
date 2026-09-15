@@ -789,7 +789,7 @@ def _run_job(job_id: str):
             case so those counters don't credit the extension for
             downloads it had no part in."""
             _update(db, job, status="downloading")
-            filepath, sabr_error = youtube_sabr.download_via_sabr(
+            sabr_filepath, sabr_error = youtube_sabr.download_via_sabr(
                 url=job.url,
                 out_dir=out_dir,
                 outtmpl=outtmpl,
@@ -809,9 +809,9 @@ def _run_job(job_id: str):
                         os.remove(path) if os.path.isfile(path) else shutil.rmtree(path, ignore_errors=True)
                     except OSError:
                         pass
-                return None, None, None
+                return None, None, None, None
             print(f"[extension] {job_id}: успішно завантажено через SABR-рушій ({engine_label})", flush=True)
-            return engine_label, auth.has_cookies(), (os.path.splitext(os.path.basename(filepath))[0] if filepath else "video")
+            return engine_label, auth.has_cookies(), (os.path.splitext(os.path.basename(sabr_filepath))[0] if sabr_filepath else "video"), sabr_filepath
 
         engine_used = None
         extension_eligible = _is_extension_eligible(job)
@@ -829,7 +829,7 @@ def _run_job(job_id: str):
             # token is already as fresh as it'll ever get.
             print(f"[extension] {job_id}: токен вже наданий заздалегідь (кнопка на YouTube), пробуємо SABR-рушій", flush=True)
             attempted_with_manual_token = True
-            engine_used, used_cookies, title = _attempt_sabr_download(job.po_token)
+            engine_used, used_cookies, title, filepath = _attempt_sabr_download(job.po_token)
         elif extension_eligible and job.extension_submitted:
             # Submitted via the in-page panel but without a token - it
             # already made its own best-effort capture attempt from this
@@ -859,7 +859,7 @@ def _run_job(job_id: str):
             if po_token:
                 print(f"[extension] {job_id}: токен отримано, пробуємо SABR-рушій", flush=True)
                 attempted_with_manual_token = True
-                engine_used, used_cookies, title = _attempt_sabr_download(po_token)
+                engine_used, used_cookies, title, filepath = _attempt_sabr_download(po_token)
             else:
                 print(f"[extension] {job_id}: токен не надійшов за {EXTENSION_TOKEN_TIMEOUT_SECONDS}с, пробуємо SABR-рушій на власному токені bgutil", flush=True)
         elif extension_eligible:
@@ -878,7 +878,7 @@ def _run_job(job_id: str):
         # yt-dlp is structurally incapable of handling no matter what token
         # it's given.
         if engine_used is None and extension_eligible and not attempted_with_manual_token:
-            engine_used, used_cookies, title = _attempt_sabr_download(None, engine_label="sabr")
+            engine_used, used_cookies, title, filepath = _attempt_sabr_download(None, engine_label="sabr")
 
         if engine_used is None:
             _update(db, job, status="downloading")
