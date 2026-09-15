@@ -256,6 +256,7 @@ def _create_download_job(
     client_id: str | None,
     client_ip: str | None,
     rate_limit_key: str,
+    extension_submitted: bool = False,
 ) -> tuple[dict, int]:
     """Shared by /api/download (site session) and /api/extension/download
     (the "Завантажити" panel injected on the YouTube page itself, bearer
@@ -296,6 +297,7 @@ def _create_download_job(
         # how a token that arrives via the wait-based flow is already
         # handled.
         po_token=po_token.strip() or None,
+        extension_submitted=extension_submitted,
         status="queued",
         client_ip=client_ip,
         client_id=client_id,
@@ -674,8 +676,12 @@ def extension_create_download(
     never having to open the site at all, so this can't use the
     session-cookie-based route. po_token here is whatever capture.js
     already picked up from the page's own real, foreground playback -
-    already as fresh as it'll ever get, no wait-for-extension step needed
-    server-side (see downloader.py's _run_job)."""
+    already as fresh as it'll ever get. extension_submitted=True tells
+    _run_job not to fall back to the wait-for-extension/hidden-tab flow
+    even if no token came through - the panel already made its own
+    best-effort capture attempt from this same, real foreground tab, so a
+    second attempt via a new hidden tab of the same video would just
+    surprise the user with an unexplained tab, for no real benefit."""
     ip = request.client.host if request.client else "unknown"
     result, status_code = _create_download_job(
         db,
@@ -685,6 +691,7 @@ def extension_create_download(
         username=username,
         client_id=None,
         client_ip=request.client.host if request.client else None,
+        extension_submitted=True,
         rate_limit_key=f"ext-dl:{ip}",
     )
     return JSONResponse(result, status_code=status_code)

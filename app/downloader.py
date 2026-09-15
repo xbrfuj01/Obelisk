@@ -815,6 +815,14 @@ def _run_job(job_id: str):
             # token is already as fresh as it'll ever get.
             print(f"[extension] {job_id}: токен вже наданий заздалегідь (кнопка на YouTube), пробуємо SABR-рушій", flush=True)
             engine_used, used_cookies, title = _attempt_sabr_download(job.po_token)
+        elif extension_eligible and job.extension_submitted:
+            # Submitted via the in-page panel but without a token - it
+            # already made its own best-effort capture attempt from this
+            # same real, foreground tab, so falling through to wait for
+            # ANY extension instance to open a *new* (hidden) tab of the
+            # same video would just surprise the user with an unexplained
+            # tab for no real benefit - straight to the stable engine.
+            print(f"[extension] {job_id}: панель не передала токен, одразу стандартний рушій (без повторної спроби через нову вкладку)", flush=True)
         elif extension_eligible and auth.has_recent_extension_activity(db):
             # An Obelisk Bridge install has polled recently, so it's worth
             # waiting for it - release the gate slot for the wait so a

@@ -43,6 +43,15 @@ class Download(Base):
     # supplied a real PO token) or left None for the stable yt-dlp path
     # (the default, and the automatic fallback when no extension is live).
     engine = Column(String, nullable=True)
+    # True only for jobs created via POST /api/extension/download (the
+    # in-page "Завантажити" panel on YouTube itself) - even when it didn't
+    # manage to attach a po_token, _run_job must NOT fall through to the
+    # wait-for-extension/hidden-tab flow for these: the panel already made
+    # its own best-effort capture attempt from the real, foreground tab
+    # the user was just on, so a second attempt via a new hidden tab of
+    # the same video is redundant and only surprises the user with a tab
+    # they didn't ask for.
+    extension_submitted = Column(Boolean, default=False)
 
     title = Column(Text, nullable=True)
     filepath = Column(Text, nullable=True)
