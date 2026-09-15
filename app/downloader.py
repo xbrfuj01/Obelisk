@@ -634,7 +634,9 @@ def _ensure_no_audio(filepath: str) -> None:
     from . import converter  # deferred: see the existing circular-import note on the premiere_compat import below
     probed = converter.probe_input(filepath)
     if not probed or not probed.get("acodec"):
+        print(f"[video_only] {filepath}: probe found no audio codec ({probed}), nothing to strip", flush=True)
         return
+    print(f"[video_only] {filepath}: probed acodec={probed.get('acodec')!r}, stripping audio", flush=True)
     tmp_path = filepath + ".noaudio.tmp"
     try:
         result = subprocess.run(
@@ -643,9 +645,17 @@ def _ensure_no_audio(filepath: str) -> None:
         )
         if result.returncode == 0 and os.path.exists(tmp_path):
             os.replace(tmp_path, filepath)
-        elif os.path.exists(tmp_path):
-            os.remove(tmp_path)
-    except (OSError, subprocess.SubprocessError):
+            print(f"[video_only] {filepath}: audio stripped successfully", flush=True)
+        else:
+            print(
+                f"[video_only] {filepath}: ffmpeg -an failed (code {result.returncode}): "
+                f"{result.stderr.decode(errors='replace')[-1000:]}",
+                flush=True,
+            )
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"[video_only] {filepath}: ffmpeg -an raised {e!r}", flush=True)
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
@@ -1005,8 +1015,12 @@ def _run_job(job_id: str):
             try:
                 _ensure_no_audio(filepath)
                 filesize = os.path.getsize(filepath)
-            except Exception:
-                pass  # best-effort - format-selection/postprocessor -an already covers the common case
+            except Exception as e:
+                # best-effort - format-selection/postprocessor -an already
+                # covers the common case, but log it: this except previously
+                # swallowed everything silently, making a real failure here
+                # indistinguishable from "nothing to strip" in the logs.
+                print(f"[video_only] {job_id}: _ensure_no_audio raised {e!r}", flush=True)
 
         # Resolved *before* the job is marked "finished" (and committed
         # together with it below) so a poll landing right after "finished"
