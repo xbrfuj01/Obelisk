@@ -14,6 +14,18 @@ from . import auth, config
 from .database import SessionLocal
 from .models import Download
 
+# "tv_simply" (TVHTML5_SIMPLY, yt-dlp/yt-dlp#13389) - a real captured
+# videoplayback URL from a third-party downloader site showed this client
+# handing out a plain, direct, non-SABR HTTPS URL (known Content-Length) at
+# very high quality (itag 337, 2160p60), apparently not swept up in
+# YouTube's SABR-forcing rollout the way "web" has been. Listed first since
+# yt-dlp merges formats from every listed client and picks the best by
+# quality regardless of order, so this just gets tried first; web/tv/ios
+# stay as a fallback for anything tv_simply doesn't cover. Harmless to pass
+# for non-YouTube URLs - yt-dlp only applies extractor_args to the matching
+# extractor.
+YOUTUBE_EXTRACTOR_ARGS = {"youtube": {"player_client": ["tv_simply", "web", "tv", "ios"]}}
+
 # Sized generously and fixed — the actual concurrency cap is admin-configurable
 # (max_concurrent_downloads, stored in the DB) and enforced by _ConcurrencyGate
 # below, not by this pool's size.
@@ -223,6 +235,7 @@ def probe_qualities(url: str, db):
         "no_warnings": True,
         "noplaylist": True,
         "skip_download": True,
+        "extractor_args": YOUTUBE_EXTRACTOR_ARGS,
     }
     if _should_use_proxy(url, db):
         ydl_opts["proxy"] = auth.get_proxy_url(db)
@@ -448,6 +461,7 @@ def _run_job(job_id: str):
             "quiet": True,
             "no_warnings": True,
             "progress_hooks": [lambda d: _progress_hook(job_id, d, progress_state)],
+            "extractor_args": YOUTUBE_EXTRACTOR_ARGS,
         }
         if _should_use_proxy(job.url, db):
             ydl_opts["proxy"] = auth.get_proxy_url(db)
