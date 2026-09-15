@@ -128,6 +128,7 @@ async function addPendingDownload(jobId) {
   if (!pending.includes(jobId)) {
     pending.push(jobId);
     await chrome.storage.local.set({ [PENDING_DOWNLOADS_KEY]: pending });
+    console.log("[Obelisk] tracking pending download", jobId, "- now tracking:", pending);
   }
 }
 
@@ -142,34 +143,53 @@ async function removePendingDownload(jobId) {
 async function checkPendingDownloads() {
   const pending = await getPendingDownloads();
   if (!pending.length) return;
+  console.log("[Obelisk] checking pending downloads:", pending);
   const { serverUrl, token } = await getConfig();
-  if (!serverUrl || !token) return;
+  if (!serverUrl || !token) {
+    console.log("[Obelisk] checkPendingDownloads: not configured (no serverUrl/token), skipping");
+    return;
+  }
 
   for (const jobId of pending) {
     let status;
     try {
       const res = await apiFetch("/api/extension/status/" + encodeURIComponent(jobId));
-      if (!res.ok) continue; // transient error - try again next tick
+      if (!res.ok) {
+        console.log("[Obelisk]", jobId, ": status check failed with HTTP", res.status);
+        continue; // transient error - try again next tick
+      }
       status = await res.json();
     } catch (err) {
+      console.log("[Obelisk]", jobId, ": status check threw", err);
       continue;
     }
+    console.log("[Obelisk]", jobId, ": status is", status && status.status);
     if (!status || !status.status || status.status === "error") {
+      console.log("[Obelisk]", jobId, ": giving up (error or job gone) -", status && status.error);
       await removePendingDownload(jobId);
       continue;
     }
     if (status.status !== "finished") continue;
 
     await removePendingDownload(jobId);
-    chrome.downloads
-      .download({
-        url: serverUrl.replace(/\/$/, "") + "/api/extension/file/" + encodeURIComponent(jobId),
+    const fileUrl = serverUrl.replace(/\/$/, "") + "/api/extension/file/" + encodeURIComponent(jobId);
+    console.log("[Obelisk]", jobId, ": finished! saving to device from", fileUrl);
+    chrome.downloads.download(
+      {
+        url: fileUrl,
         // Reuses the extension's own bearer auth instead of needing a
-        // site session cookie - this is the whole point of the flow:
-        // the file lands on disk without ever opening the site.
+        // site session cookie - this is the whole point of the flow: the
+        // file lands on disk without ever opening the site.
         headers: [{ name: "Authorization", value: "Bearer " + token }],
-      })
-      .catch(function () {});
+      },
+      function (downloadId) {
+        if (chrome.runtime.lastError) {
+          console.log("[Obelisk]", jobId, ": chrome.downloads.download failed:", chrome.runtime.lastError.message);
+        } else {
+          console.log("[Obelisk]", jobId, ": chrome.downloads.download started, id", downloadId);
+        }
+      }
+    );
   }
 }
 
@@ -210,12 +230,14 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
         body: new URLSearchParams(message.fields).toString(),
       });
       const data = await res.json();
+      console.log("[Obelisk] /api/extension/download response:", res.status, data);
       if (res.ok && data.id) {
         await addPendingDownload(data.id);
         checkPendingDownloads();
       }
       sendResponse({ ok: res.ok && !data.error, data: data });
     } catch (err) {
+      console.log("[Obelisk] start-download failed:", err);
       sendResponse({ ok: false });
     }
   })();
