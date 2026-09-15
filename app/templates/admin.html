@@ -378,6 +378,12 @@
       <form method="post" action="/admin/wipe-data">
         <button type="submit">Очистити дані</button>
       </form>
+      <form method="post" action="/admin/delete-all-history" class="inline-form" id="delete-all-history-form">
+        <button type="button" class="btn-secondary open-confirm-modal" data-form-id="delete-all-history-form"
+          data-title="Видалити всю історію" data-text="Видалити всю історію завантажень і конвертацій (разом із файлами)? Активні (ще не завершені) задачі не зачепить. Дію не можна скасувати.">
+          Видалити всю історію
+        </button>
+      </form>
     </div>
   </section>
 
@@ -823,6 +829,7 @@
     saved: "Налаштування збережено.",
     cache_cleared: "Кеш yt-dlp очищено.",
     data_wiped: "Дані очищено.",
+    history_deleted: "Історію видалено.",
     user_added: "Користувача додано.",
     pw_reset: "Пароль користувача змінено.",
     cookies_saved: "Cookies збережено.",

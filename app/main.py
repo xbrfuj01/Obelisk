@@ -1238,6 +1238,32 @@ def admin_wipe_data(_=Depends(require_admin_dep)):
     return RedirectResponse("/admin?tab=settings&data_wiped=1", status_code=303)
 
 
+ACTIVE_JOB_STATUSES = ("queued", "downloading", "converting", "waiting_extension")
+
+
+@app.post("/admin/delete-all-history")
+def admin_delete_all_history(db: Session = Depends(get_db), _=Depends(require_admin_dep)):
+    """Wipes every download/conversion row (and their files) from history -
+    unlike /admin/wipe-data (which only frees disk space, leaving the rows
+    behind as "expired"), this actually clears the Історія tables. Jobs
+    still in flight are left alone rather than yanking the row out from
+    under a background thread that's mid-update on it - they'll show up
+    here once they finish (or get cancelled) like normal."""
+    for model, subdir in ((Download, None), (Conversion, "converts")):
+        rows = db.query(model).filter(model.status.notin_(ACTIVE_JOB_STATUSES)).all()
+        for job in rows:
+            if job.filepath and os.path.exists(job.filepath):
+                try:
+                    os.remove(job.filepath)
+                except OSError:
+                    pass
+            job_dir = os.path.join(config.DOWNLOAD_DIR, subdir, job.id) if subdir else os.path.join(config.DOWNLOAD_DIR, job.id)
+            shutil.rmtree(job_dir, ignore_errors=True)
+            db.delete(job)
+    db.commit()
+    return RedirectResponse("/admin?tab=settings&history_deleted=1", status_code=303)
+
+
 @app.post("/admin/settings")
 def admin_settings(
     request: Request,
