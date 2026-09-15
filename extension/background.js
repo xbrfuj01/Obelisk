@@ -169,64 +169,87 @@ async function upsertTask(jobId, patch) {
   return tasks[jobId];
 }
 
+// Guards against a real, observed bug: pollTasks() can run concurrently
+// (the setInterval tick, the chrome.alarms fallback, and the immediate
+// call right after a job is created can all overlap once any one of them
+// is mid-await on a slow network request), and two overlapping calls
+// could both observe status==="finished" for the same job before either
+// had written back its own update - each independently calling
+// chrome.downloads.download() and saving the same file to disk twice.
+// Claiming a job id here happens synchronously (no await beforehand), so
+// whichever invocation's turn runs first always wins the claim before a
+// second concurrent invocation's loop reaches the same job - JS's
+// single-threaded event loop guarantees that.
+const finalizingJobs = new Set();
+
 async function pollTasks() {
   const tasks = await getTasks();
-  const activeIds = Object.keys(tasks).filter(function (id) {
-    return ACTIVE_STATUSES.indexOf(tasks[id].status) !== -1;
+  const idsToCheck = Object.keys(tasks).filter(function (id) {
+    return ACTIVE_STATUSES.indexOf(tasks[id].status) !== -1 && !finalizingJobs.has(id);
   });
-  if (!activeIds.length) return;
+  if (!idsToCheck.length) return;
   const { serverUrl, token } = await getConfig();
   if (!serverUrl || !token) return;
 
-  for (const jobId of activeIds) {
-    let status;
+  for (const jobId of idsToCheck) {
+    finalizingJobs.add(jobId);
+    let releaseClaim = true;
     try {
-      const res = await apiFetch("/api/extension/status/" + encodeURIComponent(jobId));
-      if (!res.ok) continue; // transient error - try again next tick
-      status = await res.json();
-    } catch (err) {
-      continue;
-    }
-    if (!status || !status.status) continue;
-
-    if (status.status === "error") {
-      await upsertTask(jobId, {
-        status: "error",
-        error: status.error || "Помилка завантаження",
-        title: status.title || tasks[jobId].title,
-      });
-      continue;
-    }
-    if (status.status !== "finished") {
-      await upsertTask(jobId, {
-        status: status.status,
-        progress: status.progress,
-        etaSeconds: status.eta_seconds,
-        title: status.title || tasks[jobId].title,
-      });
-      continue;
-    }
-
-    // Server-side download is done - hand it to chrome.downloads so it
-    // lands on the user's device without ever opening the site.
-    await upsertTask(jobId, { status: "finished", progress: 100, title: status.title || tasks[jobId].title });
-    const fileUrl = serverUrl.replace(/\/$/, "") + "/api/extension/file/" + encodeURIComponent(jobId);
-    chrome.downloads.download(
-      {
-        url: fileUrl,
-        // Reuses the extension's own bearer auth instead of needing a
-        // site session cookie - this is the whole point of the flow: the
-        // file lands on disk without ever opening the site.
-        headers: [{ name: "Authorization", value: "Bearer " + token }],
-      },
-      function (downloadId) {
-        if (chrome.runtime.lastError) {
-          upsertTask(jobId, { status: "save_error", error: chrome.runtime.lastError.message });
-        } else {
-          upsertTask(jobId, { status: "saved", downloadId: downloadId });
-        }
+      let status;
+      try {
+        const res = await apiFetch("/api/extension/status/" + encodeURIComponent(jobId));
+        if (!res.ok) continue; // transient error - try again next tick
+        status = await res.json();
+      } catch (err) {
+        continue;
       }
-    );
+      if (!status || !status.status) continue;
+
+      if (status.status === "error") {
+        await upsertTask(jobId, {
+          status: "error",
+          error: status.error || "Помилка завантаження",
+          title: status.title || tasks[jobId].title,
+        });
+        continue;
+      }
+      if (status.status !== "finished") {
+        await upsertTask(jobId, {
+          status: status.status,
+          progress: status.progress,
+          etaSeconds: status.eta_seconds,
+          title: status.title || tasks[jobId].title,
+        });
+        continue;
+      }
+
+      // Server-side download is done - hand it to chrome.downloads so it
+      // lands on the user's device without ever opening the site. Keep
+      // this job claimed until the save itself resolves, so no other
+      // overlapping poll can re-trigger it in the meantime.
+      releaseClaim = false;
+      await upsertTask(jobId, { status: "finished", progress: 100, title: status.title || tasks[jobId].title });
+      const fileUrl = serverUrl.replace(/\/$/, "") + "/api/extension/file/" + encodeURIComponent(jobId);
+      chrome.downloads.download(
+        {
+          url: fileUrl,
+          // Reuses the extension's own bearer auth instead of needing a
+          // site session cookie - this is the whole point of the flow: the
+          // file lands on disk without ever opening the site.
+          headers: [{ name: "Authorization", value: "Bearer " + token }],
+        },
+        function (downloadId) {
+          finalizingJobs.delete(jobId);
+          if (chrome.runtime.lastError) {
+            upsertTask(jobId, { status: "save_error", error: chrome.runtime.lastError.message });
+          } else {
+            upsertTask(jobId, { status: "saved", downloadId: downloadId });
+          }
+        }
+      );
+    } finally {
+      if (releaseClaim) finalizingJobs.delete(jobId);
+    }
   }
 }
 
