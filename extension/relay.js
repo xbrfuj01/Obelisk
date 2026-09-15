@@ -172,12 +172,23 @@
 
   // YouTube is a SPA - moving between videos (or away from one) fires
   // this instead of a real page load, and doesn't necessarily leave the
-  // masthead DOM (and our button) intact either.
+  // masthead DOM (and our button) intact either. It also fires in
+  // practice for things that AREN'T a real video change (an ad finishing
+  // and playback resuming, seen while testing) - resetting the caches
+  // unconditionally on every firing wiped out a token/qualities that were
+  // still perfectly valid for the video actually still on screen, so this
+  // only clears them when the video id genuinely changed.
   document.addEventListener("yt-navigate-finish", function () {
-    latestToken = null;
-    latestTokenVideoId = null;
-    latestQualities = null;
-    latestQualitiesVideoId = null;
+    const videoId = videoIdFromUrl(location.href);
+    console.log("[Obelisk] yt-navigate-finish, videoId now", videoId);
+    if (videoId !== latestTokenVideoId) {
+      latestToken = null;
+      latestTokenVideoId = null;
+    }
+    if (videoId !== latestQualitiesVideoId) {
+      latestQualities = null;
+      latestQualitiesVideoId = null;
+    }
     ensureButton();
   });
 

@@ -82,10 +82,17 @@
     return null;
   }
 
-  function extractQualities(playerResponse) {
+  function extractQualities(rawResponse) {
+    // Some /youtubei/v1/player responses (seen in practice alongside ad
+    // placement data) wrap the actual payload one level deeper as
+    // {adPlacements, playerAds, playerResponse: {...}, playerConfig} -
+    // window.ytInitialPlayerResponse and most fetch responses are the
+    // inner shape directly, so unwrap only when the outer object doesn't
+    // already look like one itself.
+    const playerResponse = (!rawResponse || rawResponse.streamingData) ? rawResponse : rawResponse.playerResponse;
     const streamingData = playerResponse && playerResponse.streamingData;
     if (!streamingData) {
-      console.log("[Obelisk] extractQualities: no streamingData in player response", playerResponse);
+      console.log("[Obelisk] extractQualities: no streamingData in player response", rawResponse);
       return null;
     }
     const responseVideoId = playerResponse.videoDetails && playerResponse.videoDetails.videoId;
