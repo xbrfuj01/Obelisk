@@ -39,6 +39,14 @@
     if (!body || typeof body !== "string") return null;
     try {
       const data = JSON.parse(body);
+      // Player requests carry their own videoId at the top level - reject
+      // a token meant for some other video (YouTube quietly requests
+      // player data for videos other than the one on screen too, e.g. an
+      // autoplay-next prefetch) rather than silently misattributing it to
+      // the current page. Bodies without a videoId (e.g. subtitle
+      // requests) skip this check entirely.
+      const expectedVideoId = currentVideoId();
+      if (data.videoId && expectedVideoId && data.videoId !== expectedVideoId) return null;
       const pot =
         data.poToken ||
         (data.serviceIntegrityDimensions && data.serviceIntegrityDimensions.poToken) ||
@@ -62,42 +70,56 @@
   // the page already received regardless.
   const COMMON_LABELS = { 4320: "8K", 2160: "4K", 1440: "2K", 1080: "Full HD", 720: "HD" };
 
+  // watch?v=<id> or shorts/<id> - matched against playerResponse.videoDetails.videoId
+  // below, since YouTube quietly fires /youtubei/v1/player requests for
+  // videos other than the one on screen too (autoplay-next prefetch, the
+  // "up next" panel, etc.) - without this check, real-world logs showed
+  // a *different* video's format list (16 heights vs. the actual video's
+  // 6) getting reported as if it were the current one's.
+  function currentVideoId() {
+    if (location.pathname === "/watch") return new URLSearchParams(location.search).get("v");
+    if (location.pathname.startsWith("/shorts/")) return location.pathname.slice("/shorts/".length);
+    return null;
+  }
+
   function extractQualities(playerResponse) {
     const streamingData = playerResponse && playerResponse.streamingData;
     if (!streamingData) {
       console.log("[Obelisk] extractQualities: no streamingData in player response", playerResponse);
       return null;
     }
-    const allFormats = [].concat(streamingData.formats || [], streamingData.adaptiveFormats || []);
-    const byHeight = {};
-    let bestAudioBytes = null;
-    for (const f of allFormats) {
-      const height = f.height;
-      const bytes = f.contentLength ? parseInt(f.contentLength, 10) : null;
-      const isAudioOnly = !height && typeof f.mimeType === "string" && f.mimeType.indexOf("audio/") === 0;
-      if (height) {
-        const prev = byHeight[height];
-        if (!prev || (bytes && (!prev.bytes || bytes > prev.bytes))) {
-          byHeight[height] = { width: f.width, bytes: bytes };
-        }
-      } else if (isAudioOnly && bytes && (!bestAudioBytes || bytes > bestAudioBytes)) {
-        bestAudioBytes = bytes;
-      }
+    const responseVideoId = playerResponse.videoDetails && playerResponse.videoDetails.videoId;
+    const expectedVideoId = currentVideoId();
+    if (responseVideoId && expectedVideoId && responseVideoId !== expectedVideoId) {
+      console.log("[Obelisk] extractQualities: ignoring response for", responseVideoId, "- current video is", expectedVideoId);
+      return null;
     }
-    const heights = Object.keys(byHeight)
-      .map(Number)
-      .sort(function (a, b) {
-        return b - a;
-      });
+    const allFormats = [].concat(streamingData.formats || [], streamingData.adaptiveFormats || []);
+    const heightsSeen = new Set();
+    for (const f of allFormats) {
+      if (f.height) heightsSeen.add(f.height);
+    }
+    const heights = Array.from(heightsSeen).sort(function (a, b) {
+      return b - a;
+    });
     if (!heights.length) {
       console.log("[Obelisk] extractQualities: streamingData had formats but none with a height", streamingData);
       return null;
     }
+    // contentLength on adaptive formats turned out unreliable for
+    // SABR-restricted videos in practice (real logs showed several
+    // different heights reporting byte-for-byte identical sizes) - rather
+    // than show a number that might just be wrong, this only reports
+    // which resolutions exist, same as the label-only fallback
+    // probe_qualities itself uses when it can't size a format either.
     return heights.map(function (h) {
-      const entry = byHeight[h];
-      let label = entry.width ? entry.width + "×" + h : h + "p";
+      const withThisHeight = allFormats.filter(function (f) {
+        return f.height === h;
+      });
+      const width = withThisHeight.length ? withThisHeight[0].width : null;
+      let label = width ? width + "×" + h : h + "p";
       if (COMMON_LABELS[h]) label += " (" + COMMON_LABELS[h] + ")";
-      return { value: String(h), label: label, video_bytes: entry.bytes, audio_bytes: bestAudioBytes };
+      return { value: String(h), label: label, video_bytes: null, audio_bytes: null };
     });
   }
 
