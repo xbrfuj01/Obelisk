@@ -73,7 +73,7 @@ def _build_command(url, outtmpl, height_filter, container, cookies_path, proxy_u
         "--no-warnings",
         "--verbose",
         "--newline",
-        "--extractor-args", "youtube:formats=duplicate;player-client=web,web_safari,tv,ios",
+        "--extractor-args", "youtube:formats=duplicate;player-client=web,web_safari,tv,tv_simply,ios",
         "--extractor-args", "youtubepot-bgutilhttp:base_url=http://bgutil-provider:4416",
         # Order matters: try a SABR-tagged adaptive pair first (for videos
         # that are only available that way), then a plain adaptive pair

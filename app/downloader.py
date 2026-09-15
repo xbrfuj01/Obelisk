@@ -138,7 +138,16 @@ YOUTUBE_EXTRACTOR_ARGS = {
     # reverted both after they broke YouTube downloads across the board
     # instead of just helping the edge case. Worth revisiting, but only
     # with a way to actually verify the result before it ships again.
-    "youtube": {"player_client": ["web", "tv", "ios"]},
+    #
+    # "tv_simply" (TVHTML5_SIMPLY, yt-dlp/yt-dlp#13389) added 2026-09-15 -
+    # a real captured URL from a third-party downloader site showed this
+    # client handing out a plain, direct, non-SABR HTTPS URL (known
+    # Content-Length, no SABR wrapper) at itag 337 (2160p60 VP9) - a client
+    # apparently not (yet) swept up in YouTube's SABR-forcing rollout.
+    # Unverified whether yt-dlp's own implementation of this client gets
+    # the same result server-side - check real logs after deploy for
+    # whether it actually contributes formats instead of erroring out.
+    "youtube": {"player_client": ["web", "tv", "tv_simply", "ios"]},
 }
 
 
