@@ -16,6 +16,7 @@
 
   function reportToken(token, source) {
     if (!token) return;
+    console.log("[Obelisk] captured PO token via", source, "(" + token.length + " chars)");
     window.postMessage({ __obeliskBridge: true, type: "po-token", token, source }, "*");
   }
 

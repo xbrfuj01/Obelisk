@@ -39,6 +39,7 @@
     if (data.type === "po-token") {
       latestToken = data.token;
       latestTokenVideoId = videoIdFromUrl(location.href);
+      console.log("[Obelisk] relay.js cached token for", location.href, "via", data.source);
       chrome.runtime.sendMessage({
         type: "po-token",
         token: data.token,
