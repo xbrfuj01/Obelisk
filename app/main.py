@@ -699,11 +699,13 @@ def extension_download(_=Depends(require_site_access_page)):
                 arcname = os.path.join("obelisk-bridge-extension", os.path.relpath(path, EXTENSION_DIR))
                 zf.write(path, arcname)
     buffer.seek(0)
+    version = _current_extension_version()
+    filename = f"obelisk-bridge-extension-{version}.zip" if version else "obelisk-bridge-extension.zip"
     return Response(
         buffer.read(),
         media_type="application/zip",
         headers={
-            "Content-Disposition": 'attachment; filename="obelisk-bridge-extension.zip"',
+            "Content-Disposition": f'attachment; filename="{filename}"',
             # Same URL every time regardless of what extension/ currently
             # holds - without this a browser could serve a previously
             # downloaded copy of the zip from its own cache instead of
