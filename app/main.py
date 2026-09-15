@@ -32,6 +32,8 @@ from .downloader import (
     request_cancel as request_download_cancel,
     check_proxy_connection,
     get_recent_logs,
+    create_prefill,
+    pop_prefill,
 )
 from .cleanup import start_cleanup_thread, wipe_all_data
 from . import timeutil
@@ -238,6 +240,7 @@ def create_download(
     premiere_compat: bool = Form(False),
     clip_start: str = Form(""),
     clip_end: str = Form(""),
+    po_token: str = Form(""),
     db: Session = Depends(get_db),
     _=Depends(require_site_access_api),
 ):
@@ -275,6 +278,14 @@ def create_download(
         premiere_compat=1 if premiere_compat else 0,
         clip_start=clip_start_sec,
         clip_end=clip_end_sec,
+        # Only meaningful if this job ends up structurally eligible for the
+        # extension path anyway (_is_extension_eligible) - a token supplied
+        # for e.g. a clip or "лише відео" is just inert metadata, matching
+        # how a token that arrives via the wait-based flow is already
+        # handled. Comes from the extension's own on-page "Завантажити"
+        # button (see /api/extension/prefill) - the user watched the video
+        # in a real foreground tab, so this is already as fresh as it gets.
+        po_token=po_token.strip() or None,
         status="queued",
         client_ip=request.client.host if request.client else None,
         client_id=client_id,
@@ -596,6 +607,38 @@ def extension_my_stats(db: Session = Depends(get_db), username: str = Depends(re
         .scalar()
     )
     return {"count": count}
+
+
+@app.post("/api/extension/prefill")
+def extension_create_prefill(
+    url: str = Form(...),
+    po_token: str = Form(""),
+    db: Session = Depends(get_db),
+    _=Depends(require_extension_token),
+):
+    """Called by background.js when the "Завантажити" button injected on
+    the YouTube page itself (relay.js) is clicked - hands off the current
+    video's URL and whatever PO token the page has already captured, so
+    the new Obelisk tab that button opens can prefill the download form
+    without the url/token ever sitting in that tab's own address bar."""
+    url = url.strip()
+    if not url.startswith(("http://", "https://")):
+        return JSONResponse({"error": "Некоректне посилання"}, status_code=400)
+    if not is_url_allowed(url, db):
+        return JSONResponse({"error": "Це посилання вказує на заборонену адресу"}, status_code=400)
+    prefill_id = create_prefill(url, po_token.strip() or None)
+    return {"id": prefill_id}
+
+
+@app.get("/api/prefill/{prefill_id}")
+def get_prefill(prefill_id: str, _=Depends(require_site_access_api)):
+    """Read (and consume) a prefill handed off above - authenticated by
+    the normal site session, not the extension's bearer token, since this
+    is called from the downloader page itself, not the extension."""
+    entry = pop_prefill(prefill_id)
+    if not entry:
+        return JSONResponse({"error": "Посилання для заповнення форми більше не дійсне"}, status_code=404)
+    return entry
 
 
 @app.get("/extension/download")

@@ -95,6 +95,37 @@ chrome.runtime.onMessage.addListener(function (message, sender) {
   }
 });
 
+// The "Завантажити" button relay.js injects into the YouTube page itself
+// (next to the logo, on watch/Shorts pages) sends this instead of going
+// through the poll/hidden-tab dance above - the token it carries (if any)
+// was already captured from a real, actively-watched foreground tab, so
+// there's nothing to wait for here beyond the one request below.
+chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
+  if (!message || message.type !== "download-request") return;
+  (async function () {
+    try {
+      const { serverUrl } = await getConfig();
+      if (!serverUrl) throw new Error("not configured");
+      const res = await apiFetch("/api/extension/prefill", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "url=" + encodeURIComponent(message.url) + "&po_token=" + encodeURIComponent(message.token || ""),
+      });
+      if (!res.ok) throw new Error("prefill failed");
+      const data = await res.json();
+      if (!data.id) throw new Error("no prefill id");
+      await chrome.tabs.create({
+        url: serverUrl.replace(/\/$/, "") + "/downloader?prefill=" + encodeURIComponent(data.id),
+        active: true,
+      });
+      sendResponse({ ok: true });
+    } catch (err) {
+      sendResponse({ ok: false });
+    }
+  })();
+  return true; // keep the message channel open for the async work above
+});
+
 function startPolling() {
   if (pollTimer) return;
   pollTimer = setInterval(pollOnce, POLL_INTERVAL_MS);

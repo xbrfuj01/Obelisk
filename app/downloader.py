@@ -2,6 +2,7 @@ import collections
 import ipaddress
 import os
 import re
+import secrets
 import shutil
 import socket
 import subprocess
@@ -66,6 +67,39 @@ _log_buffer = collections.deque(maxlen=5000)
 def get_recent_logs() -> str:
     with _log_buffer_lock:
         return "".join(_log_buffer)
+
+
+# Short-lived handoff for the extension's on-page "Завантажити" button
+# (injected into the YouTube masthead - see extension/relay.js): clicking
+# it captures whatever PO token the page has already picked up and asks
+# the server to hold onto it just long enough for a new Obelisk tab to
+# read it back and prefill the download form - there's no Download row
+# yet at this point (mode/quality aren't chosen until that form is
+# submitted), so this can't just reuse the Download.po_token column the
+# wait-based flow uses. In-memory only (no durability needed for
+# something this short-lived) and single-use - popped on first read.
+_prefill_lock = threading.Lock()
+_prefill_store = {}
+PREFILL_TTL_SECONDS = 120
+
+
+def create_prefill(url: str, po_token: str | None) -> str:
+    now = time.time()
+    prefill_id = secrets.token_urlsafe(16)
+    with _prefill_lock:
+        expired = [k for k, v in _prefill_store.items() if v["expires_at"] < now]
+        for k in expired:
+            del _prefill_store[k]
+        _prefill_store[prefill_id] = {"url": url, "po_token": po_token, "expires_at": now + PREFILL_TTL_SECONDS}
+    return prefill_id
+
+
+def pop_prefill(prefill_id: str):
+    with _prefill_lock:
+        entry = _prefill_store.pop(prefill_id, None)
+    if not entry or entry["expires_at"] < time.time():
+        return None
+    return {"url": entry["url"], "po_token": entry["po_token"]}
 
 
 sys.stdout = _ThreadAwareMuter(sys.stdout)
@@ -772,14 +806,50 @@ def _run_job(job_id: str):
 
         height_filter = _height_filter(job.quality)
 
+        def _attempt_sabr_download(po_token):
+            """Runs the SABR-fork with a given token (either pre-supplied by
+            the extension's on-page "Завантажити" button, or freshly waited
+            for below); returns (engine_used, used_cookies, title) on
+            success, or (None, None, None) after cleaning up whatever a
+            failed attempt may have partially written - so the stable path
+            below can't mistake leftovers for the real result."""
+            _update(db, job, status="downloading")
+            filepath, sabr_error = youtube_sabr.download_via_sabr(
+                url=job.url,
+                out_dir=out_dir,
+                outtmpl=outtmpl,
+                height_filter=height_filter,
+                container=job.container if job.container in VIDEO_FORMATS else None,
+                cookies_path=auth.get_cookies_path(),
+                proxy_url=auth.get_proxy_url(db) if _should_use_proxy(job.url, db) else None,
+                job_id=job_id,
+                should_cancel=lambda: job_id in _cancel_requested,
+                po_token=po_token,
+            )
+            if sabr_error:
+                print(f"[extension] {job_id}: SABR-рушій не впорався ({sabr_error}), переходимо на стандартний рушій", flush=True)
+                for name in os.listdir(out_dir):
+                    path = os.path.join(out_dir, name)
+                    try:
+                        os.remove(path) if os.path.isfile(path) else shutil.rmtree(path, ignore_errors=True)
+                    except OSError:
+                        pass
+                return None, None, None
+            print(f"[extension] {job_id}: успішно завантажено через розширення", flush=True)
+            return "extension", auth.has_cookies(), (os.path.splitext(os.path.basename(filepath))[0] if filepath else "video")
+
         engine_used = None
-
         extension_eligible = _is_extension_eligible(job)
-        extension_live = auth.has_recent_extension_activity(db) if extension_eligible else False
-        if extension_eligible and not extension_live:
-            print(f"[extension] {job_id}: жодного розширення не бачили останні {auth.EXTENSION_RECENTLY_SEEN_SECONDS}с, одразу стандартний рушій", flush=True)
 
-        if extension_eligible and extension_live:
+        if extension_eligible and job.po_token:
+            # A token was already captured proactively - the extension's
+            # "Завантажити" button injected on the YouTube page itself,
+            # clicked while the user was actively watching in a real
+            # (foreground, visible) tab. No need to wait for anything: this
+            # token is already as fresh as it'll ever get.
+            print(f"[extension] {job_id}: токен вже наданий заздалегідь (кнопка на YouTube), пробуємо SABR-рушій", flush=True)
+            engine_used, used_cookies, title = _attempt_sabr_download(job.po_token)
+        elif extension_eligible and auth.has_recent_extension_activity(db):
             # An Obelisk Bridge install has polled recently, so it's worth
             # waiting for it - release the gate slot for the wait so a
             # stalled/slow extension can't block other downloads from
@@ -798,38 +868,11 @@ def _run_job(job_id: str):
 
             if po_token:
                 print(f"[extension] {job_id}: токен отримано, пробуємо SABR-рушій", flush=True)
-                _update(db, job, status="downloading")
-                filepath, sabr_error = youtube_sabr.download_via_sabr(
-                    url=job.url,
-                    out_dir=out_dir,
-                    outtmpl=outtmpl,
-                    height_filter=height_filter,
-                    container=job.container if job.container in VIDEO_FORMATS else None,
-                    cookies_path=auth.get_cookies_path(),
-                    proxy_url=auth.get_proxy_url(db) if _should_use_proxy(job.url, db) else None,
-                    job_id=job_id,
-                    should_cancel=lambda: job_id in _cancel_requested,
-                    po_token=po_token,
-                )
-                if sabr_error:
-                    print(f"[extension] {job_id}: SABR-рушій не впорався ({sabr_error}), переходимо на стандартний рушій", flush=True)
-                    # Falls through to the stable path below instead of
-                    # failing outright - clear whatever the failed attempt
-                    # may have partially written first, so _find_main_file
-                    # down there can't mistake leftovers for the real result.
-                    for name in os.listdir(out_dir):
-                        path = os.path.join(out_dir, name)
-                        try:
-                            os.remove(path) if os.path.isfile(path) else shutil.rmtree(path, ignore_errors=True)
-                        except OSError:
-                            pass
-                else:
-                    print(f"[extension] {job_id}: успішно завантажено через розширення", flush=True)
-                    engine_used = "extension"
-                    used_cookies = auth.has_cookies()
-                    title = os.path.splitext(os.path.basename(filepath))[0] if filepath else "video"
+                engine_used, used_cookies, title = _attempt_sabr_download(po_token)
             else:
                 print(f"[extension] {job_id}: токен не надійшов за {EXTENSION_TOKEN_TIMEOUT_SECONDS}с, переходимо на стандартний рушій", flush=True)
+        elif extension_eligible:
+            print(f"[extension] {job_id}: жодного розширення не бачили останні {auth.EXTENSION_RECENTLY_SEEN_SECONDS}с, одразу стандартний рушій", flush=True)
 
         if engine_used is None:
             _update(db, job, status="downloading")

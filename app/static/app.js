@@ -16,6 +16,7 @@ const clipStartInput = document.getElementById("clip-start-input");
 const clipEndInput = document.getElementById("clip-end-input");
 const clipHint = document.getElementById("clip-hint");
 const premiereCompatInput = document.getElementById("premiere-compat-input");
+const poTokenInput = document.getElementById("po-token-input");
 
 const CLIP_START_DEFAULT = "00:00:00";
 const CLIP_END_DEFAULT = "99:99:99";
@@ -253,6 +254,11 @@ function resetPerVideoOptions() {
   lastSubtitles = [];
   renderSubtitleOptions();
   updateSubtitleAvailability();
+
+  // A PO token captured for one video is meaningless for another - only
+  // ever set right after this same reset, by loadPrefill() below, for the
+  // one probe call it's actually meant for.
+  if (poTokenInput) poTokenInput.value = "";
 }
 
 async function probeQualities() {
@@ -322,6 +328,32 @@ if (urlClearBtn) {
     urlInput.focus();
   });
 }
+
+// Landed here via the "Завантажити" button the extension injects into the
+// YouTube page itself (extension/relay.js) - it opens this page with
+// ?prefill=<id> instead of putting the url/token directly in the address
+// bar, so /api/prefill/<id> (single-use, ~2min TTL) is fetched once to get
+// the real values.
+(async function loadPrefill() {
+  const prefillId = new URLSearchParams(location.search).get("prefill");
+  if (!prefillId) return;
+  history.replaceState(null, "", location.pathname);
+  try {
+    const res = await fetch(`/api/prefill/${encodeURIComponent(prefillId)}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.url) return;
+    urlInput.value = data.url;
+    updateUrlClearButton();
+    await probeQualities();
+    // Must come after probeQualities() - it clears this field as part of
+    // resetting everything that only makes sense for the previous video.
+    if (poTokenInput) poTokenInput.value = data.po_token || "";
+  } catch (err) {
+    // silently ignore - worst case the field is just empty and the user
+    // pastes the link manually
+  }
+})();
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
