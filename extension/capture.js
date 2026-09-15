@@ -141,6 +141,18 @@
     return typeof url === "string" && url.indexOf("/youtubei/v1/player") !== -1;
   }
 
+  // Runs fn once the main thread actually has spare time instead of
+  // immediately - used to keep our own (non-time-critical) parsing of a
+  // player response out of the way of YouTube's own, much more urgent,
+  // parsing of the very same data right as playback is starting.
+  function runWhenIdle(fn) {
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(fn, { timeout: 2000 });
+    } else {
+      setTimeout(fn, 0);
+    }
+  }
+
   // The tab background.js opens for this is created with active:false, so
   // document.visibilityState is "hidden" for its whole life (that's a
   // property of the tab itself, unrelated to the earlier chrome.alarms
@@ -212,15 +224,37 @@
     const result = originalFetch.apply(this, arguments);
     if (isPlayerReq) {
       console.log("[Obelisk] intercepted fetch to player endpoint:", url);
+      // .clone() has to happen synchronously right here, before YouTube's
+      // own code gets a chance to consume the original response body (a
+      // Response's body can only be read once - cloning after that throws).
+      // But actually *parsing* our clone is deferred to an idle callback:
+      // running it as a plain microtask straight off this promise meant it
+      // executed immediately after the real response arrived - exactly
+      // when YouTube's own player is busy parsing this very same
+      // (sometimes multi-MB) response to actually start playback.
+      // Competing for main-thread time right at that moment was a
+      // suspected contributor to the video itself taking noticeably
+      // longer to start inside the player (reported: page loads fine, but
+      // playback start is slow) even after page-load overhead elsewhere
+      // was already cut. This data is only for the panel's quality
+      // dropdown - nothing time-critical about reading it a beat later
+      // once the browser actually has spare time.
       result
         .then(function (res) {
-          return res.clone().json();
-        })
-        .then(function (json) {
-          reportQualities(extractQualities(json));
+          const cloned = res.clone();
+          runWhenIdle(function () {
+            cloned
+              .json()
+              .then(function (json) {
+                reportQualities(extractQualities(json));
+              })
+              .catch(function (err) {
+                console.log("[Obelisk] failed to read player fetch response as JSON:", err);
+              });
+          });
         })
         .catch(function (err) {
-          console.log("[Obelisk] failed to read player fetch response as JSON:", err);
+          console.log("[Obelisk] failed to read player fetch response:", err);
         });
     }
     return result;
@@ -249,12 +283,18 @@
         // ignore
       }
       console.log("[Obelisk] intercepted XHR to player endpoint");
+      const xhr = this;
       this.addEventListener("load", function () {
-        try {
-          reportQualities(extractQualities(JSON.parse(this.responseText)));
-        } catch (err) {
-          console.log("[Obelisk] failed to parse player XHR response as JSON:", err);
-        }
+        // Same reasoning as the fetch path above: defer the actual parse
+        // off the 'load' event itself, since this.responseText is already
+        // fully buffered by XHR (no clone-before-consumed concern here).
+        runWhenIdle(function () {
+          try {
+            reportQualities(extractQualities(JSON.parse(xhr.responseText)));
+          } catch (err) {
+            console.log("[Obelisk] failed to parse player XHR response as JSON:", err);
+          }
+        });
       });
     }
     return originalSend.apply(this, arguments);
@@ -269,7 +309,10 @@
     initialCheckAttempts += 1;
     if (window.ytInitialPlayerResponse) {
       console.log("[Obelisk] found window.ytInitialPlayerResponse");
-      reportQualities(extractQualities(window.ytInitialPlayerResponse));
+      const initialResponse = window.ytInitialPlayerResponse;
+      runWhenIdle(function () {
+        reportQualities(extractQualities(initialResponse));
+      });
       clearInterval(initialCheckTimer);
     } else if (initialCheckAttempts > 40) {
       console.log("[Obelisk] window.ytInitialPlayerResponse never appeared after 10s");
