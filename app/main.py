@@ -33,8 +33,6 @@ from .downloader import (
     request_cancel as request_download_cancel,
     check_proxy_connection,
     get_recent_logs,
-    create_prefill,
-    pop_prefill,
 )
 from .cleanup import start_cleanup_thread, wipe_all_data
 from . import timeutil
@@ -242,6 +240,89 @@ def metadata_page(request: Request, db: Session = Depends(get_db), _=Depends(req
     )
 
 
+def _create_download_job(
+    db: Session,
+    *,
+    url: str,
+    mode: str,
+    quality: str,
+    container: str,
+    subtitle_lang: str,
+    premiere_compat: bool,
+    clip_start: str,
+    clip_end: str,
+    po_token: str,
+    username: str | None,
+    client_id: str | None,
+    client_ip: str | None,
+    rate_limit_key: str,
+) -> tuple[dict, int]:
+    """Shared by /api/download (site session) and /api/extension/download
+    (the "Завантажити" panel injected on the YouTube page itself, bearer
+    token) - identical validation and Download row either way, just a
+    different source for who/what the job is attributed to."""
+    url = url.strip()
+    if not url.startswith(("http://", "https://")):
+        return {"error": "Некоректне посилання"}, 400
+    if not is_url_allowed(url, db):
+        return {"error": "Це посилання вказує на заборонену адресу"}, 400
+    if not auth.check_download_rate_limit(rate_limit_key):
+        return {"error": "Забагато завантажень поспіль. Спробуйте пізніше."}, 429
+    if mode not in ("video", "video_only", "audio"):
+        mode = "video"
+
+    clip_start_sec = parse_timecode(clip_start)
+    clip_end_sec = parse_timecode(clip_end)
+    if clip_start and clip_start_sec is None:
+        return {"error": "Некоректний початковий таймкод"}, 400
+    if clip_end and clip_end_sec is None:
+        return {"error": "Некоректний кінцевий таймкод"}, 400
+    if clip_start_sec is not None and clip_end_sec is not None and clip_end_sec <= clip_start_sec:
+        return {"error": "Кінцевий таймкод має бути більшим за початковий"}, 400
+
+    job = Download(
+        url=url,
+        source=_source_from_url(url),
+        mode=mode,
+        quality=quality,
+        container=container,
+        subtitle_lang=subtitle_lang.strip() or None,
+        premiere_compat=1 if premiere_compat else 0,
+        clip_start=clip_start_sec,
+        clip_end=clip_end_sec,
+        # Only meaningful if this job ends up structurally eligible for the
+        # extension path anyway (_is_extension_eligible) - a token supplied
+        # for e.g. a clip or "лише відео" is just inert metadata, matching
+        # how a token that arrives via the wait-based flow is already
+        # handled.
+        po_token=po_token.strip() or None,
+        status="queued",
+        client_ip=client_ip,
+        client_id=client_id,
+        username=username,
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    submit_job(job.id)
+    return {"id": job.id}, 200
+
+
+def _job_status_payload(job: Download) -> dict:
+    return {
+        "id": job.id,
+        "status": job.status,
+        "progress": job.progress,
+        "eta_seconds": job.eta_seconds,
+        "title": job.title,
+        "error": job.error_message,
+        "filesize": job.filesize,
+        "auto_convert_id": job.auto_convert_id,
+        "premiere_compat": bool(job.premiere_compat),
+    }
+
+
 @app.post("/api/download")
 def create_download(
     request: Request,
@@ -260,57 +341,17 @@ def create_download(
 ):
     client_id = get_client_id(request, response)
     ip = request.client.host if request.client else "unknown"
-
-    url = url.strip()
-    if not url.startswith(("http://", "https://")):
-        return JSONResponse({"error": "Некоректне посилання"}, status_code=400)
-    if not is_url_allowed(url, db):
-        return JSONResponse({"error": "Це посилання вказує на заборонену адресу"}, status_code=400)
-    if not auth.check_download_rate_limit(f"dl:{ip}"):
-        return JSONResponse(
-            {"error": "Забагато завантажень поспіль. Спробуйте пізніше."}, status_code=429
-        )
-    if mode not in ("video", "video_only", "audio"):
-        mode = "video"
-
-    clip_start_sec = parse_timecode(clip_start)
-    clip_end_sec = parse_timecode(clip_end)
-    if clip_start and clip_start_sec is None:
-        return JSONResponse({"error": "Некоректний початковий таймкод"}, status_code=400)
-    if clip_end and clip_end_sec is None:
-        return JSONResponse({"error": "Некоректний кінцевий таймкод"}, status_code=400)
-    if clip_start_sec is not None and clip_end_sec is not None and clip_end_sec <= clip_start_sec:
-        return JSONResponse({"error": "Кінцевий таймкод має бути більшим за початковий"}, status_code=400)
-
-    job = Download(
-        url=url,
-        source=_source_from_url(url),
-        mode=mode,
-        quality=quality,
-        container=container,
-        subtitle_lang=subtitle_lang.strip() or None,
-        premiere_compat=1 if premiere_compat else 0,
-        clip_start=clip_start_sec,
-        clip_end=clip_end_sec,
-        # Only meaningful if this job ends up structurally eligible for the
-        # extension path anyway (_is_extension_eligible) - a token supplied
-        # for e.g. a clip or "лише відео" is just inert metadata, matching
-        # how a token that arrives via the wait-based flow is already
-        # handled. Comes from the extension's own on-page "Завантажити"
-        # button (see /api/extension/prefill) - the user watched the video
-        # in a real foreground tab, so this is already as fresh as it gets.
-        po_token=po_token.strip() or None,
-        status="queued",
-        client_ip=request.client.host if request.client else None,
-        client_id=client_id,
+    result, status_code = _create_download_job(
+        db,
+        url=url, mode=mode, quality=quality, container=container,
+        subtitle_lang=subtitle_lang, premiere_compat=premiere_compat,
+        clip_start=clip_start, clip_end=clip_end, po_token=po_token,
         username=request.session.get("site_username"),
+        client_id=client_id,
+        client_ip=request.client.host if request.client else None,
+        rate_limit_key=f"dl:{ip}",
     )
-    db.add(job)
-    db.commit()
-    db.refresh(job)
-
-    submit_job(job.id)
-    return {"id": job.id}
+    return JSONResponse(result, status_code=status_code)
 
 
 @app.get("/api/status/{job_id}")
@@ -318,17 +359,7 @@ def job_status(job_id: str, db: Session = Depends(get_db), _=Depends(require_sit
     job = db.get(Download, job_id)
     if not job:
         return JSONResponse({"error": "not found"}, status_code=404)
-    return {
-        "id": job.id,
-        "status": job.status,
-        "progress": job.progress,
-        "eta_seconds": job.eta_seconds,
-        "title": job.title,
-        "error": job.error_message,
-        "filesize": job.filesize,
-        "auto_convert_id": job.auto_convert_id,
-        "premiere_compat": bool(job.premiere_compat),
-    }
+    return _job_status_payload(job)
 
 
 @app.post("/api/cancel/{job_id}")
@@ -623,68 +654,77 @@ def extension_my_stats(db: Session = Depends(get_db), username: str = Depends(re
     return {"count": count}
 
 
-def _sanitize_extension_qualities(raw: str) -> list | None:
-    """The quality list relay.js reads out of the page's own YouTube player
-    response (capture.js) - not just the token. Untrusted client input, so
-    parsed defensively: wrong shape or too many entries and this just
-    quietly returns None, falling back to Obelisk's own probe exactly like
-    a plain pasted link would."""
-    if not raw:
-        return None
-    try:
-        data = json.loads(raw)
-    except ValueError:
-        return None
-    if not isinstance(data, list) or not data or len(data) > 30:
-        return None
-    result = []
-    for item in data[:30]:
-        if not isinstance(item, dict):
-            continue
-        value = item.get("value")
-        label = item.get("label")
-        if not isinstance(value, str) or not isinstance(label, str) or not value or not label:
-            continue
-        entry = {"value": value[:20], "label": label[:60]}
-        for key in ("video_bytes", "audio_bytes"):
-            n = item.get(key)
-            entry[key] = n if isinstance(n, (int, float)) and n > 0 else None
-        result.append(entry)
-    return result or None
-
-
-@app.post("/api/extension/prefill")
-def extension_create_prefill(
+@app.post("/api/extension/download")
+def extension_create_download(
+    request: Request,
     url: str = Form(...),
+    mode: str = Form("video"),
+    quality: str = Form("best"),
+    container: str = Form("mp4"),
+    subtitle_lang: str = Form(""),
+    premiere_compat: bool = Form(False),
+    clip_start: str = Form(""),
+    clip_end: str = Form(""),
     po_token: str = Form(""),
-    qualities: str = Form(""),
     db: Session = Depends(get_db),
-    _=Depends(require_extension_token),
+    username: str = Depends(require_extension_token),
 ):
-    """Called by background.js when the "Завантажити" button injected on
-    the YouTube page itself (relay.js) is clicked - hands off the current
-    video's URL, whatever PO token the page has already captured, and
-    whatever quality list it read out of the page's own player response,
-    so the new Obelisk tab that button opens can prefill the download form
-    without the url/token ever sitting in that tab's own address bar."""
+    """Bearer-authed mirror of /api/download for the "Завантажити" panel
+    injected directly on the YouTube page (relay.js) - the whole point is
+    never having to open the site at all, so this can't use the
+    session-cookie-based route. po_token here is whatever capture.js
+    already picked up from the page's own real, foreground playback -
+    already as fresh as it'll ever get, no wait-for-extension step needed
+    server-side (see downloader.py's _run_job)."""
+    ip = request.client.host if request.client else "unknown"
+    result, status_code = _create_download_job(
+        db,
+        url=url, mode=mode, quality=quality, container=container,
+        subtitle_lang=subtitle_lang, premiere_compat=premiere_compat,
+        clip_start=clip_start, clip_end=clip_end, po_token=po_token,
+        username=username,
+        client_id=None,
+        client_ip=request.client.host if request.client else None,
+        rate_limit_key=f"ext-dl:{ip}",
+    )
+    return JSONResponse(result, status_code=status_code)
+
+
+@app.get("/api/extension/status/{job_id}")
+def extension_job_status(job_id: str, db: Session = Depends(get_db), _=Depends(require_extension_token)):
+    job = db.get(Download, job_id)
+    if not job:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return _job_status_payload(job)
+
+
+@app.get("/api/extension/file/{job_id}")
+def extension_download_file(job_id: str, db: Session = Depends(get_db), _=Depends(require_extension_token)):
+    """Bearer-authed mirror of /api/file - background.js points
+    chrome.downloads.download() straight at this (with the bearer token as
+    a custom header) once /api/extension/status says the job is finished,
+    so the file lands on the user's device without a browser tab ever
+    touching the site."""
+    job = db.get(Download, job_id)
+    if not job or job.status != "finished" or not job.filepath or not os.path.exists(job.filepath):
+        return JSONResponse({"error": "Файл недоступний"}, status_code=404)
+    return FileResponse(job.filepath, filename=_download_filename(job))
+
+
+@app.get("/api/extension/formats")
+def extension_get_formats(url: str, db: Session = Depends(get_db), _=Depends(require_extension_token)):
+    """Bearer-authed mirror of /api/formats for the panel - used only for
+    its subtitle list, since the quality/resolution list itself already
+    comes straight from the page (capture.js), not this probe."""
     url = url.strip()
     if not url.startswith(("http://", "https://")):
         return JSONResponse({"error": "Некоректне посилання"}, status_code=400)
     if not is_url_allowed(url, db):
         return JSONResponse({"error": "Це посилання вказує на заборонену адресу"}, status_code=400)
-    prefill_id = create_prefill(url, po_token.strip() or None, _sanitize_extension_qualities(qualities))
-    return {"id": prefill_id}
-
-
-@app.get("/api/prefill/{prefill_id}")
-def get_prefill(prefill_id: str, _=Depends(require_site_access_api)):
-    """Read (and consume) a prefill handed off above - authenticated by
-    the normal site session, not the extension's bearer token, since this
-    is called from the downloader page itself, not the extension."""
-    entry = pop_prefill(prefill_id)
-    if not entry:
-        return JSONResponse({"error": "Посилання для заповнення форми більше не дійсне"}, status_code=404)
-    return entry
+    try:
+        return probe_qualities(url, db)
+    except Exception as e:
+        return JSONResponse({"error": str(e)[:300]}, status_code=400)
 
 
 @app.get("/extension/download")

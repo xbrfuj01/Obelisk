@@ -45,77 +45,205 @@
         url: location.href,
       });
     } else if (data.type === "qualities") {
-      // Purely local - unlike the token, the server never needs this on
-      // its own; it only matters bundled into a download-request below.
+      // Purely local - only ever read from here when the panel below is
+      // opened, never sent to the server on its own.
       latestQualities = data.qualities;
       latestQualitiesVideoId = videoIdFromUrl(location.href);
       console.log("[Obelisk] relay.js cached qualities for", location.href, data.qualities);
     }
   });
 
-  // -------- On-page "Завантажити" button --------
+  // -------- On-page "Завантажити" button + configuration panel --------
   // Injected next to the YouTube logo, video (watch) and Shorts pages
-  // only. Clicking it hands the current video's URL plus whatever PO
-  // token has already been captured above (waiting a short grace period
-  // for one if needed) to background.js, which opens a new Obelisk tab
-  // prefilled and ready to go. Far more reliable than the automatic
-  // background-tab flow (see downloader.py's _run_job): the token here
-  // comes from a real, foreground, actively-watched tab, not a hidden one
-  // YouTube may never even start playing in.
+  // only. Clicking it opens a small panel right there with the same
+  // options the site's own download form has (mode/quality/format/
+  // subtitles/timecodes/auto-convert) - confirming starts the job
+  // directly (POST /api/extension/download, bearer-authed) and hands it
+  // off to background.js, which polls it to completion and saves the
+  // finished file straight to disk via chrome.downloads. The whole point
+  // is never having to open the Obelisk site at all.
+  //
+  // (Investigated and ruled out: reusing the extension's own toolbar
+  // popup via chrome.action.openPopup() from background.js - Chrome only
+  // honors that call with an actual user-gesture flag, which does not
+  // survive a chrome.runtime.sendMessage hop from a content script.)
 
   const BTN_ID = "obelisk-bridge-download-btn";
+  const PANEL_ID = "obelisk-bridge-panel";
   const TOKEN_GRACE_MS = 4000;
 
   function isVideoPage() {
     return location.pathname === "/watch" || location.pathname.startsWith("/shorts/");
   }
 
-  function setButtonState(btn, state) {
-    btn.dataset.state = state;
-    btn.disabled = state === "loading";
-    btn.querySelector("span").textContent =
-      state === "loading" ? "..." : state === "done" ? "Готово" : state === "error" ? "Помилка" : "Obelisk";
+  function removePanel() {
+    const existing = document.getElementById(PANEL_ID);
+    if (existing) existing.remove();
   }
 
-  async function onButtonClick() {
-    const btn = document.getElementById(BTN_ID);
-    if (!btn) return;
-    setButtonState(btn, "loading");
+  function qualityOptionsHtml(qualities) {
+    let html = '<option value="best">Найкраща доступна</option>';
+    if (qualities && qualities.length) {
+      qualities.forEach(function (q) {
+        html += '<option value="' + q.value + '">' + q.label + "</option>";
+      });
+    }
+    return html;
+  }
+
+  async function getStoredConfig() {
+    const stored = await chrome.storage.local.get(["serverUrl", "token"]);
+    return { serverUrl: stored.serverUrl || "", token: stored.token || "" };
+  }
+
+  function loadSubtitlesInto(select, serverUrl, token, url) {
+    fetch(serverUrl.replace(/\/$/, "") + "/api/extension/formats?url=" + encodeURIComponent(url), {
+      headers: { Authorization: "Bearer " + token },
+    })
+      .then(function (res) {
+        return res.ok ? res.json() : null;
+      })
+      .then(function (data) {
+        select.innerHTML = '<option value="">Без субтитрів</option>';
+        if (data && Array.isArray(data.subtitles)) {
+          data.subtitles.forEach(function (s) {
+            const opt = document.createElement("option");
+            opt.value = s.code;
+            opt.textContent = s.label + (s.auto ? " (авто)" : "");
+            select.appendChild(opt);
+          });
+        }
+      })
+      .catch(function () {
+        select.innerHTML = '<option value="">Без субтитрів</option>';
+      });
+  }
+
+  async function submitDownload(panel, url, tokenForThisVideo) {
+    const confirmBtn = panel.querySelector(".obelisk-confirm-btn");
+    const statusEl = panel.querySelector(".obelisk-status");
+    confirmBtn.disabled = true;
+    statusEl.hidden = false;
+    statusEl.textContent = "Надсилаємо...";
+
+    const { serverUrl, token } = await getStoredConfig();
+    if (!serverUrl || !token) {
+      statusEl.textContent = "Розширення не підключено - увійдіть через його іконку в панелі браузера.";
+      confirmBtn.disabled = false;
+      return;
+    }
+
+    const body = new URLSearchParams({
+      url: url,
+      mode: panel.querySelector(".obelisk-mode").value,
+      quality: panel.querySelector(".obelisk-quality").value,
+      container: panel.querySelector(".obelisk-container").value,
+      subtitle_lang: panel.querySelector(".obelisk-subtitles").value,
+      premiere_compat: panel.querySelector(".obelisk-premiere").checked ? "true" : "false",
+      clip_start: panel.querySelector(".obelisk-clip-start").value,
+      clip_end: panel.querySelector(".obelisk-clip-end").value,
+      po_token: tokenForThisVideo || "",
+    });
+
+    try {
+      const res = await fetch(serverUrl.replace(/\/$/, "") + "/api/extension/download", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token, "Content-Type": "application/x-www-form-urlencoded" },
+        body: body.toString(),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        statusEl.textContent = data.error || "Помилка запуску завантаження";
+        confirmBtn.disabled = false;
+        return;
+      }
+      // From here, background.js owns getting this to the user's device -
+      // it'll keep polling and auto-save even if this tab is switched
+      // away from or closed outright.
+      chrome.runtime.sendMessage({ type: "download-started", jobId: data.id });
+      statusEl.textContent = "Завантаження розпочато на сервері - можна переходити на іншу вкладку.";
+      setTimeout(removePanel, 4000);
+    } catch (err) {
+      statusEl.textContent = "Не вдалося з'єднатися з сервером";
+      confirmBtn.disabled = false;
+    }
+  }
+
+  async function openPanel() {
+    removePanel();
     const url = location.href;
     const videoId = videoIdFromUrl(url);
 
+    const { serverUrl, token } = await getStoredConfig();
+    if (!serverUrl || !token) {
+      alert("Спершу увійдіть у розширення Obelisk Bridge через його іконку в панелі браузера.");
+      return;
+    }
+
+    // A just-opened video may not have a token yet even though playback
+    // has genuinely started - give it the same short grace period the
+    // automatic flow's own capture gets.
     const deadline = Date.now() + TOKEN_GRACE_MS;
     while ((!latestToken || latestTokenVideoId !== videoId) && Date.now() < deadline) {
       await new Promise(function (resolve) {
         setTimeout(resolve, 250);
       });
     }
+    const tokenForThisVideo = latestTokenVideoId === videoId ? latestToken : null;
+    const qualitiesForThisVideo = latestQualitiesVideoId === videoId ? latestQualities : null;
 
-    const qualitiesToSend = latestQualitiesVideoId === videoId ? latestQualities : null;
-    console.log(
-      "[Obelisk] sending download-request",
-      { url: url, hasToken: !!(latestTokenVideoId === videoId && latestToken), qualities: qualitiesToSend }
-    );
+    const panel = document.createElement("div");
+    panel.id = PANEL_ID;
+    panel.innerHTML =
+      '<div class="obelisk-panel-header"><span>Obelisk</span>' +
+      '<button type="button" class="obelisk-panel-close" aria-label="Закрити">×</button></div>' +
+      '<div class="obelisk-panel-body">' +
+      '<label class="obelisk-field"><span>Тип завантаження</span>' +
+      '<select class="obelisk-mode">' +
+      '<option value="video">Відео + аудіо</option>' +
+      '<option value="video_only">Лише відео</option>' +
+      '<option value="audio">Лише аудіо</option>' +
+      "</select></label>" +
+      '<label class="obelisk-field obelisk-quality-field"><span>Якість</span>' +
+      '<select class="obelisk-quality">' + qualityOptionsHtml(qualitiesForThisVideo) + "</select></label>" +
+      '<label class="obelisk-field"><span>Формат файлу</span>' +
+      '<select class="obelisk-container"><option value="mp4">MP4</option><option value="webm">WebM</option><option value="mkv">MKV</option></select></label>' +
+      '<label class="obelisk-field"><span>Субтитри</span>' +
+      '<select class="obelisk-subtitles"><option value="">Завантаження...</option></select></label>' +
+      '<div class="obelisk-clip-row">' +
+      '<label class="obelisk-field"><span>Початок</span><input type="text" class="obelisk-clip-start" placeholder="00:00:00"></label>' +
+      '<label class="obelisk-field"><span>Кінець</span><input type="text" class="obelisk-clip-end" placeholder="99:99:99"></label>' +
+      "</div>" +
+      '<label class="obelisk-checkbox-row"><input type="checkbox" class="obelisk-premiere" checked>' +
+      "<span>Сумісність з відеоредакторами</span></label>" +
+      '<p class="obelisk-status" hidden></p>' +
+      '<button type="button" class="obelisk-confirm-btn">Підтвердити завантаження</button>' +
+      "</div>";
+    document.body.appendChild(panel);
 
-    chrome.runtime.sendMessage(
-      {
-        type: "download-request",
-        url: url,
-        token: latestTokenVideoId === videoId ? latestToken : null,
-        // Whatever the page's own player response already told us about
-        // available resolutions - opportunistic, not waited for
-        // separately, since Obelisk's own probe is a fine fallback if
-        // this hasn't shown up yet.
-        qualities: qualitiesToSend,
-      },
-      function (response) {
-        const ok = !chrome.runtime.lastError && response && response.ok;
-        setButtonState(btn, ok ? "done" : "error");
-        setTimeout(function () {
-          if (document.getElementById(BTN_ID) === btn) setButtonState(btn, "idle");
-        }, 2000);
-      }
-    );
+    panel.querySelector(".obelisk-panel-close").addEventListener("click", removePanel);
+
+    const modeSelect = panel.querySelector(".obelisk-mode");
+    const qualityField = panel.querySelector(".obelisk-quality-field");
+    function updateFieldsForMode() {
+      qualityField.hidden = modeSelect.value === "audio";
+    }
+    modeSelect.addEventListener("change", updateFieldsForMode);
+    updateFieldsForMode();
+
+    loadSubtitlesInto(panel.querySelector(".obelisk-subtitles"), serverUrl, token, url);
+
+    panel.querySelector(".obelisk-confirm-btn").addEventListener("click", function () {
+      submitDownload(panel, url, tokenForThisVideo);
+    });
+  }
+
+  function onButtonClick() {
+    if (document.getElementById(PANEL_ID)) {
+      removePanel();
+      return;
+    }
+    openPanel();
   }
 
   function makeButton() {
@@ -156,9 +284,25 @@
       "height:36px;border-radius:18px;border:none;cursor:pointer;background:#3e6ae1;color:#fff;" +
       "font:500 13px/1 Roboto,Arial,sans-serif;flex:none;white-space:nowrap;}" +
       "#" + BTN_ID + ":hover{background:#345bc4;}" +
-      "#" + BTN_ID + ":disabled{opacity:.65;cursor:default;}" +
-      "#" + BTN_ID + "[data-state=\"done\"]{background:#1a9469;}" +
-      "#" + BTN_ID + "[data-state=\"error\"]{background:#d6394e;}";
+      "#" + PANEL_ID + "{position:fixed;top:64px;right:16px;width:280px;z-index:2147483647;" +
+      "background:#15181e;color:#e6e8ec;border:1px solid #333844;border-radius:12px;" +
+      "box-shadow:0 12px 30px rgba(0,0,0,.4);font:13px/1.4 Roboto,Arial,sans-serif;overflow:hidden;}" +
+      "#" + PANEL_ID + " .obelisk-panel-header{display:flex;align-items:center;justify-content:space-between;" +
+      "padding:10px 14px;font-weight:600;border-bottom:1px solid #262b38;}" +
+      "#" + PANEL_ID + " .obelisk-panel-close{background:none;border:none;color:#9aa2b1;font-size:18px;" +
+      "line-height:1;cursor:pointer;padding:0 2px;}" +
+      "#" + PANEL_ID + " .obelisk-panel-body{padding:12px 14px;display:flex;flex-direction:column;gap:10px;}" +
+      "#" + PANEL_ID + " .obelisk-field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#9aa2b1;}" +
+      "#" + PANEL_ID + " select,#" + PANEL_ID + " input[type=text]{background:#0e1017;color:#e6e8ec;" +
+      "border:1px solid #333844;border-radius:6px;padding:6px 8px;font-size:13px;}" +
+      "#" + PANEL_ID + " .obelisk-clip-row{display:flex;gap:8px;}" +
+      "#" + PANEL_ID + " .obelisk-clip-row .obelisk-field{flex:1;}" +
+      "#" + PANEL_ID + " .obelisk-checkbox-row{display:flex;align-items:center;gap:8px;font-size:12px;color:#e6e8ec;}" +
+      "#" + PANEL_ID + " .obelisk-status{margin:0;font-size:12px;color:#9aa2b1;}" +
+      "#" + PANEL_ID + " .obelisk-confirm-btn{background:#3e6ae1;color:#fff;border:none;border-radius:8px;" +
+      "padding:9px;font-size:13px;font-weight:500;cursor:pointer;}" +
+      "#" + PANEL_ID + " .obelisk-confirm-btn:hover{background:#345bc4;}" +
+      "#" + PANEL_ID + " .obelisk-confirm-btn:disabled{opacity:.6;cursor:default;}";
     document.documentElement.appendChild(style);
   }
 
@@ -189,6 +333,7 @@
       latestQualities = null;
       latestQualitiesVideoId = null;
     }
+    removePanel();
     ensureButton();
   });
 

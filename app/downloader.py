@@ -2,7 +2,6 @@ import collections
 import ipaddress
 import os
 import re
-import secrets
 import shutil
 import socket
 import subprocess
@@ -67,44 +66,6 @@ _log_buffer = collections.deque(maxlen=5000)
 def get_recent_logs() -> str:
     with _log_buffer_lock:
         return "".join(_log_buffer)
-
-
-# Short-lived handoff for the extension's on-page "Завантажити" button
-# (injected into the YouTube masthead - see extension/relay.js): clicking
-# it captures whatever PO token the page has already picked up and asks
-# the server to hold onto it just long enough for a new Obelisk tab to
-# read it back and prefill the download form - there's no Download row
-# yet at this point (mode/quality aren't chosen until that form is
-# submitted), so this can't just reuse the Download.po_token column the
-# wait-based flow uses. In-memory only (no durability needed for
-# something this short-lived) and single-use - popped on first read.
-_prefill_lock = threading.Lock()
-_prefill_store = {}
-PREFILL_TTL_SECONDS = 120
-
-
-def create_prefill(url: str, po_token: str | None, qualities: list | None = None) -> str:
-    now = time.time()
-    prefill_id = secrets.token_urlsafe(16)
-    with _prefill_lock:
-        expired = [k for k, v in _prefill_store.items() if v["expires_at"] < now]
-        for k in expired:
-            del _prefill_store[k]
-        _prefill_store[prefill_id] = {
-            "url": url,
-            "po_token": po_token,
-            "qualities": qualities,
-            "expires_at": now + PREFILL_TTL_SECONDS,
-        }
-    return prefill_id
-
-
-def pop_prefill(prefill_id: str):
-    with _prefill_lock:
-        entry = _prefill_store.pop(prefill_id, None)
-    if not entry or entry["expires_at"] < time.time():
-        return None
-    return {"url": entry["url"], "po_token": entry["po_token"], "qualities": entry.get("qualities")}
 
 
 sys.stdout = _ThreadAwareMuter(sys.stdout)

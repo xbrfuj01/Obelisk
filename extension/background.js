@@ -1,8 +1,19 @@
 // Obelisk Bridge background service worker.
 //
-// Flow: poll GET /api/extension/next-job -> open a background tab to that
-// video -> wait for content-script.js/capture.js's relay to report a PO
-// token for that tab -> POST /api/extension/po-token -> close the tab.
+// Two independent jobs share the same polling heartbeat below:
+//
+// 1. Automatic background-tab flow (fallback for a plain pasted link):
+//    poll GET /api/extension/next-job -> open a background tab to that
+//    video -> wait for capture.js/relay.js to report a PO token for that
+//    tab -> POST /api/extension/po-token -> close the tab.
+// 2. The "Завантажити" panel injected on the YouTube page itself
+//    (relay.js) starts a job directly via POST /api/extension/download
+//    and just tells this file the job id (see the "download-started"
+//    listener below) - from there, THIS file owns polling
+//    /api/extension/status/<id> and, once finished, saving the file to
+//    the user's device via chrome.downloads. Deliberately not the
+//    panel's own job: the panel's JS dies if its tab is closed, but a
+//    download started from it should still finish and save even then.
 //
 // Polls two ways: a plain setInterval for fast response whenever the
 // worker happens to already be alive, PLUS chrome.alarms as a guaranteed
@@ -15,6 +26,9 @@
 const POLL_INTERVAL_MS = 5000;
 const ALARM_NAME = "obelisk-bridge-poll";
 const TOKEN_WAIT_TIMEOUT_MS = 30000;
+// Persisted (not just in-memory) so a job started right before the
+// service worker gets killed and restarted isn't silently forgotten.
+const PENDING_DOWNLOADS_KEY = "pendingDownloads";
 
 let pollTimer = null;
 // job_id -> { tabId, resolve } while a background tab is open and we're
@@ -103,48 +117,83 @@ chrome.runtime.onMessage.addListener(function (message, sender) {
   }
 });
 
-// The "Завантажити" button relay.js injects into the YouTube page itself
-// (next to the logo, on watch/Shorts pages) sends this instead of going
-// through the poll/hidden-tab dance above - the token it carries (if any)
-// was already captured from a real, actively-watched foreground tab, so
-// there's nothing to wait for here beyond the one request below.
-chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
-  if (!message || message.type !== "download-request") return;
-  (async function () {
+async function getPendingDownloads() {
+  const stored = await chrome.storage.local.get([PENDING_DOWNLOADS_KEY]);
+  return stored[PENDING_DOWNLOADS_KEY] || [];
+}
+
+async function addPendingDownload(jobId) {
+  const pending = await getPendingDownloads();
+  if (!pending.includes(jobId)) {
+    pending.push(jobId);
+    await chrome.storage.local.set({ [PENDING_DOWNLOADS_KEY]: pending });
+  }
+}
+
+async function removePendingDownload(jobId) {
+  const pending = await getPendingDownloads();
+  const next = pending.filter(function (id) {
+    return id !== jobId;
+  });
+  await chrome.storage.local.set({ [PENDING_DOWNLOADS_KEY]: next });
+}
+
+async function checkPendingDownloads() {
+  const pending = await getPendingDownloads();
+  if (!pending.length) return;
+  const { serverUrl, token } = await getConfig();
+  if (!serverUrl || !token) return;
+
+  for (const jobId of pending) {
+    let status;
     try {
-      const { serverUrl } = await getConfig();
-      if (!serverUrl) throw new Error("not configured");
-      const body =
-        "url=" + encodeURIComponent(message.url) +
-        "&po_token=" + encodeURIComponent(message.token || "") +
-        "&qualities=" + encodeURIComponent(message.qualities ? JSON.stringify(message.qualities) : "");
-      const res = await apiFetch("/api/extension/prefill", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: body,
-      });
-      if (!res.ok) throw new Error("prefill failed");
-      const data = await res.json();
-      if (!data.id) throw new Error("no prefill id");
-      await chrome.tabs.create({
-        url: serverUrl.replace(/\/$/, "") + "/downloader?prefill=" + encodeURIComponent(data.id),
-        active: true,
-      });
-      sendResponse({ ok: true });
+      const res = await apiFetch("/api/extension/status/" + encodeURIComponent(jobId));
+      if (!res.ok) continue; // transient error - try again next tick
+      status = await res.json();
     } catch (err) {
-      sendResponse({ ok: false });
+      continue;
     }
-  })();
-  return true; // keep the message channel open for the async work above
+    if (!status || !status.status || status.status === "error") {
+      await removePendingDownload(jobId);
+      continue;
+    }
+    if (status.status !== "finished") continue;
+
+    await removePendingDownload(jobId);
+    chrome.downloads
+      .download({
+        url: serverUrl.replace(/\/$/, "") + "/api/extension/file/" + encodeURIComponent(jobId),
+        // Reuses the extension's own bearer auth instead of needing a
+        // site session cookie - this is the whole point of the flow:
+        // the file lands on disk without ever opening the site.
+        headers: [{ name: "Authorization", value: "Bearer " + token }],
+      })
+      .catch(function () {});
+  }
+}
+
+// The "Завантажити" panel injected on the YouTube page itself (relay.js)
+// creates the Download job directly (POST /api/extension/download) and
+// only tells this file the resulting id - from here on this file, not
+// the panel, owns getting it to the user's device, so the job still
+// finishes and saves even if that YouTube tab is closed.
+chrome.runtime.onMessage.addListener(function (message) {
+  if (!message || message.type !== "download-started" || !message.jobId) return;
+  addPendingDownload(message.jobId).then(checkPendingDownloads);
 });
+
+function tick() {
+  pollOnce();
+  checkPendingDownloads();
+}
 
 function startPolling() {
   if (pollTimer) return;
-  pollTimer = setInterval(pollOnce, POLL_INTERVAL_MS);
+  pollTimer = setInterval(tick, POLL_INTERVAL_MS);
   // periodInMinutes: 1 is the safe, portable minimum (unpacked/dev-mode
   // extensions can go shorter, but this works the same everywhere).
   chrome.alarms.create(ALARM_NAME, { periodInMinutes: 1 });
-  pollOnce();
+  tick();
 }
 
 function stopPolling() {
@@ -154,7 +203,7 @@ function stopPolling() {
 }
 
 chrome.alarms.onAlarm.addListener(function (alarm) {
-  if (alarm.name === ALARM_NAME) pollOnce();
+  if (alarm.name === ALARM_NAME) tick();
 });
 
 chrome.storage.local.get(["token"], function (stored) {
