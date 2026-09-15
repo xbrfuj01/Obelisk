@@ -257,7 +257,10 @@ def probe_qualities(url: str, db):
         raise RuntimeError("Це посилання вказує на заборонену адресу")
     ydl_opts = {
         "quiet": True,
-        "no_warnings": True,
+        # See the matching comment in _run_job's ydl_opts - needed for the
+        # real client-by-client failure reason to reach docker logs at all.
+        "no_warnings": False,
+        "verbose": True,
         "noplaylist": True,
         "skip_download": True,
         "extractor_args": YOUTUBE_EXTRACTOR_ARGS,
@@ -501,7 +504,14 @@ def _run_job(job_id: str):
             "outtmpl": outtmpl,
             "noplaylist": True,
             "quiet": True,
-            "no_warnings": True,
+            # False/True (not the usual True/False) so yt-dlp's own
+            # [debug]/warning trail actually reaches the container's stdout
+            # instead of vanishing - with no custom "logger" set, this is
+            # the only way to see *which* client failed and why on a real
+            # failure like "The page needs to be reloaded" (yt-dlp's own
+            # generic message once every client comes up empty).
+            "no_warnings": False,
+            "verbose": True,
             "progress_hooks": [lambda d: _progress_hook(job_id, d, progress_state)],
             "extractor_args": YOUTUBE_EXTRACTOR_ARGS,
         }
