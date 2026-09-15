@@ -32,6 +32,7 @@
       // its own; it only matters bundled into a download-request below.
       latestQualities = data.qualities;
       latestQualitiesUrl = location.href;
+      console.log("[Obelisk] relay.js cached qualities for", location.href, data.qualities);
     }
   });
 
@@ -72,6 +73,12 @@
       });
     }
 
+    const qualitiesToSend = latestQualitiesUrl === url ? latestQualities : null;
+    console.log(
+      "[Obelisk] sending download-request",
+      { url: url, hasToken: !!(latestTokenUrl === url && latestToken), qualities: qualitiesToSend }
+    );
+
     chrome.runtime.sendMessage(
       {
         type: "download-request",
@@ -81,7 +88,7 @@
         // available resolutions - opportunistic, not waited for
         // separately, since Obelisk's own probe is a fine fallback if
         // this hasn't shown up yet.
-        qualities: latestQualitiesUrl === url ? latestQualities : null,
+        qualities: qualitiesToSend,
       },
       function (response) {
         const ok = !chrome.runtime.lastError && response && response.ok;

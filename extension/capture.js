@@ -64,7 +64,10 @@
 
   function extractQualities(playerResponse) {
     const streamingData = playerResponse && playerResponse.streamingData;
-    if (!streamingData) return null;
+    if (!streamingData) {
+      console.log("[Obelisk] extractQualities: no streamingData in player response", playerResponse);
+      return null;
+    }
     const allFormats = [].concat(streamingData.formats || [], streamingData.adaptiveFormats || []);
     const byHeight = {};
     let bestAudioBytes = null;
@@ -86,7 +89,10 @@
       .sort(function (a, b) {
         return b - a;
       });
-    if (!heights.length) return null;
+    if (!heights.length) {
+      console.log("[Obelisk] extractQualities: streamingData had formats but none with a height", streamingData);
+      return null;
+    }
     return heights.map(function (h) {
       const entry = byHeight[h];
       let label = entry.width ? entry.width + "×" + h : h + "p";
@@ -97,6 +103,7 @@
 
   function reportQualities(qualities) {
     if (!qualities || !qualities.length) return;
+    console.log("[Obelisk] captured qualities from player response:", qualities);
     window.postMessage({ __obeliskBridge: true, type: "qualities", qualities: qualities }, "*");
   }
 
@@ -149,6 +156,7 @@
     }
     const result = originalFetch.apply(this, arguments);
     if (isPlayerRequestUrl(url)) {
+      console.log("[Obelisk] intercepted fetch to player endpoint:", url);
       result
         .then(function (res) {
           return res.clone().json();
@@ -156,7 +164,9 @@
         .then(function (json) {
           reportQualities(extractQualities(json));
         })
-        .catch(function () {});
+        .catch(function (err) {
+          console.log("[Obelisk] failed to read player fetch response as JSON:", err);
+        });
     }
     return result;
   };
@@ -181,11 +191,12 @@
       // ignore
     }
     if (this.__obeliskIsPlayerRequest) {
+      console.log("[Obelisk] intercepted XHR to player endpoint");
       this.addEventListener("load", function () {
         try {
           reportQualities(extractQualities(JSON.parse(this.responseText)));
         } catch (err) {
-          // not JSON, or shape we don't recognize - ignore
+          console.log("[Obelisk] failed to parse player XHR response as JSON:", err);
         }
       });
     }
@@ -200,9 +211,11 @@
   const initialCheckTimer = setInterval(function () {
     initialCheckAttempts += 1;
     if (window.ytInitialPlayerResponse) {
+      console.log("[Obelisk] found window.ytInitialPlayerResponse");
       reportQualities(extractQualities(window.ytInitialPlayerResponse));
       clearInterval(initialCheckTimer);
     } else if (initialCheckAttempts > 40) {
+      console.log("[Obelisk] window.ytInitialPlayerResponse never appeared after 10s");
       clearInterval(initialCheckTimer);
     }
   }, 250);
