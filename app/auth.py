@@ -168,10 +168,15 @@ def get_extension_token_owner(db: Session, token: str) -> str | None:
     return row.username
 
 
-# How recently an extension must have polled for it to count as "live" -
-# generous enough to survive a full gap between chrome.alarms firings
-# (every ~1 minute) without a false negative.
-EXTENSION_RECENTLY_SEEN_SECONDS = 90
+# How recently an extension must have polled for it to count as "live".
+# 90s (one alarm gap) turned out too tight in practice - real dispatch
+# attempts kept missing it even right after confirming "Активний" in the
+# admin peers list, most likely because that confirmation step itself eats
+# into the window before the actual download click. 180s trades a bit of
+# staleness tolerance (a genuinely closed browser still gets noticed
+# within 3 minutes) for not missing a live extension over ordinary
+# human-speed testing/usage.
+EXTENSION_RECENTLY_SEEN_SECONDS = 180
 
 
 def has_recent_extension_activity(db: Session) -> bool:

@@ -774,7 +774,12 @@ def _run_job(job_id: str):
 
         engine_used = None
 
-        if _is_extension_eligible(job) and auth.has_recent_extension_activity(db):
+        extension_eligible = _is_extension_eligible(job)
+        extension_live = auth.has_recent_extension_activity(db) if extension_eligible else False
+        if extension_eligible and not extension_live:
+            print(f"[extension] {job_id}: жодного розширення не бачили останні {auth.EXTENSION_RECENTLY_SEEN_SECONDS}с, одразу стандартний рушій", flush=True)
+
+        if extension_eligible and extension_live:
             # An Obelisk Bridge install has polled recently, so it's worth
             # waiting for it - release the gate slot for the wait so a
             # stalled/slow extension can't block other downloads from
