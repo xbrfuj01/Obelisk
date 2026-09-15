@@ -637,7 +637,14 @@ def _ensure_no_audio(filepath: str) -> None:
         print(f"[video_only] {filepath}: probe found no audio codec ({probed}), nothing to strip", flush=True)
         return
     print(f"[video_only] {filepath}: probed acodec={probed.get('acodec')!r}, stripping audio", flush=True)
-    tmp_path = filepath + ".noaudio.tmp"
+    # Must keep the real extension (e.g. ".mp4") at the end, not just
+    # append ".tmp" - ffmpeg picks its output muxer from the destination
+    # filename's extension when -f isn't given explicitly, and a bare
+    # ".tmp" suffix left it unable to choose one at all ("Unable to choose
+    # an output format ... Invalid argument"), failing every single
+    # video_only job that actually had audio to strip.
+    root, ext = os.path.splitext(filepath)
+    tmp_path = f"{root}.noaudio{ext}"
     try:
         result = subprocess.run(
             ["ffmpeg", "-y", "-i", filepath, "-c", "copy", "-an", tmp_path],
