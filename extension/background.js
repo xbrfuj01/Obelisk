@@ -185,16 +185,33 @@ const finalizingJobs = new Set();
 async function pollTasks() {
   const tasks = await getTasks();
   const idsToCheck = Object.keys(tasks).filter(function (id) {
-    return ACTIVE_STATUSES.indexOf(tasks[id].status) !== -1 && !finalizingJobs.has(id);
+    return ACTIVE_STATUSES.indexOf(tasks[id].status) !== -1;
   });
   if (!idsToCheck.length) return;
   const { serverUrl, token } = await getConfig();
   if (!serverUrl || !token) return;
 
   for (const jobId of idsToCheck) {
+    // Claiming happens synchronously (no await since the check on the same
+    // line), so it fully closes the race against another *concurrently
+    // starting* invocation reaching this same job. It does NOT by itself
+    // rule out a *third*, already-finished invocation having fully
+    // processed and released this exact job in the time between this
+    // function's own idsToCheck snapshot above and this loop iteration
+    // (there's an await - getConfig() - in between) - the fresh re-read
+    // right after claiming below is what catches that case (a real bug
+    // this exact gap caused in practice: a job still got downloaded twice
+    // even with the claim in place, because the stale idsToCheck array
+    // still listed a job an earlier, already-completed invocation had
+    // already saved and released).
+    if (finalizingJobs.has(jobId)) continue;
     finalizingJobs.add(jobId);
     let releaseClaim = true;
     try {
+      const freshTasks = await getTasks();
+      const freshTask = freshTasks[jobId];
+      if (!freshTask || ACTIVE_STATUSES.indexOf(freshTask.status) === -1) continue;
+
       let status;
       try {
         const res = await apiFetch("/api/extension/status/" + encodeURIComponent(jobId));
@@ -209,7 +226,7 @@ async function pollTasks() {
         await upsertTask(jobId, {
           status: "error",
           error: status.error || "Помилка завантаження",
-          title: status.title || tasks[jobId].title,
+          title: status.title || freshTask.title,
         });
         continue;
       }
@@ -218,7 +235,7 @@ async function pollTasks() {
           status: status.status,
           progress: status.progress,
           etaSeconds: status.eta_seconds,
-          title: status.title || tasks[jobId].title,
+          title: status.title || freshTask.title,
         });
         continue;
       }
@@ -228,7 +245,7 @@ async function pollTasks() {
       // this job claimed until the save itself resolves, so no other
       // overlapping poll can re-trigger it in the meantime.
       releaseClaim = false;
-      await upsertTask(jobId, { status: "finished", progress: 100, title: status.title || tasks[jobId].title });
+      await upsertTask(jobId, { status: "finished", progress: 100, title: status.title || freshTask.title });
       const fileUrl = serverUrl.replace(/\/$/, "") + "/api/extension/file/" + encodeURIComponent(jobId);
       chrome.downloads.download(
         {
