@@ -4,32 +4,64 @@
 <meta charset="UTF-8">
 <title>Obelisk Bridge</title>
 <style>
-  body { width: 260px; font-family: system-ui, sans-serif; padding: 14px; background: #15181e; color: #e6e8ec; }
-  h1 { font-size: 15px; margin: 0 0 10px; }
+  body { width: 300px; font-family: system-ui, sans-serif; padding: 14px; background: #15181e; color: #e6e8ec; box-sizing: border-box; }
+  .popup-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  h1 { font-size: 15px; margin: 0; }
+  .round-icon-btn { width: 28px; height: 28px; border-radius: 50%; border: 1px solid #333844; background: #0e1017; color: #9aa2b1; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; flex: none; }
+  .round-icon-btn:hover { background: #1c2029; color: #e6e8ec; }
+  .round-icon-btn svg { width: 15px; height: 15px; }
+
   label { display: block; font-size: 12px; color: #9aa2b1; margin: 8px 0 4px; }
   input { width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 6px; border: 1px solid #333844; background: #0e1017; color: #e6e8ec; font-size: 13px; }
-  button { width: 100%; margin-top: 12px; padding: 8px; border-radius: 6px; border: none; background: #3e6ae1; color: #fff; font-size: 13px; cursor: pointer; }
-  button:hover { background: #345bc4; }
-  button.secondary { background: transparent; border: 1px solid #333844; color: #e6e8ec; }
+  button.action { width: 100%; margin-top: 12px; padding: 8px; border-radius: 6px; border: none; background: #3e6ae1; color: #fff; font-size: 13px; cursor: pointer; }
+  button.action:hover { background: #345bc4; }
+  button.action.secondary { background: transparent; border: 1px solid #333844; color: #e6e8ec; }
   p.status { font-size: 12px; margin: 0 0 10px; }
   p.status.ok { color: #3ecf8e; }
   p.status.err { color: #ff6b7d; }
+
+  .task-list { display: flex; flex-direction: column; gap: 8px; max-height: 340px; overflow-y: auto; }
+  .task { border: 1px solid #262b38; border-radius: 8px; padding: 8px 10px; }
+  .task-title { font-size: 12px; font-weight: 500; margin: 0 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .task-status { font-size: 11px; color: #9aa2b1; margin: 0; }
+  .task-status.ok { color: #3ecf8e; }
+  .task-status.err { color: #ff6b7d; }
+  progress.task-progress { display: block; width: 100%; height: 5px; margin-top: 6px; accent-color: #3e6ae1; border: none; }
+  .empty-hint { font-size: 12px; color: #9aa2b1; text-align: center; padding: 24px 4px; line-height: 1.4; }
+  .clear-btn { width: 100%; margin-top: 10px; padding: 6px; border-radius: 6px; border: 1px solid #333844; background: transparent; color: #9aa2b1; font-size: 12px; cursor: pointer; }
+  .clear-btn:hover { color: #e6e8ec; }
 </style>
 </head>
 <body>
-  <h1>Obelisk Bridge</h1>
-  <div id="logged-out">
-    <label>Адреса Obelisk<input type="text" id="server-url" placeholder="https://obelisk.example.com" value="https://obelisk.o4.co.ua"></label>
-    <label>Логін<input type="text" id="username" autocomplete="username"></label>
-    <label>Пароль<input type="password" id="password" autocomplete="current-password"></label>
-    <p class="status err" id="error" hidden></p>
-    <button type="button" id="login-btn">Увійти</button>
+  <div class="popup-header">
+    <h1>Obelisk Bridge</h1>
+    <button type="button" class="round-icon-btn" id="account-toggle" title="Акаунт" aria-label="Акаунт">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>
+    </button>
   </div>
-  <div id="logged-in" hidden>
-    <p class="status ok" id="connected-as"></p>
-    <p class="status ok" id="extension-counter" hidden></p>
-    <button type="button" class="secondary" id="logout-btn">Вийти</button>
+
+  <div id="tasks-view">
+    <div class="task-list" id="task-list"></div>
+    <p class="empty-hint" id="tasks-empty" hidden>Немає завантажень. Перейдіть на відео на YouTube і натисніть кнопку «Obelisk».</p>
+    <button type="button" class="clear-btn" id="clear-finished" hidden>Очистити завершені</button>
   </div>
+
+  <div id="account-view" hidden>
+    <div id="logged-out">
+      <label>Адреса Obelisk<input type="text" id="server-url" placeholder="https://obelisk.example.com" value="https://obelisk.o4.co.ua"></label>
+      <label>Логін<input type="text" id="username" autocomplete="username"></label>
+      <label>Пароль<input type="password" id="password" autocomplete="current-password"></label>
+      <p class="status err" id="error" hidden></p>
+      <button type="button" class="action" id="login-btn">Увійти</button>
+    </div>
+    <div id="logged-in" hidden>
+      <p class="status ok" id="connected-as"></p>
+      <p class="status ok" id="extension-counter" hidden></p>
+      <button type="button" class="action secondary" id="logout-btn">Вийти</button>
+    </div>
+    <button type="button" class="action secondary" id="back-to-tasks">← До завантажень</button>
+  </div>
+
   <script src="popup.js"></script>
 </body>
 </html>

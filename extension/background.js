@@ -16,6 +16,14 @@
 //    JS dies if its tab is closed, but a download started from it should
 //    still finish and save even then.
 //
+// Every tracked download's full state (status/progress/title/error) lives
+// in chrome.storage.local under TASKS_KEY, keyed by job id - the single
+// source of truth both the in-page panel (relay.js, while it's still
+// open) and the toolbar popup (popup.js) render from via
+// chrome.storage.onChanged, instead of each polling the server
+// themselves. This is also what lets the popup show "current tasks" even
+// after the panel that started a download has been closed.
+//
 // Polls two ways: a plain setInterval for fast response whenever the
 // worker happens to already be alive, PLUS chrome.alarms as a guaranteed
 // floor - MV3 can terminate an idle service worker at any time (nothing
@@ -29,7 +37,14 @@ const ALARM_NAME = "obelisk-bridge-poll";
 const TOKEN_WAIT_TIMEOUT_MS = 30000;
 // Persisted (not just in-memory) so a job started right before the
 // service worker gets killed and restarted isn't silently forgotten.
-const PENDING_DOWNLOADS_KEY = "pendingDownloads";
+const TASKS_KEY = "obeliskTasks";
+// Terminal states are kept around (not deleted) so the popup can still
+// show "Збережено"/"Помилка" after the fact - only capped in count, not
+// time, to keep this simple. Oldest terminal entries are dropped first
+// once the cap is hit.
+const MAX_TASKS = 20;
+const TERMINAL_STATUSES = ["saved", "save_error", "error"];
+const ACTIVE_STATUSES = ["queued", "waiting_extension", "downloading", "finished"];
 
 let pollTimer = null;
 // job_id -> { tabId, resolve } while a background tab is open and we're
@@ -118,62 +133,84 @@ chrome.runtime.onMessage.addListener(function (message, sender) {
   }
 });
 
-async function getPendingDownloads() {
-  const stored = await chrome.storage.local.get([PENDING_DOWNLOADS_KEY]);
-  return stored[PENDING_DOWNLOADS_KEY] || [];
+// ---- Task tracking (panel-submitted downloads) ----
+
+async function getTasks() {
+  const stored = await chrome.storage.local.get([TASKS_KEY]);
+  return stored[TASKS_KEY] || {};
 }
 
-async function addPendingDownload(jobId) {
-  const pending = await getPendingDownloads();
-  if (!pending.includes(jobId)) {
-    pending.push(jobId);
-    await chrome.storage.local.set({ [PENDING_DOWNLOADS_KEY]: pending });
-    console.log("[Obelisk] tracking pending download", jobId, "- now tracking:", pending);
+async function saveTasks(tasks) {
+  await chrome.storage.local.set({ [TASKS_KEY]: tasks });
+}
+
+async function upsertTask(jobId, patch) {
+  const tasks = await getTasks();
+  tasks[jobId] = Object.assign(
+    { id: jobId, createdAt: Date.now() },
+    tasks[jobId] || {},
+    patch,
+    { updatedAt: Date.now() }
+  );
+  const ids = Object.keys(tasks);
+  if (ids.length > MAX_TASKS) {
+    const terminal = ids
+      .filter(function (id) {
+        return TERMINAL_STATUSES.indexOf(tasks[id].status) !== -1;
+      })
+      .sort(function (a, b) {
+        return (tasks[a].updatedAt || 0) - (tasks[b].updatedAt || 0);
+      });
+    while (Object.keys(tasks).length > MAX_TASKS && terminal.length) {
+      delete tasks[terminal.shift()];
+    }
   }
+  await saveTasks(tasks);
+  return tasks[jobId];
 }
 
-async function removePendingDownload(jobId) {
-  const pending = await getPendingDownloads();
-  const next = pending.filter(function (id) {
-    return id !== jobId;
+async function pollTasks() {
+  const tasks = await getTasks();
+  const activeIds = Object.keys(tasks).filter(function (id) {
+    return ACTIVE_STATUSES.indexOf(tasks[id].status) !== -1;
   });
-  await chrome.storage.local.set({ [PENDING_DOWNLOADS_KEY]: next });
-}
-
-async function checkPendingDownloads() {
-  const pending = await getPendingDownloads();
-  if (!pending.length) return;
-  console.log("[Obelisk] checking pending downloads:", pending);
+  if (!activeIds.length) return;
   const { serverUrl, token } = await getConfig();
-  if (!serverUrl || !token) {
-    console.log("[Obelisk] checkPendingDownloads: not configured (no serverUrl/token), skipping");
-    return;
-  }
+  if (!serverUrl || !token) return;
 
-  for (const jobId of pending) {
+  for (const jobId of activeIds) {
     let status;
     try {
       const res = await apiFetch("/api/extension/status/" + encodeURIComponent(jobId));
-      if (!res.ok) {
-        console.log("[Obelisk]", jobId, ": status check failed with HTTP", res.status);
-        continue; // transient error - try again next tick
-      }
+      if (!res.ok) continue; // transient error - try again next tick
       status = await res.json();
     } catch (err) {
-      console.log("[Obelisk]", jobId, ": status check threw", err);
       continue;
     }
-    console.log("[Obelisk]", jobId, ": status is", status && status.status);
-    if (!status || !status.status || status.status === "error") {
-      console.log("[Obelisk]", jobId, ": giving up (error or job gone) -", status && status.error);
-      await removePendingDownload(jobId);
-      continue;
-    }
-    if (status.status !== "finished") continue;
+    if (!status || !status.status) continue;
 
-    await removePendingDownload(jobId);
+    if (status.status === "error") {
+      await upsertTask(jobId, {
+        status: "error",
+        error: status.error || "Помилка завантаження",
+        title: status.title || tasks[jobId].title,
+      });
+      continue;
+    }
+    if (status.status !== "finished") {
+      await upsertTask(jobId, {
+        status: status.status,
+        progress: status.progress,
+        etaSeconds: status.eta_seconds,
+        title: status.title || tasks[jobId].title,
+      });
+      continue;
+    }
+
+    // Server-side download is done - hand it to chrome.downloads so it
+    // lands on the user's device without ever opening the site.
+    await upsertTask(jobId, { status: "finished", progress: 100, title: status.title || tasks[jobId].title });
     const fileUrl = serverUrl.replace(/\/$/, "") + "/api/extension/file/" + encodeURIComponent(jobId);
-    console.log("[Obelisk]", jobId, ": finished! saving to device from", fileUrl);
     chrome.downloads.download(
       {
         url: fileUrl,
@@ -184,9 +221,9 @@ async function checkPendingDownloads() {
       },
       function (downloadId) {
         if (chrome.runtime.lastError) {
-          console.log("[Obelisk]", jobId, ": chrome.downloads.download failed:", chrome.runtime.lastError.message);
+          upsertTask(jobId, { status: "save_error", error: chrome.runtime.lastError.message });
         } else {
-          console.log("[Obelisk]", jobId, ": chrome.downloads.download started, id", downloadId);
+          upsertTask(jobId, { status: "saved", downloadId: downloadId });
         }
       }
     );
@@ -216,10 +253,11 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 });
 
 // Creates the Download job directly (POST /api/extension/download) and,
-// on success, starts tracking it the same way the old "download-started"
-// message used to - from here on this file, not the panel, owns getting
-// it to the user's device, so the job still finishes and saves even if
-// that YouTube tab is closed.
+// on success, starts tracking it in TASKS_KEY - from here on this file,
+// not the panel, owns getting it to the user's device, so the job still
+// finishes and saves even if that YouTube tab is closed, and its progress
+// stays visible in the toolbar popup regardless of whether the panel that
+// started it is still open.
 chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
   if (!message || message.type !== "start-download") return;
   (async function () {
@@ -230,23 +268,33 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
         body: new URLSearchParams(message.fields).toString(),
       });
       const data = await res.json();
-      console.log("[Obelisk] /api/extension/download response:", res.status, data);
       if (res.ok && data.id) {
-        await addPendingDownload(data.id);
-        checkPendingDownloads();
+        await upsertTask(data.id, { status: "queued", progress: 0, url: message.fields.url });
+        pollTasks();
       }
       sendResponse({ ok: res.ok && !data.error, data: data });
     } catch (err) {
-      console.log("[Obelisk] start-download failed:", err);
       sendResponse({ ok: false });
     }
   })();
   return true;
 });
 
+// Lets the toolbar popup force an immediate status refresh on open,
+// instead of showing whatever's left over from the last periodic tick -
+// the service worker may have been asleep for a while before the popup
+// woke it back up.
+chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
+  if (!message || message.type !== "poll-now") return;
+  pollTasks().then(function () {
+    sendResponse({ ok: true });
+  });
+  return true;
+});
+
 function tick() {
   pollOnce();
-  checkPendingDownloads();
+  pollTasks();
 }
 
 function startPolling() {

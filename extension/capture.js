@@ -189,20 +189,28 @@
     }, 250);
   }
 
+  // Scanning EVERY fetch/XHR on the page (ads, analytics, thumbnails, ...)
+  // for a token that only ever shows up on player-endpoint requests was
+  // pure wasted work on the vast majority of a YouTube page's own
+  // traffic, adding JS overhead to every single one of them during page
+  // load - narrowed to just the requests it could actually be on.
   const originalFetch = window.fetch;
   window.fetch = function (input, init) {
     const url = typeof input === "string" ? input : input && input.url;
-    try {
-      const fromUrl = url ? extractFromUrl(url) : null;
-      if (fromUrl) reportToken(fromUrl, "fetch-url");
-      const body = init && init.body;
-      const fromBody = extractFromBody(body);
-      if (fromBody) reportToken(fromBody, "fetch-body");
-    } catch (err) {
-      // never let capture logic break the page's own playback
+    const isPlayerReq = isPlayerRequestUrl(url);
+    if (isPlayerReq) {
+      try {
+        const fromUrl = url ? extractFromUrl(url) : null;
+        if (fromUrl) reportToken(fromUrl, "fetch-url");
+        const body = init && init.body;
+        const fromBody = extractFromBody(body);
+        if (fromBody) reportToken(fromBody, "fetch-body");
+      } catch (err) {
+        // never let capture logic break the page's own playback
+      }
     }
     const result = originalFetch.apply(this, arguments);
-    if (isPlayerRequestUrl(url)) {
+    if (isPlayerReq) {
       console.log("[Obelisk] intercepted fetch to player endpoint:", url);
       result
         .then(function (res) {
@@ -221,23 +229,25 @@
   const originalOpen = XMLHttpRequest.prototype.open;
   const originalSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function (method, url) {
-    try {
-      const fromUrl = extractFromUrl(url);
-      if (fromUrl) reportToken(fromUrl, "xhr-url");
-    } catch (err) {
-      // ignore
-    }
     this.__obeliskIsPlayerRequest = isPlayerRequestUrl(url);
+    if (this.__obeliskIsPlayerRequest) {
+      try {
+        const fromUrl = extractFromUrl(url);
+        if (fromUrl) reportToken(fromUrl, "xhr-url");
+      } catch (err) {
+        // ignore
+      }
+    }
     return originalOpen.apply(this, arguments);
   };
   XMLHttpRequest.prototype.send = function (body) {
-    try {
-      const fromBody = extractFromBody(body);
-      if (fromBody) reportToken(fromBody, "xhr-body");
-    } catch (err) {
-      // ignore
-    }
     if (this.__obeliskIsPlayerRequest) {
+      try {
+        const fromBody = extractFromBody(body);
+        if (fromBody) reportToken(fromBody, "xhr-body");
+      } catch (err) {
+        // ignore
+      }
       console.log("[Obelisk] intercepted XHR to player endpoint");
       this.addEventListener("load", function () {
         try {

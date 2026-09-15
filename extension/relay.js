@@ -114,11 +114,77 @@
     });
   }
 
+  // Labels/colors for every status TASKS_KEY (background.js) can report,
+  // shared with the "showBar" set below for which ones still have
+  // meaningful progress to show.
+  function taskStatusLabel(task) {
+    switch (task.status) {
+      case "queued":
+        return "У черзі на сервері...";
+      case "waiting_extension":
+        return "Очікуємо токен...";
+      case "downloading":
+        return "Завантажується на сервер" + (task.progress != null ? ": " + Math.round(task.progress) + "%" : "...");
+      case "finished":
+        return "Готово на сервері, зберігаємо на пристрій...";
+      case "saved":
+        return "Збережено на пристрій.";
+      case "save_error":
+        return "Файл готовий, але не вдалося зберегти на пристрій: " + (task.error || "");
+      case "error":
+        return "Помилка: " + (task.error || "Не вдалося завантажити");
+      default:
+        return task.status || "";
+    }
+  }
+  const PROGRESS_STATUSES = ["queued", "waiting_extension", "downloading", "finished"];
+
+  // Renders live progress for one job in an already-submitted panel by
+  // reading/watching chrome.storage.local's TASKS_KEY - the same state
+  // background.js's own polling writes to, so this works whether or not
+  // this exact panel instance is the one that started the job. Keeps
+  // listening until the panel is actually removed from the DOM (manual
+  // close only now - it no longer auto-closes itself).
+  function watchTask(jobId, panel) {
+    function render(task) {
+      if (!task) return;
+      const statusEl = panel.querySelector(".obelisk-status");
+      const progressEl = panel.querySelector(".obelisk-progress");
+      if (!statusEl || !progressEl) return;
+      statusEl.hidden = false;
+      statusEl.textContent = taskStatusLabel(task);
+      statusEl.className =
+        "obelisk-status" + (task.status === "saved" ? " ok" : task.status === "error" || task.status === "save_error" ? " err" : "");
+      const showBar = PROGRESS_STATUSES.indexOf(task.status) !== -1;
+      progressEl.hidden = !showBar;
+      if (showBar) progressEl.value = task.progress || 0;
+    }
+
+    chrome.storage.local.get(["obeliskTasks"], function (stored) {
+      render(stored.obeliskTasks && stored.obeliskTasks[jobId]);
+    });
+
+    function onChange(changes, area) {
+      if (area !== "local" || !changes.obeliskTasks) return;
+      render(changes.obeliskTasks.newValue && changes.obeliskTasks.newValue[jobId]);
+    }
+    chrome.storage.onChanged.addListener(onChange);
+
+    const observer = new MutationObserver(function () {
+      if (!document.body.contains(panel)) {
+        chrome.storage.onChanged.removeListener(onChange);
+        observer.disconnect();
+      }
+    });
+    observer.observe(document.body, { childList: true });
+  }
+
   function submitDownload(panel, url, tokenForThisVideo) {
     const confirmBtn = panel.querySelector(".obelisk-confirm-btn");
     const statusEl = panel.querySelector(".obelisk-status");
     confirmBtn.disabled = true;
     statusEl.hidden = false;
+    statusEl.className = "obelisk-status";
     statusEl.textContent = "Надсилаємо...";
 
     const fields = {
@@ -140,12 +206,17 @@
     chrome.runtime.sendMessage({ type: "start-download", fields: fields }, function (response) {
       if (chrome.runtime.lastError || !response || !response.ok) {
         const err = response && response.data && response.data.error;
+        statusEl.className = "obelisk-status err";
         statusEl.textContent = err || "Не вдалося з'єднатися з сервером";
         confirmBtn.disabled = false;
         return;
       }
-      statusEl.textContent = "Завантаження розпочато на сервері - можна переходити на іншу вкладку.";
-      setTimeout(removePanel, 4000);
+      // Swap the form out for a live progress view instead of closing -
+      // background.js owns the job from here regardless of what happens
+      // to this panel, but the user asked to see it progress, not just a
+      // one-line "started" message that vanishes after 4s.
+      panel.querySelector(".obelisk-panel-form").hidden = true;
+      watchTask(response.data.id, panel);
     });
   }
 
@@ -179,6 +250,7 @@
       '<div class="obelisk-panel-header"><span>Obelisk</span>' +
       '<button type="button" class="obelisk-panel-close" aria-label="Закрити">×</button></div>' +
       '<div class="obelisk-panel-body">' +
+      '<div class="obelisk-panel-form">' +
       '<label class="obelisk-field"><span>Тип завантаження</span>' +
       '<select class="obelisk-mode">' +
       '<option value="video">Відео + аудіо</option>' +
@@ -197,8 +269,10 @@
       "</div>" +
       '<label class="obelisk-checkbox-row"><input type="checkbox" class="obelisk-premiere" checked>' +
       "<span>Сумісність з відеоредакторами</span></label>" +
-      '<p class="obelisk-status" hidden></p>' +
       '<button type="button" class="obelisk-confirm-btn">Підтвердити завантаження</button>' +
+      "</div>" +
+      '<progress class="obelisk-progress" max="100" value="0" hidden></progress>' +
+      '<p class="obelisk-status" hidden></p>' +
       "</div>";
     document.body.appendChild(panel);
 
@@ -275,6 +349,7 @@
       "line-height:1;cursor:pointer;padding:0 2px;}" +
       "#" + PANEL_ID + " .obelisk-panel-body{padding:12px 14px;display:flex;flex-direction:column;gap:10px;" +
       "box-sizing:border-box;}" +
+      "#" + PANEL_ID + " .obelisk-panel-form{display:flex;flex-direction:column;gap:10px;}" +
       "#" + PANEL_ID + " .obelisk-field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#9aa2b1;" +
       "min-width:0;}" +
       "#" + PANEL_ID + " select,#" + PANEL_ID + " input[type=text]{background:#0e1017;color:#e6e8ec;" +
@@ -283,7 +358,10 @@
       "#" + PANEL_ID + " .obelisk-clip-row{display:flex;gap:8px;min-width:0;}" +
       "#" + PANEL_ID + " .obelisk-clip-row .obelisk-field{flex:1 1 0;min-width:0;}" +
       "#" + PANEL_ID + " .obelisk-checkbox-row{display:flex;align-items:center;gap:8px;font-size:12px;color:#e6e8ec;}" +
+      "#" + PANEL_ID + " .obelisk-progress{width:100%;height:6px;accent-color:#3e6ae1;border:none;}" +
       "#" + PANEL_ID + " .obelisk-status{margin:0;font-size:12px;color:#9aa2b1;}" +
+      "#" + PANEL_ID + " .obelisk-status.ok{color:#3ecf8e;}" +
+      "#" + PANEL_ID + " .obelisk-status.err{color:#ff6b7d;}" +
       "#" + PANEL_ID + " .obelisk-confirm-btn{background:#3e6ae1;color:#fff;border:none;border-radius:8px;" +
       "padding:9px;font-size:13px;font-weight:500;cursor:pointer;}" +
       "#" + PANEL_ID + " .obelisk-confirm-btn:hover{background:#345bc4;}" +
@@ -324,8 +402,18 @@
 
   // Belt-and-braces for the masthead not existing yet this early
   // (document_start) or getting re-rendered independently of the
-  // yt-navigate-finish event above.
+  // yt-navigate-finish event above. Coalesced through rAF instead of
+  // calling ensureButton() straight from the observer callback - YouTube's
+  // own DOM churn during page load fires this a great many times in quick
+  // succession, and ensureButton() has nothing useful to do more than
+  // once per frame anyway.
+  let buttonCheckScheduled = false;
   new MutationObserver(function () {
-    ensureButton();
+    if (buttonCheckScheduled) return;
+    buttonCheckScheduled = true;
+    requestAnimationFrame(function () {
+      buttonCheckScheduled = false;
+      ensureButton();
+    });
   }).observe(document.documentElement, { childList: true, subtree: true });
 })();
