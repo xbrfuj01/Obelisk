@@ -31,7 +31,15 @@ async function apiFetch(path, options = {}) {
   if (!serverUrl || !token) throw new Error("not configured");
   const res = await fetch(serverUrl.replace(/\/$/, "") + path, {
     ...options,
-    headers: { ...(options.headers || {}), Authorization: "Bearer " + token },
+    headers: {
+      ...(options.headers || {}),
+      Authorization: "Bearer " + token,
+      // Lets the admin peers list show which build a connection is
+      // running - chrome.storage.local (and so this login) can survive an
+      // unpacked-extension reload/update, so this is the only way to spot
+      // a row that's quietly still on an old version.
+      "X-Extension-Version": chrome.runtime.getManifest().version,
+    },
   });
   return res;
 }

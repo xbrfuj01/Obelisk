@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import re
 import shutil
@@ -42,6 +43,18 @@ from . import sysinfo
 
 BASE_DIR = os.path.dirname(__file__)
 EXTENSION_DIR = os.path.normpath(os.path.join(BASE_DIR, "..", "extension"))
+
+
+def _current_extension_version() -> str | None:
+    """Reads manifest.json's own version fresh each time instead of
+    hardcoding a copy here that would inevitably drift out of sync with
+    it - lets the admin peers list flag a connection still running an
+    older build than what /extension/download would hand out right now."""
+    try:
+        with open(os.path.join(EXTENSION_DIR, "manifest.json"), encoding="utf-8") as f:
+            return json.load(f).get("version")
+    except (OSError, ValueError):
+        return None
 
 
 class StaticFiles(_StaticFiles):
@@ -156,7 +169,8 @@ def require_extension_token(request: Request, db: Session = Depends(get_db)) -> 
     here)."""
     header = request.headers.get("Authorization", "")
     token = header[7:] if header.startswith("Bearer ") else ""
-    username = auth.get_extension_token_owner(db, token) if token else None
+    version = request.headers.get("X-Extension-Version")
+    username = auth.get_extension_token_owner(db, token, version=version) if token else None
     if not username:
         raise HTTPException(status_code=401, detail="Недійсний токен розширення")
     return username
@@ -1116,6 +1130,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
     timezone = auth.get_timezone(db)
     has_cookies = auth.has_cookies()
     extension_peers = auth.list_extension_peers(db)
+    current_extension_version = _current_extension_version()
 
     return templates.TemplateResponse(
         "admin.html",
@@ -1154,6 +1169,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
             "proxy_domains": proxy_domains,
             "proxy_youtube_test": proxy_youtube_test,
             "extension_peers": extension_peers,
+            "current_extension_version": current_extension_version,
             "timezone": timezone,
             "timezones": timeutil.COMMON_TIMEZONES,
             "has_cookies": has_cookies,

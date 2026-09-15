@@ -159,11 +159,13 @@ def create_extension_token(db: Session, username: str, user_agent: str | None = 
     return token
 
 
-def get_extension_token_owner(db: Session, token: str) -> str | None:
+def get_extension_token_owner(db: Session, token: str, version: str | None = None) -> str | None:
     row = db.query(ExtensionToken).filter(ExtensionToken.token == token).first()
     if not row:
         return None
     row.last_seen_at = datetime.utcnow()
+    if version:
+        row.extension_version = version
     db.commit()
     return row.username
 
@@ -201,6 +203,7 @@ def list_extension_peers(db: Session) -> list:
             "id": row.id,
             "username": row.username,
             "device_label": row.device_label,
+            "extension_version": row.extension_version,
             "created_at": row.created_at,
             "last_seen_at": row.last_seen_at,
             "active": bool(row.last_seen_at and row.last_seen_at >= cutoff),

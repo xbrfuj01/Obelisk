@@ -176,12 +176,18 @@
     {% if extension_peers %}
     <div class="table-wrap card">
       <table class="table">
-        <thead><tr><th>Користувач</th><th>Пристрій</th><th>Стан</th><th>Підключено</th><th>Востаннє на зв'язку</th><th></th></tr></thead>
+        <thead><tr><th>Користувач</th><th>Пристрій</th><th>Версія</th><th>Стан</th><th>Підключено</th><th>Востаннє на зв'язку</th><th></th></tr></thead>
         <tbody>
         {% for peer in extension_peers %}
           <tr>
             <td>{{ peer.username }}</td>
             <td>{{ peer.device_label or "—" }}</td>
+            <td>
+              {% if not peer.extension_version %}—
+              {% elif current_extension_version and peer.extension_version != current_extension_version %}
+              <span class="proxy-status inactive" title="Найновіша версія: {{ current_extension_version }}">{{ peer.extension_version }} (застаріла)</span>
+              {% else %}{{ peer.extension_version }}{% endif %}
+            </td>
             <td>
               {% if peer.active %}<span class="proxy-status active">Активний</span>
               {% else %}<span class="proxy-status inactive">Неактивний</span>{% endif %}

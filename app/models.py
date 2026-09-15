@@ -141,3 +141,10 @@ class ExtensionToken(Base):
     # peers list tell those apart instead of showing indistinguishable
     # duplicate usernames.
     device_label = Column(String, nullable=True)
+    # manifest.json's own "version" (chrome.runtime.getManifest().version),
+    # sent as an X-Extension-Version header on every authenticated request
+    # and refreshed alongside last_seen_at - lets the admin peers list flag
+    # a row still running an old build (chrome.storage.local, and so the
+    # login token, can survive an unpacked-extension reload/update, so an
+    # outdated version here doesn't necessarily mean a stale/dead row).
+    extension_version = Column(String, nullable=True)
