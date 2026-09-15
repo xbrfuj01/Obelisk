@@ -772,13 +772,19 @@ def _run_job(job_id: str):
 
         height_filter = _height_filter(job.quality)
 
-        def _attempt_sabr_download(po_token):
-            """Runs the SABR-fork with a given token (either pre-supplied by
-            the extension's on-page "Завантажити" button, or freshly waited
-            for below); returns (engine_used, used_cookies, title) on
-            success, or (None, None, None) after cleaning up whatever a
-            failed attempt may have partially written - so the stable path
-            below can't mistake leftovers for the real result."""
+        def _attempt_sabr_download(po_token, engine_label="extension"):
+            """Runs the SABR-fork with a given token (manually supplied via
+            the browser extension) or none at all (engine_label="sabr" -
+            the fork falls back to its own bgutil-generated token,
+            independent of the extension entirely); returns (engine_used,
+            used_cookies, title) on success, or (None, None, None) after
+            cleaning up whatever a failed attempt may have partially
+            written - so the stable path below can't mistake leftovers for
+            the real result. engine_label is only cosmetic (stored on
+            Download.engine, feeds the "N відео завдяки розширенню"
+            counters) - kept distinct from "extension" for the no-token
+            case so those counters don't credit the extension for
+            downloads it had no part in."""
             _update(db, job, status="downloading")
             filepath, sabr_error = youtube_sabr.download_via_sabr(
                 url=job.url,
@@ -801,11 +807,16 @@ def _run_job(job_id: str):
                     except OSError:
                         pass
                 return None, None, None
-            print(f"[extension] {job_id}: успішно завантажено через розширення", flush=True)
-            return "extension", auth.has_cookies(), (os.path.splitext(os.path.basename(filepath))[0] if filepath else "video")
+            print(f"[extension] {job_id}: успішно завантажено через SABR-рушій ({engine_label})", flush=True)
+            return engine_label, auth.has_cookies(), (os.path.splitext(os.path.basename(filepath))[0] if filepath else "video")
 
         engine_used = None
         extension_eligible = _is_extension_eligible(job)
+        # Whether a *manually* (browser-)supplied token was already tried
+        # above - if so, the bgutil-only fallback below is skipped: retrying
+        # with a weaker, session-bound auto token right after a real
+        # browser-captured one already failed is very unlikely to help.
+        attempted_with_manual_token = False
 
         if extension_eligible and job.po_token:
             # A token was already captured proactively - the extension's
@@ -814,6 +825,7 @@ def _run_job(job_id: str):
             # (foreground, visible) tab. No need to wait for anything: this
             # token is already as fresh as it'll ever get.
             print(f"[extension] {job_id}: токен вже наданий заздалегідь (кнопка на YouTube), пробуємо SABR-рушій", flush=True)
+            attempted_with_manual_token = True
             engine_used, used_cookies, title = _attempt_sabr_download(job.po_token)
         elif extension_eligible and job.extension_submitted:
             # Submitted via the in-page panel but without a token - it
@@ -821,8 +833,9 @@ def _run_job(job_id: str):
             # same real, foreground tab, so falling through to wait for
             # ANY extension instance to open a *new* (hidden) tab of the
             # same video would just surprise the user with an unexplained
-            # tab for no real benefit - straight to the stable engine.
-            print(f"[extension] {job_id}: панель не передала токен, одразу стандартний рушій (без повторної спроби через нову вкладку)", flush=True)
+            # tab for no real benefit. Still worth trying the SABR fork
+            # below on its own bgutil-generated token first, though.
+            print(f"[extension] {job_id}: панель не передала токен, пробуємо SABR-рушій на власному токені bgutil", flush=True)
         elif extension_eligible and auth.has_recent_extension_activity(db):
             # An Obelisk Bridge install has polled recently, so it's worth
             # waiting for it - release the gate slot for the wait so a
@@ -842,11 +855,27 @@ def _run_job(job_id: str):
 
             if po_token:
                 print(f"[extension] {job_id}: токен отримано, пробуємо SABR-рушій", flush=True)
+                attempted_with_manual_token = True
                 engine_used, used_cookies, title = _attempt_sabr_download(po_token)
             else:
-                print(f"[extension] {job_id}: токен не надійшов за {EXTENSION_TOKEN_TIMEOUT_SECONDS}с, переходимо на стандартний рушій", flush=True)
+                print(f"[extension] {job_id}: токен не надійшов за {EXTENSION_TOKEN_TIMEOUT_SECONDS}с, пробуємо SABR-рушій на власному токені bgutil", flush=True)
         elif extension_eligible:
-            print(f"[extension] {job_id}: жодного розширення не бачили останні {auth.EXTENSION_RECENTLY_SEEN_SECONDS}с, одразу стандартний рушій", flush=True)
+            print(f"[extension] {job_id}: жодного розширення не бачили останні {auth.EXTENSION_RECENTLY_SEEN_SECONDS}с, пробуємо SABR-рушій на власному токені bgutil", flush=True)
+
+        # Second chance for every extension-eligible job that didn't already
+        # succeed above with a manually-supplied token: the SABR fork has
+        # its own bgutil-based PO token generation (independent of the
+        # browser extension entirely - see youtube_sabr.py's own
+        # youtubepot-bgutilhttp extractor-arg) and, critically, actually
+        # speaks the SABR wire protocol stable yt-dlp cannot - so it can
+        # still succeed on a video where YouTube forces SABR for the "web"
+        # client regardless of token validity (confirmed via a real log:
+        # stable's own bgutil-sourced token was accepted with no error, yet
+        # "web" formats were still dropped as SABR-forced) - a case stable
+        # yt-dlp is structurally incapable of handling no matter what token
+        # it's given.
+        if engine_used is None and extension_eligible and not attempted_with_manual_token:
+            engine_used, used_cookies, title = _attempt_sabr_download(None, engine_label="sabr")
 
         if engine_used is None:
             _update(db, job, status="downloading")

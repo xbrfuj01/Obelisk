@@ -39,9 +39,12 @@ class Download(Base):
     # for this to appear while status="waiting_extension" (see downloader.py's
     # _is_extension_eligible).
     po_token = Column(Text, nullable=True)
-    # Which engine actually handled this job - "extension" (Obelisk Bridge
-    # supplied a real PO token) or left None for the stable yt-dlp path
-    # (the default, and the automatic fallback when no extension is live).
+    # Which engine actually handled this job: "extension" (Obelisk Bridge
+    # supplied a real, browser-captured PO token), "sabr" (the SABR fork
+    # succeeded anyway on its own bgutil-generated token, with no browser
+    # extension involvement at all - kept distinct from "extension" so the
+    # "N відео завдяки розширенню" counters don't credit downloads it had
+    # no part in), or left None for the stable yt-dlp path (the default).
     engine = Column(String, nullable=True)
     # True only for jobs created via POST /api/extension/download (the
     # in-page "Завантажити" panel on YouTube itself) - even when it didn't
