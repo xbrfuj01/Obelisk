@@ -71,7 +71,6 @@
 
   const BTN_ID = "obelisk-bridge-download-btn";
   const PANEL_ID = "obelisk-bridge-panel";
-  const TOKEN_GRACE_MS = 4000;
 
   function isVideoPage() {
     return location.pathname === "/watch" || location.pathname.startsWith("/shorts/");
@@ -161,15 +160,16 @@
       return;
     }
 
-    // A just-opened video may not have a token yet even though playback
-    // has genuinely started - give it the same short grace period the
-    // automatic flow's own capture gets.
-    const deadline = Date.now() + TOKEN_GRACE_MS;
-    while ((!latestToken || latestTokenVideoId !== videoId) && Date.now() < deadline) {
-      await new Promise(function (resolve) {
-        setTimeout(resolve, 250);
-      });
-    }
+    // No artificial wait here for a browser-captured PO token - real
+    // extraction from page network traffic stopped working reliably for
+    // YouTube's current player (confirmed: never once observed across
+    // several real test videos), so the SABR fork's own bgutil-based token
+    // generation is what actually delivers full quality in practice. A
+    // multi-second wait here was only ever waiting on something that
+    // (almost) never arrives, and it was blocking the panel from opening -
+    // felt like the button itself was slow to respond. If a token happens
+    // to already be cached for this exact video, use it; otherwise submit
+    // without one and let the server-side bgutil fallback handle it.
     const tokenForThisVideo = latestTokenVideoId === videoId ? latestToken : null;
     const qualitiesForThisVideo = latestQualitiesVideoId === videoId ? latestQualities : null;
 
@@ -219,24 +219,12 @@
     });
   }
 
-  async function onButtonClick() {
+  function onButtonClick() {
     if (document.getElementById(PANEL_ID)) {
       removePanel();
       return;
     }
-    // openPanel() can wait up to TOKEN_GRACE_MS before the panel actually
-    // appears - without this, clicking looked like nothing happened for
-    // up to 4s.
-    const btn = document.getElementById(BTN_ID);
-    const label = btn && btn.querySelector("span");
-    if (btn) btn.disabled = true;
-    if (label) label.textContent = "Зачекайте...";
-    try {
-      await openPanel();
-    } finally {
-      if (btn) btn.disabled = false;
-      if (label) label.textContent = "Obelisk";
-    }
+    openPanel();
   }
 
   function makeButton() {

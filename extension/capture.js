@@ -165,12 +165,29 @@
       // below still catch a token if the page starts playback on its own
     }
   }
-  let playbackNudgeAttempts = 0;
-  const playbackNudgeTimer = setInterval(function () {
-    playbackNudgeAttempts += 1;
-    forcePlayback();
-    if (playbackNudgeAttempts > 40) clearInterval(playbackNudgeTimer);
-  }, 250);
+  // Only ever meant for the hidden background tab background.js opens for
+  // the automatic flow - running this unconditionally on every youtube.com
+  // page load meant it was ALSO forcibly muting and repeatedly calling
+  // .play() on the video the user is actually, normally watching (real
+  // symptoms reported: playback couldn't be paused/stopped, and audio
+  // stayed muted until toggling the player's mute button twice). Gate it
+  // on document.hidden at injection time - a tab background.js creates
+  // with active:false is hidden for its whole life, but a tab the user
+  // opened themselves is visible immediately. Also bail out the moment the
+  // tab becomes visible, in case a still-loading auto-flow tab gets
+  // manually clicked into before it finishes.
+  if (document.hidden) {
+    let playbackNudgeAttempts = 0;
+    const playbackNudgeTimer = setInterval(function () {
+      if (!document.hidden) {
+        clearInterval(playbackNudgeTimer);
+        return;
+      }
+      playbackNudgeAttempts += 1;
+      forcePlayback();
+      if (playbackNudgeAttempts > 40) clearInterval(playbackNudgeTimer);
+    }, 250);
+  }
 
   const originalFetch = window.fetch;
   window.fetch = function (input, init) {
