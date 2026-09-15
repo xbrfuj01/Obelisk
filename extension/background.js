@@ -7,13 +7,14 @@
 //    video -> wait for capture.js/relay.js to report a PO token for that
 //    tab -> POST /api/extension/po-token -> close the tab.
 // 2. The "Завантажити" panel injected on the YouTube page itself
-//    (relay.js) starts a job directly via POST /api/extension/download
-//    and just tells this file the job id (see the "download-started"
-//    listener below) - from there, THIS file owns polling
-//    /api/extension/status/<id> and, once finished, saving the file to
-//    the user's device via chrome.downloads. Deliberately not the
-//    panel's own job: the panel's JS dies if its tab is closed, but a
-//    download started from it should still finish and save even then.
+//    (relay.js) can't call the server directly (a content script's
+//    fetch() is bound by youtube.com's own CORS policy) - it messages
+//    this file to create the job (POST /api/extension/download) and from
+//    there, THIS file owns polling /api/extension/status/<id> and, once
+//    finished, saving the file to the user's device via
+//    chrome.downloads. Deliberately not the panel's own job: the panel's
+//    JS dies if its tab is closed, but a download started from it should
+//    still finish and save even then.
 //
 // Polls two ways: a plain setInterval for fast response whenever the
 // worker happens to already be alive, PLUS chrome.alarms as a guaranteed
@@ -173,13 +174,52 @@ async function checkPendingDownloads() {
 }
 
 // The "Завантажити" panel injected on the YouTube page itself (relay.js)
-// creates the Download job directly (POST /api/extension/download) and
-// only tells this file the resulting id - from here on this file, not
-// the panel, owns getting it to the user's device, so the job still
-// finishes and saves even if that YouTube tab is closed.
-chrome.runtime.onMessage.addListener(function (message) {
-  if (!message || message.type !== "download-started" || !message.jobId) return;
-  addPendingDownload(message.jobId).then(checkPendingDownloads);
+// can't call the server directly - a content script's fetch() is subject
+// to the *page's* CORS policy (youtube.com has no Access-Control-Allow-
+// Origin for obelisk.o4.co.ua, so every such call was silently failing as
+// "Не вдалося з'єднатися з сервером"). Only this background context's own
+// fetch() is exempt from CORS, via manifest.json's host_permissions - so
+// both server calls the panel needs go through messages here instead.
+
+chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
+  if (!message || message.type !== "fetch-formats") return;
+  (async function () {
+    try {
+      const res = await apiFetch("/api/extension/formats?url=" + encodeURIComponent(message.url));
+      const data = await res.json();
+      sendResponse({ ok: res.ok, data: data });
+    } catch (err) {
+      sendResponse({ ok: false });
+    }
+  })();
+  return true;
+});
+
+// Creates the Download job directly (POST /api/extension/download) and,
+// on success, starts tracking it the same way the old "download-started"
+// message used to - from here on this file, not the panel, owns getting
+// it to the user's device, so the job still finishes and saves even if
+// that YouTube tab is closed.
+chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
+  if (!message || message.type !== "start-download") return;
+  (async function () {
+    try {
+      const res = await apiFetch("/api/extension/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams(message.fields).toString(),
+      });
+      const data = await res.json();
+      if (res.ok && data.id) {
+        await addPendingDownload(data.id);
+        checkPendingDownloads();
+      }
+      sendResponse({ ok: res.ok && !data.error, data: data });
+    } catch (err) {
+      sendResponse({ ok: false });
+    }
+  })();
+  return true;
 });
 
 function tick() {

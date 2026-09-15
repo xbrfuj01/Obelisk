@@ -96,44 +96,32 @@
     return { serverUrl: stored.serverUrl || "", token: stored.token || "" };
   }
 
-  function loadSubtitlesInto(select, serverUrl, token, url) {
-    fetch(serverUrl.replace(/\/$/, "") + "/api/extension/formats?url=" + encodeURIComponent(url), {
-      headers: { Authorization: "Bearer " + token },
-    })
-      .then(function (res) {
-        return res.ok ? res.json() : null;
-      })
-      .then(function (data) {
-        select.innerHTML = '<option value="">Без субтитрів</option>';
-        if (data && Array.isArray(data.subtitles)) {
-          data.subtitles.forEach(function (s) {
-            const opt = document.createElement("option");
-            opt.value = s.code;
-            opt.textContent = s.label + (s.auto ? " (авто)" : "");
-            select.appendChild(opt);
-          });
-        }
-      })
-      .catch(function () {
-        select.innerHTML = '<option value="">Без субтитрів</option>';
-      });
+  function loadSubtitlesInto(select, url) {
+    // Routed through background.js, not fetched here directly - a content
+    // script's fetch() is bound by youtube.com's own CORS policy (which
+    // has no allowance for obelisk.o4.co.ua), only the background
+    // context's fetch is exempt from that, via host_permissions.
+    chrome.runtime.sendMessage({ type: "fetch-formats", url: url }, function (response) {
+      select.innerHTML = '<option value="">Без субтитрів</option>';
+      if (response && response.ok && response.data && Array.isArray(response.data.subtitles)) {
+        response.data.subtitles.forEach(function (s) {
+          const opt = document.createElement("option");
+          opt.value = s.code;
+          opt.textContent = s.label + (s.auto ? " (авто)" : "");
+          select.appendChild(opt);
+        });
+      }
+    });
   }
 
-  async function submitDownload(panel, url, tokenForThisVideo) {
+  function submitDownload(panel, url, tokenForThisVideo) {
     const confirmBtn = panel.querySelector(".obelisk-confirm-btn");
     const statusEl = panel.querySelector(".obelisk-status");
     confirmBtn.disabled = true;
     statusEl.hidden = false;
     statusEl.textContent = "Надсилаємо...";
 
-    const { serverUrl, token } = await getStoredConfig();
-    if (!serverUrl || !token) {
-      statusEl.textContent = "Розширення не підключено - увійдіть через його іконку в панелі браузера.";
-      confirmBtn.disabled = false;
-      return;
-    }
-
-    const body = new URLSearchParams({
+    const fields = {
       url: url,
       mode: panel.querySelector(".obelisk-mode").value,
       quality: panel.querySelector(".obelisk-quality").value,
@@ -143,30 +131,22 @@
       clip_start: panel.querySelector(".obelisk-clip-start").value,
       clip_end: panel.querySelector(".obelisk-clip-end").value,
       po_token: tokenForThisVideo || "",
-    });
+    };
 
-    try {
-      const res = await fetch(serverUrl.replace(/\/$/, "") + "/api/extension/download", {
-        method: "POST",
-        headers: { Authorization: "Bearer " + token, "Content-Type": "application/x-www-form-urlencoded" },
-        body: body.toString(),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        statusEl.textContent = data.error || "Помилка запуску завантаження";
+    // background.js both creates the job (same CORS reason as above) and,
+    // from here on, owns getting it to the user's device - it'll keep
+    // polling and auto-save even if this tab is switched away from or
+    // closed outright.
+    chrome.runtime.sendMessage({ type: "start-download", fields: fields }, function (response) {
+      if (chrome.runtime.lastError || !response || !response.ok) {
+        const err = response && response.data && response.data.error;
+        statusEl.textContent = err || "Не вдалося з'єднатися з сервером";
         confirmBtn.disabled = false;
         return;
       }
-      // From here, background.js owns getting this to the user's device -
-      // it'll keep polling and auto-save even if this tab is switched
-      // away from or closed outright.
-      chrome.runtime.sendMessage({ type: "download-started", jobId: data.id });
       statusEl.textContent = "Завантаження розпочато на сервері - можна переходити на іншу вкладку.";
       setTimeout(removePanel, 4000);
-    } catch (err) {
-      statusEl.textContent = "Не вдалося з'єднатися з сервером";
-      confirmBtn.disabled = false;
-    }
+    });
   }
 
   async function openPanel() {
@@ -231,19 +211,31 @@
     modeSelect.addEventListener("change", updateFieldsForMode);
     updateFieldsForMode();
 
-    loadSubtitlesInto(panel.querySelector(".obelisk-subtitles"), serverUrl, token, url);
+    loadSubtitlesInto(panel.querySelector(".obelisk-subtitles"), url);
 
     panel.querySelector(".obelisk-confirm-btn").addEventListener("click", function () {
       submitDownload(panel, url, tokenForThisVideo);
     });
   }
 
-  function onButtonClick() {
+  async function onButtonClick() {
     if (document.getElementById(PANEL_ID)) {
       removePanel();
       return;
     }
-    openPanel();
+    // openPanel() can wait up to TOKEN_GRACE_MS before the panel actually
+    // appears - without this, clicking looked like nothing happened for
+    // up to 4s.
+    const btn = document.getElementById(BTN_ID);
+    const label = btn && btn.querySelector("span");
+    if (btn) btn.disabled = true;
+    if (label) label.textContent = "Зачекайте...";
+    try {
+      await openPanel();
+    } finally {
+      if (btn) btn.disabled = false;
+      if (label) label.textContent = "Obelisk";
+    }
   }
 
   function makeButton() {
@@ -284,19 +276,23 @@
       "height:36px;border-radius:18px;border:none;cursor:pointer;background:#3e6ae1;color:#fff;" +
       "font:500 13px/1 Roboto,Arial,sans-serif;flex:none;white-space:nowrap;}" +
       "#" + BTN_ID + ":hover{background:#345bc4;}" +
-      "#" + PANEL_ID + "{position:fixed;top:64px;right:16px;width:280px;z-index:2147483647;" +
+      "#" + BTN_ID + ":disabled{opacity:.65;cursor:default;}" +
+      "#" + PANEL_ID + "{position:fixed;top:64px;right:16px;width:340px;z-index:2147483647;" +
       "background:#15181e;color:#e6e8ec;border:1px solid #333844;border-radius:12px;" +
       "box-shadow:0 12px 30px rgba(0,0,0,.4);font:13px/1.4 Roboto,Arial,sans-serif;overflow:hidden;}" +
       "#" + PANEL_ID + " .obelisk-panel-header{display:flex;align-items:center;justify-content:space-between;" +
       "padding:10px 14px;font-weight:600;border-bottom:1px solid #262b38;}" +
       "#" + PANEL_ID + " .obelisk-panel-close{background:none;border:none;color:#9aa2b1;font-size:18px;" +
       "line-height:1;cursor:pointer;padding:0 2px;}" +
-      "#" + PANEL_ID + " .obelisk-panel-body{padding:12px 14px;display:flex;flex-direction:column;gap:10px;}" +
-      "#" + PANEL_ID + " .obelisk-field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#9aa2b1;}" +
+      "#" + PANEL_ID + " .obelisk-panel-body{padding:12px 14px;display:flex;flex-direction:column;gap:10px;" +
+      "box-sizing:border-box;}" +
+      "#" + PANEL_ID + " .obelisk-field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#9aa2b1;" +
+      "min-width:0;}" +
       "#" + PANEL_ID + " select,#" + PANEL_ID + " input[type=text]{background:#0e1017;color:#e6e8ec;" +
-      "border:1px solid #333844;border-radius:6px;padding:6px 8px;font-size:13px;}" +
-      "#" + PANEL_ID + " .obelisk-clip-row{display:flex;gap:8px;}" +
-      "#" + PANEL_ID + " .obelisk-clip-row .obelisk-field{flex:1;}" +
+      "border:1px solid #333844;border-radius:6px;padding:6px 8px;font-size:13px;width:100%;" +
+      "box-sizing:border-box;}" +
+      "#" + PANEL_ID + " .obelisk-clip-row{display:flex;gap:8px;min-width:0;}" +
+      "#" + PANEL_ID + " .obelisk-clip-row .obelisk-field{flex:1 1 0;min-width:0;}" +
       "#" + PANEL_ID + " .obelisk-checkbox-row{display:flex;align-items:center;gap:8px;font-size:12px;color:#e6e8ec;}" +
       "#" + PANEL_ID + " .obelisk-status{margin:0;font-size:12px;color:#9aa2b1;}" +
       "#" + PANEL_ID + " .obelisk-confirm-btn{background:#3e6ae1;color:#fff;border:none;border-radius:8px;" +
