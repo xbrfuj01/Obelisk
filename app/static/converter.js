@@ -104,6 +104,13 @@ const STATUS_LABELS = {
 
 const DOWNLOAD_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
 const STATUS_CANCEL_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+// Same icon set as admin.html's status_badge macro / STATUS_ICONS, so a
+// given status looks identical whether it's rendered by the server (admin)
+// or here on the client.
+const STATUS_ICON_FINISHED = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+const STATUS_ICON_ERROR = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+const STATUS_ICON_EXPIRED = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2h4"/><path d="M12 14v-4"/><circle cx="12" cy="14" r="8"/></svg>';
+const STATUS_ICON_CANCELLED = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 8 8 8"/></svg>';
 
 function statusCancelBtn(id) {
   return `<button type="button" class="status-cancel-corner" data-cancel-id="${id}" title="Скасувати" aria-label="Скасувати">${STATUS_CANCEL_ICON}</button>`;
@@ -155,6 +162,7 @@ async function submitFromDownload(downloadId) {
       return;
     }
     pollConvertStatus(data.id, data.duration_seconds, data.input_summary);
+    document.dispatchEvent(new CustomEvent("obelisk:job-created"));
   } catch (err) {
     statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка з'єднання</p></div>`;
   }
@@ -196,6 +204,7 @@ form.addEventListener("submit", (e) => {
       return;
     }
     pollConvertStatus(data.id, data.duration_seconds, data.input_summary);
+    document.dispatchEvent(new CustomEvent("obelisk:job-created"));
   };
   xhr.onerror = () => {
     statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка з'єднання</p></div>`;
@@ -254,9 +263,10 @@ function pollConvertStatus(id, durationSeconds, inputSummary) {
 const CANCELLABLE_STATUSES = { queued: true, converting: true };
 
 function statusIcon(status) {
-  if (status === "finished") return "✓";
-  if (status === "error") return "✕";
-  if (status === "cancelled") return "⊘";
+  if (status === "finished") return STATUS_ICON_FINISHED;
+  if (status === "error") return STATUS_ICON_ERROR;
+  if (status === "expired") return STATUS_ICON_EXPIRED;
+  if (status === "cancelled") return STATUS_ICON_CANCELLED;
   if (status === "converting") return '<span class="spinner"></span>';
   if (status === "queued") return "⏳";
   return "–";
@@ -289,11 +299,18 @@ let recentPage = 1;
 
 function renderPagination(page, totalPages) {
   if (totalPages <= 1) return "";
-  let html = '<nav class="pagination">';
-  for (let p = 1; p <= totalPages; p++) {
-    html += `<button type="button" class="page-link${p === page ? " active" : ""}" data-page="${p}">${p}</button>`;
-  }
-  return html + "</nav>";
+  const atFirst = page <= 1;
+  const atLast = page >= totalPages;
+  return `<nav class="pagination" data-max="${totalPages}">
+    <button type="button" class="page-link" data-page="1"${atFirst ? " disabled" : ""} title="Перша сторінка" aria-label="Перша сторінка">«</button>
+    <button type="button" class="page-link" data-page="${page - 1}"${atFirst ? " disabled" : ""} title="Попередня сторінка" aria-label="Попередня сторінка">‹</button>
+    <span class="page-jump">
+      <input type="number" min="1" max="${totalPages}" value="${page}" class="page-jump-input" title="Введіть номер сторінки і натисніть Enter" aria-label="Номер сторінки">
+      <span>з ${totalPages}</span>
+    </span>
+    <button type="button" class="page-link" data-page="${page + 1}"${atLast ? " disabled" : ""} title="Наступна сторінка" aria-label="Наступна сторінка">›</button>
+    <button type="button" class="page-link" data-page="${totalPages}"${atLast ? " disabled" : ""} title="Остання сторінка" aria-label="Остання сторінка">»</button>
+  </nav>`;
 }
 
 async function refreshRecent() {
@@ -321,6 +338,16 @@ document.addEventListener("click", (e) => {
   const pageBtn = e.target.closest("#recent-pagination .page-link");
   if (!pageBtn) return;
   recentPage = parseInt(pageBtn.dataset.page, 10) || 1;
+  refreshRecent();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  const input = e.target.closest("#recent-pagination .page-jump-input");
+  if (!input) return;
+  e.preventDefault();
+  const max = parseInt(input.closest(".pagination").dataset.max, 10) || 1;
+  recentPage = Math.max(1, Math.min(max, parseInt(input.value, 10) || 1));
   refreshRecent();
 });
 

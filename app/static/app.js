@@ -82,9 +82,13 @@ if (clipStartInput && clipEndInput) {
 const PREMIERE_COMPAT_STORAGE_KEY = "obelisk_premiere_compat";
 if (premiereCompatInput) {
   try {
-    premiereCompatInput.checked = localStorage.getItem(PREMIERE_COMPAT_STORAGE_KEY) === "1";
+    const stored = localStorage.getItem(PREMIERE_COMPAT_STORAGE_KEY);
+    // No stored preference yet (first visit) defaults to checked; once the
+    // user picks a value, that exact choice is honored from then on.
+    premiereCompatInput.checked = stored === null ? true : stored === "1";
   } catch (err) {
-    // ignore — localStorage unavailable, just falls back to unchecked
+    // ignore — localStorage unavailable, just falls back to checked (the default)
+    premiereCompatInput.checked = true;
   }
   premiereCompatInput.addEventListener("change", () => {
     try {
@@ -204,7 +208,7 @@ function updateSubtitleAvailability() {
   } else if (lastSubtitles.length) {
     if (subtitleHint) subtitleHint.textContent = `Знайдено ${lastSubtitles.length} мов(и) субтитрів для цього відео.`;
   } else if (subtitleHint) {
-    subtitleHint.textContent = "Встав посилання, щоб побачити доступні мови. Вшиваються у файл — лише для MP4/MKV.";
+    subtitleHint.textContent = "";
   }
 }
 containerSelect.addEventListener("change", updateSubtitleAvailability);
@@ -314,7 +318,7 @@ if (urlClearBtn) {
     resetPerVideoOptions();
     urlStatus.innerHTML = "";
     urlStatus.className = "url-status";
-    qualityHint.textContent = "Встав посилання, щоб побачити реальні доступні роздільні здатності (в т.ч. 4K/8K)";
+    qualityHint.textContent = "";
     updateUrlClearButton();
     urlInput.focus();
   });
@@ -342,6 +346,7 @@ form.addEventListener("submit", async (e) => {
       return;
     }
     pollStatus(data.id, estimatedBytes, isClipped);
+    document.dispatchEvent(new CustomEvent("obelisk:job-created"));
   } catch (err) {
     statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка з'єднання</p></div>`;
   }
@@ -355,6 +360,14 @@ const STATUS_LABELS = {
 const DOWNLOAD_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
 const CONVERT_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h11l-3.5-3.5"/><path d="M17 17H6l3.5 3.5"/></svg>';
 const STATUS_CANCEL_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+// Same icon set as admin.html's status_badge macro / STATUS_ICONS, so a
+// given status looks identical whether it's rendered by the server (admin)
+// or here on the client.
+const OPEN_ORIGINAL_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
+const STATUS_ICON_FINISHED = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+const STATUS_ICON_ERROR = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+const STATUS_ICON_EXPIRED = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2h4"/><path d="M12 14v-4"/><circle cx="12" cy="14" r="8"/></svg>';
+const STATUS_ICON_CANCELLED = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 8 8 8"/></svg>';
 
 // Top-right cancel button embedded in the active-status card itself (as
 // opposed to the one hidden behind hover in the history rows) - kind is
@@ -408,12 +421,17 @@ function pollStatus(id, estimatedBytes, isClipped) {
       } else if (job.status === "finished") {
         const finalSize = formatSize(job.filesize) || estimatedSize;
         if (claimAutoDownload("download:" + id)) triggerAutoDownload(`/api/file/${id}`);
+        // Only offered when premiere_compat was off - if it was on, the file
+        // either got auto-converted already (the auto_convert_id branch
+        // above) or was already compatible, so a manual convert option here
+        // would just be redundant.
         const convertHref = `/converter?from_download=${id}&filename=${encodeURIComponent(job.title || "")}`;
+        const convertBtn = job.premiere_compat ? "" : `<a class="btn-convert" href="${convertHref}">${CONVERT_ICON} Конвертувати для Premiere</a>`;
         statusBox.innerHTML = `<div class="card status-card">
           <p class="success">✓ Готово: ${escapeHtml(job.title || "")}${finalSize ? ` (${finalSize})` : ""}</p>
           <div class="status-actions">
             <a class="btn-download" href="/api/file/${id}">${DOWNLOAD_ICON} Завантажити ще раз</a>
-            <a class="btn-convert" href="${convertHref}">${CONVERT_ICON} Конвертувати для Premiere</a>
+            ${convertBtn}
           </div>
         </div>`;
         clearInterval(interval);
@@ -494,9 +512,10 @@ function pollAutoConvert(convertId, title) {
 const CANCELLABLE_STATUSES = { queued: true, downloading: true };
 
 function statusIcon(status) {
-  if (status === "finished") return "✓";
-  if (status === "error") return "✕";
-  if (status === "cancelled") return "⊘";
+  if (status === "finished") return STATUS_ICON_FINISHED;
+  if (status === "error") return STATUS_ICON_ERROR;
+  if (status === "expired") return STATUS_ICON_EXPIRED;
+  if (status === "cancelled") return STATUS_ICON_CANCELLED;
   if (status === "downloading") return '<span class="spinner"></span>';
   if (status === "queued") return "⏳";
   return "–";
@@ -514,7 +533,9 @@ function renderRow(r) {
   let btn;
   if (r.status === "finished") {
     const convertHref = `/converter?from_download=${r.id}&filename=${encodeURIComponent(r.title || "")}`;
-    btn = `<a class="dl-convert-btn" href="${convertHref}" title="Конвертувати для Premiere">${CONVERT_ICON}</a>
+    // Same reasoning as pollStatus: only useful when premiere_compat was off.
+    const convertBtn = r.premiere_compat ? "" : `<a class="dl-convert-btn" href="${convertHref}" title="Конвертувати для Premiere">${CONVERT_ICON}</a>`;
+    btn = `${convertBtn}
       <a class="dl-download-btn" href="/api/file/${r.id}" title="Завантажити">${DOWNLOAD_ICON}</a>`;
   } else {
     btn = `<span class="dl-download-btn disabled" title="Ще не готово">${DOWNLOAD_ICON}</span>`;
@@ -522,7 +543,7 @@ function renderRow(r) {
   const size = formatSize(r.filesize);
   const title = size ? `${r.title} (${size})` : r.title;
   const sourceLink = r.url
-    ? `<a class="dl-source-btn" href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer" title="Відкрити оригінал">🔍</a>`
+    ? `<a class="dl-source-btn" href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer" title="Відкрити оригінал" aria-label="Відкрити оригінал">${OPEN_ORIGINAL_ICON}</a>`
     : "";
   const statusCell = CANCELLABLE_STATUSES[r.status]
     ? `<span class="status-icon-wrap">
@@ -543,11 +564,18 @@ let recentPage = 1;
 
 function renderPagination(page, totalPages) {
   if (totalPages <= 1) return "";
-  let html = '<nav class="pagination">';
-  for (let p = 1; p <= totalPages; p++) {
-    html += `<button type="button" class="page-link${p === page ? " active" : ""}" data-page="${p}">${p}</button>`;
-  }
-  return html + "</nav>";
+  const atFirst = page <= 1;
+  const atLast = page >= totalPages;
+  return `<nav class="pagination" data-max="${totalPages}">
+    <button type="button" class="page-link" data-page="1"${atFirst ? " disabled" : ""} title="Перша сторінка" aria-label="Перша сторінка">«</button>
+    <button type="button" class="page-link" data-page="${page - 1}"${atFirst ? " disabled" : ""} title="Попередня сторінка" aria-label="Попередня сторінка">‹</button>
+    <span class="page-jump">
+      <input type="number" min="1" max="${totalPages}" value="${page}" class="page-jump-input" title="Введіть номер сторінки і натисніть Enter" aria-label="Номер сторінки">
+      <span>з ${totalPages}</span>
+    </span>
+    <button type="button" class="page-link" data-page="${page + 1}"${atLast ? " disabled" : ""} title="Наступна сторінка" aria-label="Наступна сторінка">›</button>
+    <button type="button" class="page-link" data-page="${totalPages}"${atLast ? " disabled" : ""} title="Остання сторінка" aria-label="Остання сторінка">»</button>
+  </nav>`;
 }
 
 async function refreshRecent() {
@@ -575,6 +603,16 @@ document.addEventListener("click", (e) => {
   const pageBtn = e.target.closest("#recent-pagination .page-link");
   if (!pageBtn) return;
   recentPage = parseInt(pageBtn.dataset.page, 10) || 1;
+  refreshRecent();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  const input = e.target.closest("#recent-pagination .page-jump-input");
+  if (!input) return;
+  e.preventDefault();
+  const max = parseInt(input.closest(".pagination").dataset.max, 10) || 1;
+  recentPage = Math.max(1, Math.min(max, parseInt(input.value, 10) || 1));
   refreshRecent();
 });
 

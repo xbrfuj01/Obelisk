@@ -10,10 +10,16 @@
   var POLL_OPEN_MS = 2000;
   var POLL_CLOSED_MS = 8000;
   var pollTimer = null;
-  var everSucceeded = false;
 
   var DOWNLOAD_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
   var CANCEL_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+  // Same icon set as admin.html's status_badge macro / STATUS_ICONS, so a
+  // given status looks identical whether it's rendered by the server
+  // (admin) or here on the client.
+  var STATUS_ICON_FINISHED = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+  var STATUS_ICON_ERROR = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+  var STATUS_ICON_EXPIRED = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2h4"/><path d="M12 14v-4"/><circle cx="12" cy="14" r="8"/></svg>';
+  var STATUS_ICON_CANCELLED = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 8 8 8"/></svg>';
 
   // Shared with app.js/converter.js: whichever poller (this global tray, or
   // the originating tool page's own poller) notices a job finish first
@@ -84,9 +90,10 @@
   }
 
   function statusSymbol(status) {
-    if (status === "finished") return "✓";
-    if (status === "error") return "✕";
-    if (status === "cancelled") return "⊘";
+    if (status === "finished") return STATUS_ICON_FINISHED;
+    if (status === "error") return STATUS_ICON_ERROR;
+    if (status === "expired") return STATUS_ICON_EXPIRED;
+    if (status === "cancelled") return STATUS_ICON_CANCELLED;
     if (status === "downloading" || status === "converting") return '<span class="spinner"></span>';
     if (status === "queued") return "⏳";
     return "–";
@@ -156,11 +163,8 @@
         schedulePoll();
         return;
       }
+      wrap.hidden = false;
       const items = await res.json();
-      if (!everSucceeded) {
-        everSucceeded = true;
-        wrap.hidden = false;
-      }
       autoDownloadFinished(items);
       render(items);
     } catch (err) {
@@ -188,6 +192,20 @@
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && !panel.hidden) closePanel();
   });
+
+  // Fired by app.js/converter.js right after a new job is created, so the
+  // badge picks it up immediately instead of waiting for the next scheduled
+  // poll tick (which can be several seconds away if the panel is closed).
+  document.addEventListener("obelisk:job-created", refresh);
+
+  // Browsers throttle background-tab timers (sometimes to once a minute or
+  // less), so a job that finishes while the tab isn't focused can leave the
+  // badge stuck on a stale count for a while - refreshing immediately on
+  // return fixes that without waiting for reload.
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) refresh();
+  });
+  window.addEventListener("focus", refresh);
 
   list.addEventListener("click", async function (e) {
     var cancelBtn = e.target.closest(".processes-row-link.cancel");
@@ -226,6 +244,12 @@
   var POLL_CLOSED_MS = 15000;
   var pollTimer = null;
 
+  // Same icon set as admin.html's status_badge macro / STATUS_ICONS.
+  var STATUS_ICON_FINISHED = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+  var STATUS_ICON_ERROR = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+  var STATUS_ICON_EXPIRED = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2h4"/><path d="M12 14v-4"/><circle cx="12" cy="14" r="8"/></svg>';
+  var STATUS_ICON_CANCELLED = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 8 8 8"/></svg>';
+
   function escapeHtml(str) {
     var div = document.createElement("div");
     div.textContent = str == null ? "" : String(str);
@@ -245,9 +269,10 @@
   }
 
   function statusSymbol(status) {
-    if (status === "finished") return "✓";
-    if (status === "error") return "✕";
-    if (status === "cancelled") return "⊘";
+    if (status === "finished") return STATUS_ICON_FINISHED;
+    if (status === "error") return STATUS_ICON_ERROR;
+    if (status === "expired") return STATUS_ICON_EXPIRED;
+    if (status === "cancelled") return STATUS_ICON_CANCELLED;
     if (status === "downloading" || status === "converting") return '<span class="spinner"></span>';
     if (status === "queued") return "⏳";
     return "–";
@@ -322,6 +347,17 @@
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && !panel.hidden) closePanel();
   });
+
+  // Fired by app.js/converter.js right after a new job is created, so an
+  // admin watching the site-wide tray sees it appear immediately too.
+  document.addEventListener("obelisk:job-created", refresh);
+
+  // Same reasoning as the personal tray above - don't leave the badge
+  // showing a stale count just because the tab was backgrounded.
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) refresh();
+  });
+  window.addEventListener("focus", refresh);
 
   refresh();
 })();

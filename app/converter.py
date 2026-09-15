@@ -221,6 +221,7 @@ def submit_conversion_from_download(download_job):
             duration_seconds=info["duration"],
             quality="high",
             audio_option="original",
+            is_auto=True,
             status="queued",
             client_ip=download_job.client_ip,
             client_id=download_job.client_id,

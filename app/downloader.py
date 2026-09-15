@@ -226,6 +226,31 @@ def _subtitle_options(info):
     return result
 
 
+def _extract_with_cookie_fallback(ydl_opts, url, *, download, should_retry=lambda: True, before_retry=None):
+    """Tries anonymously first - most videos don't need an authenticated
+    session, and the cookies belong to one specific account that's better
+    exercised sparingly than spent on every single request. Only retries
+    with cookies if the anonymous attempt actually fails, and only when
+    should_retry() still allows it (e.g. not for a job that was cancelled
+    mid-flight, which isn't a real failure to retry).
+
+    Returns (info, used_cookies) - callers that don't care which path
+    succeeded (e.g. probing) can just discard the second value."""
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            return ydl.extract_info(url, download=download), False
+    except Exception:
+        cookies_path = auth.get_cookies_path()
+        if not cookies_path or ydl_opts.get("cookiefile") or not should_retry():
+            raise
+        if before_retry:
+            before_retry()
+        retry_opts = dict(ydl_opts)
+        retry_opts["cookiefile"] = cookies_path
+        with yt_dlp.YoutubeDL(retry_opts) as ydl:
+            return ydl.extract_info(url, download=download), True
+
+
 def probe_qualities(url: str, db):
     """Fetch the real (width x height) resolutions and subtitle languages available for this URL."""
     if not is_url_allowed(url, db):
@@ -239,8 +264,7 @@ def probe_qualities(url: str, db):
     }
     if _should_use_proxy(url, db):
         ydl_opts["proxy"] = auth.get_proxy_url(db)
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
+    info, _ = _extract_with_cookie_fallback(ydl_opts, url, download=False)
 
     # dedupe by height only: several formats (different codecs/bitrates) often
     # share the same height, and the download-side quality filter also caps by height
@@ -302,6 +326,24 @@ def _should_use_proxy(url: str, db) -> bool:
         return True
     source = _source_from_url(url)
     return any(d in source for d in domains)
+
+
+def check_proxy_connection(proxy_url: str, timeout: float = 6.0) -> bool:
+    """Quick end-to-end reachability check for the "Проксі для заблокованих
+    сайтів" admin setting - routed through yt-dlp's own request machinery
+    (the same SOCKS/TLS path a real download would use) rather than a raw
+    socket check, so it actually proves traffic gets through. Targets a
+    small, unrelated, always-up host instead of one of the actual blocked
+    sites, so the result reflects the proxy itself, not that site's own
+    uptime or anti-bot behavior."""
+    if not proxy_url:
+        return False
+    try:
+        with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "proxy": proxy_url, "socket_timeout": timeout}) as ydl:
+            ydl.urlopen("https://api.ipify.org").read()
+        return True
+    except Exception:
+        return False
 
 
 def _is_safe_direct_url(url: str) -> bool:
@@ -519,8 +561,26 @@ def _run_job(job_id: str):
             })
             ydl_opts["postprocessors"].append({"key": "FFmpegEmbedSubtitle"})
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(job.url, download=True)
+        def _clear_partial_output():
+            # The failed anonymous attempt may have already written a
+            # partial file before erroring out - clear it so the retry
+            # starts clean instead of _find_main_file picking up stale
+            # leftovers below.
+            for name in os.listdir(out_dir):
+                path = os.path.join(out_dir, name)
+                if os.path.isdir(path):
+                    shutil.rmtree(path, ignore_errors=True)
+                else:
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
+
+        info, used_cookies = _extract_with_cookie_fallback(
+            ydl_opts, job.url, download=True,
+            should_retry=lambda: job_id not in _cancel_requested,
+            before_retry=_clear_partial_output,
+        )
 
         title = (info or {}).get("title") or "video"
         filepath = _find_main_file(out_dir)
@@ -558,6 +618,7 @@ def _run_job(job_id: str):
             filepath=filepath,
             filesize=filesize,
             auto_convert_id=auto_convert_id,
+            used_cookies=used_cookies,
             finished_at=datetime.utcnow(),
         )
     except Exception as e:

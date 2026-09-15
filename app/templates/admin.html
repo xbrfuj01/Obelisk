@@ -22,12 +22,74 @@
 
 {% macro pagination(current, total_pages, param_name) %}
 {% if total_pages > 1 %}
-<nav class="pagination">
-  {% for p in range(1, total_pages + 1) %}
-  <a href="/admin?tab=stats&{{ param_name }}={{ p }}" class="page-link{% if p == current %} active{% endif %}">{{ p }}</a>
-  {% endfor %}
+<nav class="pagination" data-param="{{ param_name }}" data-max="{{ total_pages }}">
+  {% if current > 1 %}
+  <a href="/admin?tab=stats&{{ param_name }}=1" class="page-link" title="Перша сторінка" aria-label="Перша сторінка">«</a>
+  <a href="/admin?tab=stats&{{ param_name }}={{ current - 1 }}" class="page-link" title="Попередня сторінка" aria-label="Попередня сторінка">‹</a>
+  {% else %}
+  <span class="page-link disabled" aria-hidden="true">«</span>
+  <span class="page-link disabled" aria-hidden="true">‹</span>
+  {% endif %}
+  <span class="page-jump">
+    <input type="number" min="1" max="{{ total_pages }}" value="{{ current }}" class="page-jump-input pagination-jump-input" title="Введіть номер сторінки і натисніть Enter" aria-label="Номер сторінки">
+    <span>з {{ total_pages }}</span>
+  </span>
+  {% if current < total_pages %}
+  <a href="/admin?tab=stats&{{ param_name }}={{ current + 1 }}" class="page-link" title="Наступна сторінка" aria-label="Наступна сторінка">›</a>
+  <a href="/admin?tab=stats&{{ param_name }}={{ total_pages }}" class="page-link" title="Остання сторінка" aria-label="Остання сторінка">»</a>
+  {% else %}
+  <span class="page-link disabled" aria-hidden="true">›</span>
+  <span class="page-link disabled" aria-hidden="true">»</span>
+  {% endif %}
 </nav>
 {% endif %}
+{% endmacro %}
+
+{% macro donut_gauge(pct, id_prefix, label, warn_at=70, danger_at=90, value_text=none) %}
+{% set circumference = 314.159 %}
+{% set safe_pct = [pct or 0, 0] | max %}
+{% set safe_pct = [safe_pct, 100] | min %}
+{% set offset = circumference * (1 - safe_pct / 100) %}
+<div class="gauge-donut-wrap">
+  <svg viewBox="0 0 120 120" class="gauge-donut" aria-hidden="true">
+    <circle cx="60" cy="60" r="50" class="gauge-track"></circle>
+    <circle cx="60" cy="60" r="50"
+            class="gauge-fill{% if safe_pct >= danger_at %} danger{% elif safe_pct >= warn_at %} warn{% endif %}"
+            id="{{ id_prefix }}-fill" stroke-dasharray="{{ circumference }}" stroke-dashoffset="{{ offset }}"></circle>
+  </svg>
+  <div class="gauge-center">
+    <span class="gauge-value" id="{{ id_prefix }}-pct">{{ value_text if value_text is not none else ((safe_pct | round | int) ~ '%') }}</span>
+    <span class="gauge-sublabel">{{ label }}</span>
+  </div>
+</div>
+{% endmacro %}
+
+{% macro mem_donut_gauge(used_pct, cached_pct, available_pct, used_bytes, cached_bytes, available_bytes, id_prefix, label) %}
+{% set circumference = 314.159 %}
+{% set used_len = circumference * ([used_pct or 0, 0] | max) / 100 %}
+{% set cached_len = circumference * ([cached_pct or 0, 0] | max) / 100 %}
+{% set available_len = circumference * ([available_pct or 0, 0] | max) / 100 %}
+<div class="gauge-donut-wrap">
+  <svg viewBox="0 0 120 120" class="gauge-donut">
+    <circle cx="60" cy="60" r="50" class="gauge-track"></circle>
+    <circle cx="60" cy="60" r="50" class="gauge-fill mem-used" id="{{ id_prefix }}-used"
+            stroke-dasharray="{{ used_len }} {{ circumference - used_len }}" stroke-dashoffset="0">
+      <title id="{{ id_prefix }}-used-title">Використано: {{ format_bytes(used_bytes) }}</title>
+    </circle>
+    <circle cx="60" cy="60" r="50" class="gauge-fill mem-cached" id="{{ id_prefix }}-cached"
+            stroke-dasharray="{{ cached_len }} {{ circumference - cached_len }}" stroke-dashoffset="{{ -used_len }}">
+      <title id="{{ id_prefix }}-cached-title">Кеш/буфери: {{ format_bytes(cached_bytes) }}</title>
+    </circle>
+    <circle cx="60" cy="60" r="50" class="gauge-fill mem-available" id="{{ id_prefix }}-available"
+            stroke-dasharray="{{ available_len }} {{ circumference - available_len }}" stroke-dashoffset="{{ -(used_len + cached_len) }}">
+      <title id="{{ id_prefix }}-available-title">Доступно: {{ format_bytes(available_bytes) }}</title>
+    </circle>
+  </svg>
+  <div class="gauge-center">
+    <span class="gauge-value" id="{{ id_prefix }}-pct">{{ (used_pct or 0) | round | int }}%</span>
+    <span class="gauge-sublabel">{{ label }}</span>
+  </div>
+</div>
 {% endmacro %}
 
 {% block content %}
@@ -43,6 +105,7 @@
 
 <nav class="admin-tabs">
   <button type="button" class="admin-tab-btn" data-tab="stats">Статистика</button>
+  <button type="button" class="admin-tab-btn" data-tab="history">Історія</button>
   <button type="button" class="admin-tab-btn" data-tab="users">Користувачі</button>
   <button type="button" class="admin-tab-btn" data-tab="system">Система</button>
   <button type="button" class="admin-tab-btn" data-tab="settings">Налаштування</button>
@@ -50,29 +113,30 @@
 
 <div class="tab-panel" data-tab-panel="stats">
   <section>
-    <div class="card stats-overview">
+    <div class="card stats-overview stats-overview-horizontal">
       <div class="stats-overview-group">
         <h3>Завантаження</h3>
-        <div class="stats-grid compact">
-          <div class="stat-card"><span class="stat-value">{{ total }}</span><span class="stat-label">Всього завантажень</span></div>
+        <div class="stats-grid compact stats-grid-mini">
+          <button type="button" class="stat-card open-source-modal"><span class="stat-value">{{ total }}</span><span class="stat-label">Всього завантажень</span></button>
           <div class="stat-card"><span class="stat-value">{{ finished }}</span><span class="stat-label">Успішних</span></div>
-          <div class="stat-card"><span class="stat-value">{{ errors }}</span><span class="stat-label">Помилок</span></div>
+          <div class="stat-card"><span class="stat-value">{{ cookies_used_count }}</span><span class="stat-label">З куками</span></div>
+          <button type="button" class="stat-card open-error-modal" data-kind="download"><span class="stat-value">{{ errors }}</span><span class="stat-label">Помилок</span></button>
           <div class="stat-card"><span class="stat-value">{{ format_bytes(total_size) }}</span><span class="stat-label">Займано місця</span></div>
         </div>
       </div>
       <div class="stats-overview-group">
         <h3>Конвертації</h3>
-        <div class="stats-grid compact">
+        <div class="stats-grid compact stats-grid-mini">
           <div class="stat-card"><span class="stat-value">{{ conversion_total }}</span><span class="stat-label">Всього конвертацій</span></div>
           <div class="stat-card"><span class="stat-value">{{ conversion_finished }}</span><span class="stat-label">Успішних</span></div>
-          <div class="stat-card"><span class="stat-value">{{ conversion_errors }}</span><span class="stat-label">Помилок</span></div>
+          <div class="stat-card"><span class="stat-value">{{ auto_conversion_count }}</span><span class="stat-label">Автоматичних</span></div>
+          <button type="button" class="stat-card open-error-modal" data-kind="conversion"><span class="stat-value">{{ conversion_errors }}</span><span class="stat-label">Помилок</span></button>
           <div class="stat-card"><span class="stat-value">{{ format_bytes(conversion_total_size) }}</span><span class="stat-label">Займано місця</span></div>
         </div>
       </div>
     </div>
   </section>
 
-  <div class="stats-columns">
   <section>
     <div class="section-header-row">
       <h2>Активність користувачів</h2>
@@ -102,32 +166,18 @@
       </div>
     {% endfor %}
   </section>
+</div>
 
-  <section>
-    <h2>За джерелами</h2>
-    <div class="table-wrap card">
-    <table class="table">
-      <thead><tr><th>Джерело</th><th>Кількість</th></tr></thead>
-      <tbody>
-      {% for source, count in by_source %}
-        <tr><td>{{ source or 'невідомо' }}</td><td>{{ count }}</td></tr>
-      {% else %}
-        <tr><td colspan="2">Немає даних</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    </div>
-  </section>
-  </div>
-
+<div class="tab-panel" data-tab-panel="history" hidden>
   <section>
     <h2>Історія завантажень</h2>
     <div class="table-wrap card">
-    <table class="table">
-      <thead><tr><th>Назва</th><th>Джерело</th><th>Тип</th><th>Статус</th><th>Юзер</th><th>Дата</th><th>Розмір</th><th></th></tr></thead>
+    <table class="table history-table">
+      <thead><tr><th></th><th>Назва</th><th>Джерело</th><th>Тип</th><th>Кукі</th><th>Юзер</th><th>Дата</th><th>Розмір</th><th></th></tr></thead>
       <tbody>
       {% for h in history %}
         <tr>
+          <td>{{ status_badge(h.status) }}</td>
           <td><button type="button" class="table-title-btn">{{ h.title or h.url }}</button></td>
           <td>{{ h.source or '' }}</td>
           <td>
@@ -144,7 +194,7 @@
             {{ h.mode }}
             {% endif %}
           </td>
-          <td>{{ status_badge(h.status) }}</td>
+          <td>{{ '+' if h.used_cookies else '-' }}</td>
           <td>{{ h.username or '—' }}</td>
           <td>{{ format_dt(h.created_at, timezone)|replace(' ', '<br>')|safe }}</td>
           <td>{{ format_bytes(h.filesize) if h.filesize else '' }}</td>
@@ -173,7 +223,7 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="8">Ще немає завантажень</td></tr>
+        <tr><td colspan="9">Ще немає завантажень</td></tr>
       {% endfor %}
       </tbody>
     </table>
@@ -184,15 +234,16 @@
   <section>
     <h2>Історія конвертацій</h2>
     <div class="table-wrap card">
-    <table class="table">
-      <thead><tr><th>Файл</th><th>Якість</th><th>Аудіо</th><th>Статус</th><th>Користувач</th><th>Дата</th><th>Розмір</th><th></th></tr></thead>
+    <table class="table history-table">
+      <thead><tr><th>Статус</th><th>Файл</th><th>Якість</th><th>Аудіо</th><th>Авто</th><th>Користувач</th><th>Дата</th><th>Розмір</th><th></th></tr></thead>
       <tbody>
       {% for c in conversion_history %}
         <tr>
+          <td>{{ status_badge(c.status) }}</td>
           <td><button type="button" class="table-title-btn">{{ c.original_filename or "video" }}</button></td>
           <td>{{ c.quality }}</td>
           <td>{{ c.audio_option }}</td>
-          <td>{{ status_badge(c.status) }}</td>
+          <td>{{ '+' if c.is_auto else '-' }}</td>
           <td>{{ c.username or '—' }}</td>
           <td>{{ format_dt(c.created_at, timezone) }}</td>
           <td>{{ format_bytes(c.filesize) if c.filesize else '' }}</td>
@@ -214,7 +265,7 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="8">Ще немає конвертацій</td></tr>
+        <tr><td colspan="9">Ще немає конвертацій</td></tr>
       {% endfor %}
       </tbody>
     </table>
@@ -229,6 +280,7 @@
     {% if request.query_params.get('user_error') == 'last_admin' %}<p class="error">Не можна прибрати права в останнього адміна — спершу надайте права комусь іншому.</p>{% endif %}
     {% if request.query_params.get('user_error') == 'empty' %}<p class="error">Заповніть новий пароль</p>{% endif %}
     {% if request.query_params.get('user_error') == 'mismatch' %}<p class="error">Паролі не співпадають</p>{% endif %}
+    {% if request.query_params.get('notify_error') == 'empty' %}<p class="error">Введіть текст сповіщення</p>{% endif %}
 
     <div class="table-wrap card">
     <table class="table">
@@ -262,6 +314,10 @@
               data-user-id="{{ u.id }}" data-username="{{ u.username }}">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0L19 4l3 3-3.5 3.5-2.5-2.5"/></svg>
             </button>
+            <button type="button" class="row-icon-btn inline-form open-notify-modal" aria-label="Надіслати сповіщення" title="Надіслати сповіщення"
+              data-user-id="{{ u.id }}" data-username="{{ u.username }}">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            </button>
             <form method="post" action="/admin/users/delete/{{ u.id }}" class="inline-form" id="delete-form-{{ u.id }}">
               <button type="button" class="row-icon-btn danger open-confirm-modal" aria-label="Видалити"
                 title="{% if u.is_admin and admin_user_count <= 1 %}Це останній адмін — спершу надайте права комусь іншому{% else %}Видалити{% endif %}"
@@ -286,31 +342,25 @@
 <div class="tab-panel" data-tab-panel="system">
   <section>
     <h2>Система</h2>
-    <p class="hint">Показники самого сервера (TrueNAS), а не лише контейнера — оскільки Obelisk єдиний процес у своєму контейнері, мережевий трафік нижче фактично і є трафіком сервісу. Деякі значення можуть бути недоступні залежно від того, що Docker відкриває контейнеру.</p>
-    <div class="stats-grid">
-      <div class="stat-card">
-        <span class="stat-value" id="sysinfo-cpu-temp">{{ "%.1f°C"|format(sys_info.cpu_temp) if sys_info.cpu_temp is not none else "—" }}</span>
-        <span class="stat-label">Температура CPU</span>
-      </div>
+
+    <div class="gauge-row">
+      {{ donut_gauge(sys_info.cpu_temp, "sysinfo-cpu-temp", "температура", 60, 80, ("%.1f°C"|format(sys_info.cpu_temp) if sys_info.cpu_temp is not none else "—")) }}
+      {% if sys_info.memory and sys_info.memory.total %}
+      {% set used_pct = (sys_info.memory.used / sys_info.memory.total * 100) if sys_info.memory.used is not none else 0 %}
+      {% set cached_pct = (sys_info.memory.cached / sys_info.memory.total * 100) if sys_info.memory.cached is not none else 0 %}
+      {% set available_pct = (sys_info.memory.available / sys_info.memory.total * 100) if sys_info.memory.available is not none else 0 %}
+      {{ mem_donut_gauge(used_pct, cached_pct, available_pct, sys_info.memory.used, sys_info.memory.cached, sys_info.memory.available, "sysinfo-mem", "ОЗП") }}
+      {% else %}
+      <p class="hint">Інформація про ОЗП недоступна в цьому середовищі.</p>
+      {% endif %}
+      {{ donut_gauge(sys_info.cpu_usage, "sysinfo-cpu-usage", "завантаження", 80, 95) }}
     </div>
 
-    <h3>Пам'ять</h3>
-    {% if sys_info.memory %}
-    <div class="stats-grid">
-      <div class="stat-card"><span class="stat-value" id="sysinfo-mem-total">{{ format_bytes(sys_info.memory.total) }}</span><span class="stat-label">Всього RAM</span></div>
-      <div class="stat-card"><span class="stat-value" id="sysinfo-mem-used">{{ format_bytes(sys_info.memory.used) }}</span><span class="stat-label">Використано</span></div>
-      <div class="stat-card"><span class="stat-value" id="sysinfo-mem-cached">{{ format_bytes(sys_info.memory.cached) }}</span><span class="stat-label">Кеш/буфери</span></div>
-      <div class="stat-card"><span class="stat-value" id="sysinfo-mem-available">{{ format_bytes(sys_info.memory.available) }}</span><span class="stat-label">Доступно</span></div>
-    </div>
-    {% else %}
-    <p class="hint">Інформація про пам'ять недоступна в цьому середовищі.</p>
-    {% endif %}
-
-    <h3>Мережа (з моменту старту контейнера)</h3>
+    <h3>Мережа</h3>
     {% if sys_info.network %}
-    <div class="stats-grid">
-      <div class="stat-card"><span class="stat-value" id="sysinfo-net-rx">{{ format_bytes(sys_info.network.rx_bytes) }}</span><span class="stat-label">Отримано</span></div>
-      <div class="stat-card"><span class="stat-value" id="sysinfo-net-tx">{{ format_bytes(sys_info.network.tx_bytes) }}</span><span class="stat-label">Надіслано</span></div>
+    <div class="stats-grid compact">
+      <div class="stat-card"><span class="stat-value" id="sysinfo-net-rx">{{ format_bytes(sys_info.network.rx_bytes) }}</span><span class="stat-label">Отримано (всього)</span></div>
+      <div class="stat-card"><span class="stat-value" id="sysinfo-net-tx">{{ format_bytes(sys_info.network.tx_bytes) }}</span><span class="stat-label">Надіслано (всього)</span></div>
     </div>
     {% else %}
     <p class="hint">Інформація про мережу недоступна в цьому середовищі.</p>
@@ -377,7 +427,10 @@
         </div>
       </div>
 
-      <p class="settings-group-title">Проксі для заблокованих сайтів</p>
+      <div class="settings-group-title-row">
+        <p class="settings-group-title">Проксі для заблокованих сайтів</p>
+        <span class="proxy-status" id="proxy-status" hidden></span>
+      </div>
       <label>Адреса проксі (напр. socks5h://user:pass@host:1080)
         <input type="text" name="proxy_url" value="{{ proxy_url }}" placeholder="залиште порожнім, щоб не використовувати проксі" autocomplete="off">
       </label>
@@ -387,6 +440,38 @@
 
       <button type="submit">Зберегти</button>
     </form>
+  </section>
+
+  <section>
+    <h2>Cookies YouTube</h2>
+    <div class="card">
+      <p class="hint">
+        Деякі відео YouTube віддає лише авторизованим користувачам. Щоб їх качало, встав сюди вміст cookies.txt
+        (Netscape-формат) залогіненого акаунта — наприклад, розширенням браузера "Get cookies.txt LOCALLY" на youtube.com.
+        Файл зберігається на сервері й дає доступ до акаунта, поки cookies дійсні — краще використати для цього окремий акаунт.
+      </p>
+      {% if has_cookies %}
+      <p class="success">✓ Cookies налаштовано.</p>
+      {% else %}
+      <p class="hint">Cookies не налаштовано.</p>
+      {% endif %}
+      {% if request.query_params.get('cookies_error') == 'empty' %}<p class="error">Оберіть файл cookies.txt</p>{% endif %}
+      <div class="cookies-actions">
+        <form method="post" action="/admin/settings/cookies" id="cookies-form">
+          <label>Файл cookies.txt
+            <input type="file" accept=".txt,text/plain" id="cookies-file-input" required>
+          </label>
+          <textarea name="cookies_content" id="cookies-content-textarea" hidden></textarea>
+          <button type="submit" id="cookies-save-btn">Зберегти cookies</button>
+        </form>
+        {% if has_cookies %}
+        <form method="post" action="/admin/settings/cookies/clear" class="inline-form" id="clear-cookies-form">
+          <button type="button" class="btn-secondary open-confirm-modal" data-form-id="clear-cookies-form" data-title="Прибрати cookies"
+            data-text="Видалити збережені cookies? Відео, що вимагають авторизації, перестануть качатись.">Прибрати cookies</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
   </section>
 </div>
 
@@ -404,6 +489,20 @@
       </label>
       <p class="error" id="password-modal-error" hidden>Паролі не співпадають</p>
       <button type="submit" class="btn-primary">Змінити</button>
+    </form>
+  </div>
+</div>
+
+<div class="modal-overlay" id="notify-modal" hidden>
+  <div class="modal-box">
+    <button type="button" class="modal-close" id="notify-modal-close" aria-label="Закрити">&times;</button>
+    <h3>Надіслати сповіщення</h3>
+    <p class="hint" id="notify-modal-username"></p>
+    <form method="post" id="notify-modal-form">
+      <label>Текст сповіщення
+        <textarea name="message" id="notify-modal-message" rows="4" required></textarea>
+      </label>
+      <button type="submit" class="btn-primary">Надіслати</button>
     </form>
   </div>
 </div>
@@ -446,12 +545,46 @@
   <div class="modal-box wide">
     <button type="button" class="modal-close" id="activity-modal-close" aria-label="Закрити">&times;</button>
     <div class="activity-modal-header">
-      <h3>Журнал дій — <span id="activity-modal-username"></span></h3>
-      <p class="hint activity-modal-meta" id="activity-modal-created"></p>
-      <p class="hint activity-modal-meta" id="activity-modal-login"></p>
+      <div class="activity-modal-header-info">
+        <h3>Журнал дій — <span id="activity-modal-username"></span></h3>
+        <p class="hint activity-modal-meta" id="activity-modal-created"></p>
+        <p class="hint activity-modal-meta" id="activity-modal-login"></p>
+      </div>
+      <label class="activity-modal-note">Нотатка
+        <textarea id="activity-modal-note-input" rows="2" placeholder="напр. Прізвище Ім'я"></textarea>
+      </label>
     </div>
     <div id="activity-modal-body">
       <p class="hint">Завантаження...</p>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="error-modal" hidden>
+  <div class="modal-box wide">
+    <button type="button" class="modal-close" id="error-modal-close" aria-label="Закрити">&times;</button>
+    <h3 id="error-modal-title">Помилки</h3>
+    <div class="activity-list" id="error-modal-body">
+      <p class="hint">Завантаження...</p>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="source-modal" hidden>
+  <div class="modal-box">
+    <button type="button" class="modal-close" id="source-modal-close" aria-label="Закрити">&times;</button>
+    <h3>За джерелами</h3>
+    <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Джерело</th><th>Кількість</th></tr></thead>
+      <tbody>
+      {% for source, count in by_source %}
+        <tr><td>{{ source or 'невідомо' }}</td><td>{{ count }}</td></tr>
+      {% else %}
+        <tr><td colspan="2">Немає даних</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
     </div>
   </div>
 </div>
@@ -488,16 +621,72 @@
     if (el) el.textContent = text;
   }
 
+  // Same geometry as the donut_gauge/mem_donut_gauge Jinja macros above -
+  // kept in sync by hand since one draws the first paint server-side and
+  // this redraws it on every poll tick.
+  var DONUT_CIRCUMFERENCE = 314.159;
+
+  function gaugeZoneClass(value, warnAt, dangerAt) {
+    if (value == null) return "";
+    if (value >= dangerAt) return "danger";
+    if (value >= warnAt) return "warn";
+    return "";
+  }
+
+  function updateDonut(prefix, pct, warnAt, dangerAt, displayText) {
+    var safePct = Math.max(0, Math.min(100, pct || 0));
+    var fill = document.getElementById(prefix + "-fill");
+    if (fill) {
+      fill.style.strokeDashoffset = (DONUT_CIRCUMFERENCE * (1 - safePct / 100)).toFixed(2);
+      fill.classList.remove("warn", "danger");
+      var zone = gaugeZoneClass(safePct, warnAt, dangerAt);
+      if (zone) fill.classList.add(zone);
+    }
+    setText(prefix + "-pct", displayText != null ? displayText : Math.round(safePct) + "%");
+  }
+
+  // RAM's donut is three stacked segments (used/cached/available) rather
+  // than one - each is its own <circle> sharing the same radius, with a
+  // dasharray covering just that slice and a dashoffset that starts it
+  // right where the previous slice ended.
+  function setDonutSegment(id, len, offset) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    len = Math.max(0, len);
+    el.style.strokeDasharray = len.toFixed(2) + " " + (DONUT_CIRCUMFERENCE - len).toFixed(2);
+    el.style.strokeDashoffset = (-offset).toFixed(2);
+  }
+
+  function updateMemDonut(prefix, usedPct, cachedPct, availablePct, usedBytes, cachedBytes, availableBytes) {
+    usedPct = Math.max(0, usedPct || 0);
+    cachedPct = Math.max(0, cachedPct || 0);
+    availablePct = Math.max(0, availablePct || 0);
+    var usedLen = DONUT_CIRCUMFERENCE * usedPct / 100;
+    var cachedLen = DONUT_CIRCUMFERENCE * cachedPct / 100;
+    var availableLen = DONUT_CIRCUMFERENCE * availablePct / 100;
+    setDonutSegment(prefix + "-used", usedLen, 0);
+    setDonutSegment(prefix + "-cached", cachedLen, usedLen);
+    setDonutSegment(prefix + "-available", availableLen, usedLen + cachedLen);
+    setText(prefix + "-pct", Math.round(usedPct) + "%");
+    setText(prefix + "-used-title", "Використано: " + formatBytes(usedBytes));
+    setText(prefix + "-cached-title", "Кеш/буфери: " + formatBytes(cachedBytes));
+    setText(prefix + "-available-title", "Доступно: " + formatBytes(availableBytes));
+  }
+
   async function refreshSysinfo() {
     try {
       const res = await fetch("/admin/api/sysinfo");
       const data = await res.json();
-      setText("sysinfo-cpu-temp", data.cpu_temp != null ? data.cpu_temp.toFixed(1) + "°C" : "—");
-      if (data.memory) {
-        setText("sysinfo-mem-total", formatBytes(data.memory.total));
-        setText("sysinfo-mem-used", formatBytes(data.memory.used));
-        setText("sysinfo-mem-cached", formatBytes(data.memory.cached));
-        setText("sysinfo-mem-available", formatBytes(data.memory.available));
+      updateDonut(
+        "sysinfo-cpu-temp", data.cpu_temp, 60, 80,
+        data.cpu_temp != null ? data.cpu_temp.toFixed(1) + "°C" : "—"
+      );
+      updateDonut("sysinfo-cpu-usage", data.cpu_usage, 80, 95);
+      if (data.memory && data.memory.total) {
+        var usedPct = (data.memory.used / data.memory.total) * 100;
+        var cachedPct = (data.memory.cached / data.memory.total) * 100;
+        var availablePct = (data.memory.available / data.memory.total) * 100;
+        updateMemDonut("sysinfo-mem", usedPct, cachedPct, availablePct, data.memory.used, data.memory.cached, data.memory.available);
       }
       if (data.network) {
         setText("sysinfo-net-rx", formatBytes(data.network.rx_bytes));
@@ -520,11 +709,40 @@
     sysinfoTimer = null;
   }
 
+  // ---------------- Proxy connection status ----------------
+  // Checked on demand (whenever the Settings tab is opened) rather than on
+  // every admin page load, since it actually dials out through the proxy
+  // and can take a few seconds if it's down.
+
+  var proxyStatusEl = document.getElementById("proxy-status");
+
+  function checkProxyStatus() {
+    if (!proxyStatusEl) return;
+    proxyStatusEl.hidden = false;
+    proxyStatusEl.className = "proxy-status checking";
+    proxyStatusEl.textContent = "Перевірка з'єднання...";
+    fetch("/admin/api/proxy-status")
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (!data.configured) {
+          proxyStatusEl.hidden = true;
+          return;
+        }
+        proxyStatusEl.className = "proxy-status " + (data.active ? "active" : "inactive");
+        proxyStatusEl.textContent = data.active ? "✓ З'єднання активне" : "✕ Немає з'єднання";
+      })
+      .catch(function () {
+        proxyStatusEl.className = "proxy-status inactive";
+        proxyStatusEl.textContent = "✕ Не вдалось перевірити";
+      });
+  }
+
   btns.forEach(function (btn) {
     btn.addEventListener("click", function () {
       activate(btn.dataset.tab);
       if (btn.dataset.tab === "system") startSysinfoPolling();
       else stopSysinfoPolling();
+      if (btn.dataset.tab === "settings") checkProxyStatus();
       // Keep the URL's ?tab= in sync so a page refresh lands back on the
       // same tab instead of always bouncing to the default (stats).
       var tabUrl = new URL(window.location.href);
@@ -538,6 +756,7 @@
   var initialTab = valid.includes(requested) ? requested : "stats";
   activate(initialTab);
   if (initialTab === "system") startSysinfoPolling();
+  if (initialTab === "settings") checkProxyStatus();
 
   var periodBtns = document.querySelectorAll(".period-tab-btn");
   var periodPanels = document.querySelectorAll(".period-panel");
@@ -605,7 +824,10 @@
     cache_cleared: "Кеш yt-dlp очищено.",
     data_wiped: "Дані очищено.",
     user_added: "Користувача додано.",
-    pw_reset: "Пароль користувача змінено."
+    pw_reset: "Пароль користувача змінено.",
+    cookies_saved: "Cookies збережено.",
+    cookies_cleared: "Cookies прибрано.",
+    notify_sent: "Сповіщення надіслано."
   };
   var currentParams = new URLSearchParams(window.location.search);
   var firedAny = false;
@@ -658,6 +880,35 @@
       e.preventDefault();
       passwordError.hidden = false;
     }
+  });
+
+  // ---------------- Notify user modal ----------------
+
+  var notifyModal = document.getElementById("notify-modal");
+  var notifyForm = document.getElementById("notify-modal-form");
+  var notifyMessage = document.getElementById("notify-modal-message");
+  var notifyUsername = document.getElementById("notify-modal-username");
+
+  function closeNotifyModal() {
+    notifyModal.hidden = true;
+  }
+
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest(".open-notify-modal");
+    if (!btn) return;
+    notifyForm.action = "/admin/users/notify/" + btn.dataset.userId;
+    notifyUsername.textContent = "Користувач: " + btn.dataset.username;
+    notifyMessage.value = "";
+    notifyModal.hidden = false;
+    notifyMessage.focus();
+  });
+
+  document.getElementById("notify-modal-close").addEventListener("click", closeNotifyModal);
+  notifyModal.addEventListener("click", function (e) {
+    if (e.target === notifyModal) closeNotifyModal();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !notifyModal.hidden) closeNotifyModal();
   });
 
   // ---------------- Add user modal ----------------
@@ -722,6 +973,32 @@
     if (e.key === "Escape" && !confirmModal.hidden) closeConfirmModal();
   });
 
+  // ---------------- Cookies file picker ----------------
+  // The backend route still just wants cookies_content as plain text, so
+  // rather than a multipart upload, the chosen file is read client-side
+  // and copied into a hidden textarea before the form submits normally.
+
+  var cookiesFileInput = document.getElementById("cookies-file-input");
+  var cookiesTextarea = document.getElementById("cookies-content-textarea");
+  var cookiesSaveBtn = document.getElementById("cookies-save-btn");
+  if (cookiesFileInput && cookiesTextarea && cookiesSaveBtn) {
+    cookiesFileInput.addEventListener("change", function () {
+      var file = cookiesFileInput.files[0];
+      cookiesTextarea.value = "";
+      if (!file) return;
+      cookiesSaveBtn.disabled = true;
+      var reader = new FileReader();
+      reader.onload = function () {
+        cookiesTextarea.value = String(reader.result || "");
+        cookiesSaveBtn.disabled = false;
+      };
+      reader.onerror = function () {
+        cookiesSaveBtn.disabled = false;
+      };
+      reader.readAsText(file);
+    });
+  }
+
   // ---------------- Per-user activity log ----------------
 
   var activityModal = document.getElementById("activity-modal");
@@ -729,8 +1006,26 @@
   var activityCreated = document.getElementById("activity-modal-created");
   var activityLogin = document.getElementById("activity-modal-login");
   var activityBody = document.getElementById("activity-modal-body");
+  var activityNoteInput = document.getElementById("activity-modal-note-input");
+  var activityNoteUserId = null;
+  var activityNoteSaved = "";
+
+  function saveActivityNote() {
+    if (!activityNoteUserId || activityNoteInput.value === activityNoteSaved) return;
+    var userId = activityNoteUserId;
+    var note = activityNoteInput.value;
+    activityNoteSaved = note;
+    fetch("/admin/api/user-activity/" + userId + "/note", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "note=" + encodeURIComponent(note),
+    }).catch(function () {
+      // ignore — worst case the note reverts to its previous value next open
+    });
+  }
 
   function closeActivityModal() {
+    saveActivityNote();
     activityModal.hidden = true;
   }
 
@@ -781,6 +1076,9 @@
     activityCreated.textContent = "";
     activityLogin.textContent = "";
     activityBody.innerHTML = '<p class="hint">Завантаження...</p>';
+    activityNoteInput.value = "";
+    activityNoteUserId = btn.dataset.userId;
+    activityNoteSaved = "";
     activityModal.hidden = false;
     try {
       const res = await fetch("/admin/api/user-activity/" + btn.dataset.userId);
@@ -791,6 +1089,8 @@
       }
       activityCreated.textContent = "Створено: " + data.created_at;
       activityLogin.textContent = "Авторизація: " + (data.last_login || "—");
+      activityNoteInput.value = data.note || "";
+      activityNoteSaved = activityNoteInput.value;
       activityBody.innerHTML =
         renderActivitySection("Завантаження", data.downloads) +
         renderActivitySection("Конвертації", data.conversions);
@@ -806,12 +1106,127 @@
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && !activityModal.hidden) closeActivityModal();
   });
+  activityNoteInput.addEventListener("blur", saveActivityNote);
+
+  // ---------------- Error list popup (stats tab "Помилок" cards) ----------------
+
+  var errorModal = document.getElementById("error-modal");
+  var errorModalTitle = document.getElementById("error-modal-title");
+  var errorModalBody = document.getElementById("error-modal-body");
+
+  function closeErrorModal() {
+    errorModal.hidden = true;
+  }
+
+  function renderErrorRow(it) {
+    var titleHtml = it.url
+      ? '<a class="activity-title" href="' + escapeHtmlAttr(it.url) + '" target="_blank" rel="noopener noreferrer" title="' + escapeHtmlAttr(it.url) + '">' + escapeHtmlAttr(it.title) + '</a>'
+      : '<span class="activity-title" title="' + escapeHtmlAttr(it.title) + '">' + escapeHtmlAttr(it.title) + '</span>';
+    return '<div class="activity-row">' +
+      titleHtml +
+      '<span class="activity-date">' + escapeHtmlAttr(it.username) + '</span>' +
+      '<span class="activity-date">' + escapeHtmlAttr(it.date) + '</span>' +
+      '</div>';
+  }
+
+  document.addEventListener("click", async function (e) {
+    var btn = e.target.closest(".open-error-modal");
+    if (!btn) return;
+    var isConversion = btn.dataset.kind === "conversion";
+    errorModalTitle.textContent = isConversion ? "Помилки конвертацій" : "Помилки завантажень";
+    errorModalBody.innerHTML = '<p class="hint">Завантаження...</p>';
+    errorModal.hidden = false;
+    try {
+      const res = await fetch("/admin/api/errors/" + btn.dataset.kind);
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        errorModalBody.innerHTML = '<p class="error">' + escapeHtmlAttr(data.error || "Помилка завантаження") + '</p>';
+        return;
+      }
+      errorModalBody.innerHTML = data.items.length
+        ? data.items.map(renderErrorRow).join("")
+        : '<p class="empty-hint">Немає помилок</p>';
+    } catch (err) {
+      errorModalBody.innerHTML = '<p class="error">Помилка з\'єднання</p>';
+    }
+  });
+
+  document.getElementById("error-modal-close").addEventListener("click", closeErrorModal);
+  errorModal.addEventListener("click", function (e) {
+    if (e.target === errorModal) closeErrorModal();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !errorModal.hidden) closeErrorModal();
+  });
+
+  // ---------------- "За джерелами" popup (stats tab "Всього завантажень" card) ----------------
+  // The table is already rendered server-side (by_source is small and
+  // static per page load), so this just toggles visibility - no fetch.
+
+  var sourceModal = document.getElementById("source-modal");
+
+  function closeSourceModal() {
+    sourceModal.hidden = true;
+  }
+
+  document.addEventListener("click", function (e) {
+    if (e.target.closest(".open-source-modal")) sourceModal.hidden = false;
+  });
+  document.getElementById("source-modal-close").addEventListener("click", closeSourceModal);
+  sourceModal.addEventListener("click", function (e) {
+    if (e.target === sourceModal) closeSourceModal();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !sourceModal.hidden) closeSourceModal();
+  });
 
   // ---------------- Expandable history titles ----------------
 
   document.addEventListener("click", function (e) {
     var titleBtn = e.target.closest(".table-title-btn");
     if (titleBtn) titleBtn.classList.toggle("expanded");
+  });
+
+  // ---------------- Pagination: jump to a typed page number ----------------
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter") return;
+    var input = e.target.closest(".pagination-jump-input");
+    if (!input) return;
+    e.preventDefault();
+    var nav = input.closest(".pagination");
+    var max = parseInt(nav.dataset.max, 10) || 1;
+    var page = Math.max(1, Math.min(max, parseInt(input.value, 10) || 1));
+    window.location.href = "/admin?tab=stats&" + nav.dataset.param + "=" + page;
+  });
+
+  // ---------------- Delete a history row (no page reload) ----------------
+
+  document.addEventListener("submit", function (e) {
+    var form = e.target;
+    var action = form.getAttribute("action") || "";
+    var isConversion = /^\/admin\/delete-conversion\//.test(action);
+    if (!isConversion && !/^\/admin\/delete\//.test(action)) return;
+    e.preventDefault();
+
+    var submitBtn = form.querySelector("button[type=submit]");
+    if (submitBtn) submitBtn.disabled = true;
+    fetch(action, { method: "POST" }).catch(function () {});
+
+    var row = form.closest("tr");
+    if (!row) return;
+    var tbody = row.parentElement;
+    var colspan = row.children.length;
+    var emptyText = isConversion ? "Ще немає конвертацій" : "Ще немає завантажень";
+    row.classList.add("row-fade-out");
+    setTimeout(function () {
+      row.remove();
+      if (tbody && !tbody.querySelector("tr")) {
+        var placeholder = document.createElement("tr");
+        placeholder.innerHTML = "<td colspan=\"" + colspan + "\">" + emptyText + "</td>";
+        tbody.appendChild(placeholder);
+      }
+    }, 260);
   });
 
   // ---------------- Refresh data (no page reload) ----------------

@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from . import config
 from .database import init_db, SessionLocal
-from .models import Conversion, Download, User
+from .models import Conversion, Download, Notification, User
 from . import auth
 from . import converter
 from . import metadata_tool
@@ -28,6 +28,7 @@ from .downloader import (
     clear_ytdlp_cache,
     parse_timecode,
     request_cancel as request_download_cancel,
+    check_proxy_connection,
 )
 from .cleanup import start_cleanup_thread, wipe_all_data
 from . import timeutil
@@ -282,6 +283,7 @@ def job_status(job_id: str, db: Session = Depends(get_db), _=Depends(require_sit
         "error": job.error_message,
         "filesize": job.filesize,
         "auto_convert_id": job.auto_convert_id,
+        "premiere_compat": bool(job.premiere_compat),
     }
 
 
@@ -360,6 +362,7 @@ def recent_jobs(
                 "source": r.source,
                 "mode": r.mode,
                 "filesize": r.filesize,
+                "premiere_compat": bool(r.premiere_compat),
             }
             for r in rows
         ],
@@ -751,6 +754,32 @@ def download_clean_file(
     return FileResponse(filepath, filename=filename)
 
 
+@app.get("/api/notifications/next")
+def next_notification(request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_api)):
+    username = request.session.get("site_username")
+    if not username:
+        return {}
+    notif = (
+        db.query(Notification)
+        .filter(Notification.username == username)
+        .order_by(Notification.created_at)
+        .first()
+    )
+    if not notif:
+        return {}
+    return {"id": notif.id, "message": notif.message}
+
+
+@app.post("/api/notifications/{notif_id}/dismiss")
+def dismiss_notification(notif_id: str, request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_api)):
+    username = request.session.get("site_username")
+    notif = db.get(Notification, notif_id)
+    if notif and notif.username == username:
+        db.delete(notif)
+        db.commit()
+    return {"ok": True}
+
+
 # ---------------- Site gate ----------------
 
 @app.get("/site-login", response_class=HTMLResponse)
@@ -824,9 +853,11 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
         .filter(Download.status == "finished")
         .scalar()
     )
+    cookies_used_count = db.query(func.count(Download.id)).filter(Download.used_cookies.is_(True)).scalar()
 
     by_source = (
         db.query(Download.source, func.count(Download.id))
+        .filter(Download.status == "finished")
         .group_by(Download.source)
         .order_by(func.count(Download.id).desc())
         .limit(10)
@@ -852,6 +883,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
         .filter(Conversion.status == "finished")
         .scalar()
     )
+    auto_conversion_count = db.query(func.count(Conversion.id)).filter(Conversion.is_auto.is_(True)).scalar()
     conversion_total_pages = max(1, -(-conversion_total // HISTORY_PAGE_SIZE))
     conversion_page = min(_page_param(request, "conversion_page"), conversion_total_pages)
     conversion_history = (
@@ -868,7 +900,8 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
     sys_info = {
         "memory": sysinfo.get_memory_stats(),
         "cpu_temp": sysinfo.get_cpu_temperature(),
-        "network": sysinfo.get_network_stats(),
+        "cpu_usage": sysinfo.get_cpu_usage_percent(),
+        "network": sysinfo.get_persisted_network_stats(db),
     }
 
     retention_hours = auth.get_retention_hours(db)
@@ -883,6 +916,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
     proxy_url = auth.get_proxy_url(db)
     proxy_domains = ",".join(auth.get_proxy_domains(db))
     timezone = auth.get_timezone(db)
+    has_cookies = auth.has_cookies()
 
     return templates.TemplateResponse(
         "admin.html",
@@ -895,6 +929,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
             "finished": finished,
             "errors": errors,
             "total_size": total_size,
+            "cookies_used_count": cookies_used_count,
             "by_source": by_source,
             "history": history,
             "history_page": history_page,
@@ -903,6 +938,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
             "conversion_finished": conversion_finished,
             "conversion_errors": conversion_errors,
             "conversion_total_size": conversion_total_size,
+            "auto_conversion_count": auto_conversion_count,
             "conversion_history": conversion_history,
             "conversion_page": conversion_page,
             "conversion_total_pages": conversion_total_pages,
@@ -919,28 +955,41 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
             "proxy_domains": proxy_domains,
             "timezone": timezone,
             "timezones": timeutil.COMMON_TIMEZONES,
+            "has_cookies": has_cookies,
         },
     )
 
 
 @app.get("/admin/api/sysinfo")
-def admin_sysinfo(_=Depends(require_admin_dep)):
+def admin_sysinfo(db: Session = Depends(get_db), _=Depends(require_admin_dep)):
     return {
         "memory": sysinfo.get_memory_stats(),
         "cpu_temp": sysinfo.get_cpu_temperature(),
-        "network": sysinfo.get_network_stats(),
+        "cpu_usage": sysinfo.get_cpu_usage_percent(),
+        "network": sysinfo.get_persisted_network_stats(db),
     }
 
 
 @app.get("/admin/api/processes")
 def admin_processes(db: Session = Depends(get_db), _=Depends(require_admin_dep)):
     """Same idea as /api/processes, but site-wide instead of scoped to one
-    browser's client_id - lets an admin see what every user is up to."""
+    browser's client_id - lets an admin see what every regular user is up
+    to. Admins' own jobs are deliberately left out: this tray is for keeping
+    an eye on the userbase, not on other admins (or yourself)."""
+    admin_usernames = [u.username for u in db.query(User).filter(User.is_admin.is_(True)).all()]
     downloads = _hide_stale_cancelled(
-        db.query(Download).filter(Download.status != "expired"), Download
+        db.query(Download).filter(
+            Download.status != "expired",
+            or_(Download.username.is_(None), Download.username.notin_(admin_usernames)),
+        ),
+        Download,
     ).order_by(Download.created_at.desc()).limit(50).all()
     conversions = _hide_stale_cancelled(
-        db.query(Conversion).filter(Conversion.status != "expired"), Conversion
+        db.query(Conversion).filter(
+            Conversion.status != "expired",
+            or_(Conversion.username.is_(None), Conversion.username.notin_(admin_usernames)),
+        ),
+        Conversion,
     ).order_by(Conversion.created_at.desc()).limit(50).all()
     items = [
         {
@@ -996,6 +1045,7 @@ def admin_user_activity(user_id: str, db: Session = Depends(get_db), _=Depends(r
         "username": user.username,
         "created_at": timeutil.format_local(user.created_at, tz),
         "last_login": timeutil.format_local(user.last_login, tz) if user.last_login else None,
+        "note": user.note or "",
         "downloads": [
             {
                 "id": h.id,
@@ -1015,6 +1065,48 @@ def admin_user_activity(user_id: str, db: Session = Depends(get_db), _=Depends(r
                 "size": sysinfo.format_bytes(c.filesize) if c.filesize else "",
             }
             for c in conversions
+        ],
+    }
+
+
+@app.post("/admin/api/user-activity/{user_id}/note")
+def admin_save_user_note(
+    user_id: str,
+    note: str = Form(""),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_dep),
+):
+    user = db.get(User, user_id)
+    if not user:
+        return JSONResponse({"error": "Користувача не знайдено"}, status_code=404)
+    user.note = note.strip()[:500] or None
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/admin/api/errors/{kind}")
+def admin_errors(kind: str, db: Session = Depends(get_db), _=Depends(require_admin_dep)):
+    if kind not in ("download", "conversion"):
+        return JSONResponse({"error": "invalid kind"}, status_code=400)
+    tz = auth.get_timezone(db)
+    model = Download if kind == "download" else Conversion
+    rows = (
+        db.query(model)
+        .filter(model.status == "error")
+        .order_by(model.created_at.desc())
+        .limit(200)
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "title": (r.title or r.url) if kind == "download" else (r.original_filename or "video"),
+                "url": r.url if kind == "download" else None,
+                "username": r.username or "—",
+                "date": timeutil.format_local(r.created_at, tz),
+            }
+            for r in rows
         ],
     }
 
@@ -1110,6 +1202,24 @@ def admin_set_user_admin(
     return RedirectResponse("/admin?tab=users", status_code=303)
 
 
+@app.post("/admin/users/notify/{user_id}")
+def admin_notify_user(
+    user_id: str,
+    message: str = Form(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_dep),
+):
+    message = message.strip()
+    if not message:
+        return RedirectResponse("/admin?tab=users&notify_error=empty", status_code=303)
+    user = db.get(User, user_id)
+    if not user:
+        return RedirectResponse("/admin?tab=users", status_code=303)
+    db.add(Notification(username=user.username, message=message[:2000]))
+    db.commit()
+    return RedirectResponse("/admin?tab=users&notify_sent=1", status_code=303)
+
+
 @app.post("/admin/clear-ytdlp-cache")
 def admin_clear_ytdlp_cache(_=Depends(require_admin_dep)):
     try:
@@ -1155,3 +1265,26 @@ def admin_settings(
         auth.set_setting(db, "timezone", timezone)
 
     return RedirectResponse("/admin?tab=settings&saved=1", status_code=303)
+
+
+@app.get("/admin/api/proxy-status")
+def admin_proxy_status(db: Session = Depends(get_db), _=Depends(require_admin_dep)):
+    proxy_url = auth.get_proxy_url(db)
+    if not proxy_url:
+        return {"configured": False, "active": False}
+    return {"configured": True, "active": check_proxy_connection(proxy_url)}
+
+
+@app.post("/admin/settings/cookies")
+def admin_save_cookies(cookies_content: str = Form(...), _=Depends(require_admin_dep)):
+    content = cookies_content.strip()
+    if not content:
+        return RedirectResponse("/admin?tab=settings&cookies_error=empty", status_code=303)
+    auth.save_cookies(content)
+    return RedirectResponse("/admin?tab=settings&cookies_saved=1", status_code=303)
+
+
+@app.post("/admin/settings/cookies/clear")
+def admin_clear_cookies(_=Depends(require_admin_dep)):
+    auth.clear_cookies()
+    return RedirectResponse("/admin?tab=settings&cookies_cleared=1", status_code=303)

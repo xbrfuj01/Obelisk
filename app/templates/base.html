@@ -9,13 +9,24 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css">
+<script>
+(function () {
+  try {
+    var saved = localStorage.getItem("obelisk-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.dataset.theme = saved;
+    }
+  } catch (err) {}
+})();
+</script>
 </head>
 <body>
 <div class="bg-glow"></div>
+<button type="button" class="theme-toggle-btn" id="theme-toggle-btn" title="Тема оформлення" aria-label="Тема оформлення"></button>
 <header class="topbar">
   <a href="/" class="brand"><span class="brand-icon">◆</span> Obelisk</a>
   <nav>
-    <div class="processes-wrap" id="processes-wrap" hidden>
+    <div class="processes-wrap" id="processes-wrap">
       <button type="button" class="processes-btn" id="processes-btn" title="Процеси" aria-label="Процеси">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
         <span class="processes-badge" id="processes-badge" hidden>0</span>
@@ -43,7 +54,21 @@
 <main class="container">
 {% block content %}{% endblock %}
 </main>
+
+<div class="modal-overlay" id="notification-modal" hidden>
+  <div class="modal-box">
+    <button type="button" class="modal-close" id="notification-modal-close" aria-label="Закрити">&times;</button>
+    <h3>Сповіщення</h3>
+    <p id="notification-modal-message"></p>
+    <div class="modal-actions">
+      <button type="button" class="btn-primary" id="notification-modal-ok">Гаразд</button>
+    </div>
+  </div>
+</div>
+
 {% block scripts %}{% endblock %}
+<script src="/static/theme-toggle.js"></script>
 <script src="/static/processes.js"></script>
+<script src="/static/notifications.js"></script>
 </body>
 </html>

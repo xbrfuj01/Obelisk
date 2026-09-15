@@ -1,3 +1,4 @@
+import os
 import secrets
 import threading
 from datetime import datetime, timedelta
@@ -101,6 +102,39 @@ def get_proxy_domains(db: Session) -> list:
 
 def get_timezone(db: Session) -> str:
     return get_setting(db, "timezone", config.DEFAULT_TIMEZONE)
+
+
+# ---------------- Cookies (for videos yt-dlp can't reach anonymously) ----------------
+# Stored as a plain file (yt-dlp's cookiefile option reads Netscape-format
+# cookies.txt directly) under DATA_DIR, which is the same persistent volume
+# the database lives on - not the web-servable static dir, not the ephemeral
+# downloads dir. Content is deliberately never read back into the admin UI
+# once saved (write-only from the admin's point of view) since it's live
+# access to whatever account it belongs to.
+
+def _cookies_path() -> str:
+    return os.path.join(config.DATA_DIR, "youtube_cookies.txt")
+
+
+def has_cookies() -> bool:
+    return os.path.exists(_cookies_path())
+
+
+def get_cookies_path():
+    path = _cookies_path()
+    return path if os.path.exists(path) else None
+
+
+def save_cookies(content: str):
+    with open(_cookies_path(), "w", encoding="utf-8") as f:
+        f.write(content)
+
+
+def clear_cookies():
+    try:
+        os.remove(_cookies_path())
+    except FileNotFoundError:
+        pass
 
 
 def is_admin_session(request: Request, db: Session) -> bool:

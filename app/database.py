@@ -1,6 +1,6 @@
 import os
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.schema import CreateColumn
 
@@ -9,6 +9,21 @@ from . import config
 DB_PATH = os.path.join(config.DATA_DIR, "app.db")
 
 engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
+
+
+@event.listens_for(engine, "connect")
+def _set_sqlite_pragma(dbapi_connection, connection_record):
+    """WAL lets readers (status polling) proceed without blocking on writers
+    (progress-hook/ffmpeg commits, which happen often) instead of the default
+    rollback journal's exclusive lock during a write. NORMAL sync still fsyncs
+    at WAL checkpoints, just not on every single commit - the standard
+    pairing for an app that commits this often on plain disk I/O."""
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.close()
+
+
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
