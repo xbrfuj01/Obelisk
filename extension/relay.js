@@ -6,13 +6,30 @@
 (function () {
   "use strict";
 
+  // Matched by video id, not the exact location.href string - YouTube
+  // routinely grows the url with extra query params (a timestamp after
+  // seeking, &si=, playlist context, ...) without firing a real
+  // navigation, which made an exact-string comparison here go stale on a
+  // real page in testing even though it was still genuinely the same
+  // video being watched.
+  function videoIdFromUrl(url) {
+    try {
+      const parsed = new URL(url);
+      if (parsed.pathname === "/watch") return parsed.searchParams.get("v");
+      if (parsed.pathname.startsWith("/shorts/")) return parsed.pathname.slice("/shorts/".length);
+    } catch (err) {
+      // ignore
+    }
+    return null;
+  }
+
   // Last token/quality-list capture.js reported, and which video each was
   // for - reset on every SPA navigation (see yt-navigate-finish below) so
   // data from a previous video is never mistaken for the current one.
   let latestToken = null;
-  let latestTokenUrl = null;
+  let latestTokenVideoId = null;
   let latestQualities = null;
-  let latestQualitiesUrl = null;
+  let latestQualitiesVideoId = null;
 
   window.addEventListener("message", function (event) {
     if (event.source !== window) return;
@@ -21,7 +38,7 @@
 
     if (data.type === "po-token") {
       latestToken = data.token;
-      latestTokenUrl = location.href;
+      latestTokenVideoId = videoIdFromUrl(location.href);
       chrome.runtime.sendMessage({
         type: "po-token",
         token: data.token,
@@ -31,7 +48,7 @@
       // Purely local - unlike the token, the server never needs this on
       // its own; it only matters bundled into a download-request below.
       latestQualities = data.qualities;
-      latestQualitiesUrl = location.href;
+      latestQualitiesVideoId = videoIdFromUrl(location.href);
       console.log("[Obelisk] relay.js cached qualities for", location.href, data.qualities);
     }
   });
@@ -65,25 +82,26 @@
     if (!btn) return;
     setButtonState(btn, "loading");
     const url = location.href;
+    const videoId = videoIdFromUrl(url);
 
     const deadline = Date.now() + TOKEN_GRACE_MS;
-    while ((!latestToken || latestTokenUrl !== url) && Date.now() < deadline) {
+    while ((!latestToken || latestTokenVideoId !== videoId) && Date.now() < deadline) {
       await new Promise(function (resolve) {
         setTimeout(resolve, 250);
       });
     }
 
-    const qualitiesToSend = latestQualitiesUrl === url ? latestQualities : null;
+    const qualitiesToSend = latestQualitiesVideoId === videoId ? latestQualities : null;
     console.log(
       "[Obelisk] sending download-request",
-      { url: url, hasToken: !!(latestTokenUrl === url && latestToken), qualities: qualitiesToSend }
+      { url: url, hasToken: !!(latestTokenVideoId === videoId && latestToken), qualities: qualitiesToSend }
     );
 
     chrome.runtime.sendMessage(
       {
         type: "download-request",
         url: url,
-        token: latestTokenUrl === url ? latestToken : null,
+        token: latestTokenVideoId === videoId ? latestToken : null,
         // Whatever the page's own player response already told us about
         // available resolutions - opportunistic, not waited for
         // separately, since Obelisk's own probe is a fine fallback if
@@ -157,9 +175,9 @@
   // masthead DOM (and our button) intact either.
   document.addEventListener("yt-navigate-finish", function () {
     latestToken = null;
-    latestTokenUrl = null;
+    latestTokenVideoId = null;
     latestQualities = null;
-    latestQualitiesUrl = null;
+    latestQualitiesVideoId = null;
     ensureButton();
   });
 
