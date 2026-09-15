@@ -6,23 +6,33 @@
 (function () {
   "use strict";
 
-  // Last token capture.js reported, and which video it was for - reset on
-  // every SPA navigation (see yt-navigate-finish below) so a token from a
-  // previous video is never mistaken for the current one.
+  // Last token/quality-list capture.js reported, and which video each was
+  // for - reset on every SPA navigation (see yt-navigate-finish below) so
+  // data from a previous video is never mistaken for the current one.
   let latestToken = null;
   let latestTokenUrl = null;
+  let latestQualities = null;
+  let latestQualitiesUrl = null;
 
   window.addEventListener("message", function (event) {
     if (event.source !== window) return;
     const data = event.data;
-    if (!data || !data.__obeliskBridge || data.type !== "po-token") return;
-    latestToken = data.token;
-    latestTokenUrl = location.href;
-    chrome.runtime.sendMessage({
-      type: "po-token",
-      token: data.token,
-      url: location.href,
-    });
+    if (!data || !data.__obeliskBridge) return;
+
+    if (data.type === "po-token") {
+      latestToken = data.token;
+      latestTokenUrl = location.href;
+      chrome.runtime.sendMessage({
+        type: "po-token",
+        token: data.token,
+        url: location.href,
+      });
+    } else if (data.type === "qualities") {
+      // Purely local - unlike the token, the server never needs this on
+      // its own; it only matters bundled into a download-request below.
+      latestQualities = data.qualities;
+      latestQualitiesUrl = location.href;
+    }
   });
 
   // -------- On-page "Завантажити" button --------
@@ -63,7 +73,16 @@
     }
 
     chrome.runtime.sendMessage(
-      { type: "download-request", url: url, token: latestTokenUrl === url ? latestToken : null },
+      {
+        type: "download-request",
+        url: url,
+        token: latestTokenUrl === url ? latestToken : null,
+        // Whatever the page's own player response already told us about
+        // available resolutions - opportunistic, not waited for
+        // separately, since Obelisk's own probe is a fine fallback if
+        // this hasn't shown up yet.
+        qualities: latestQualitiesUrl === url ? latestQualities : null,
+      },
       function (response) {
         const ok = !chrome.runtime.lastError && response && response.ok;
         setButtonState(btn, ok ? "done" : "error");
@@ -132,6 +151,8 @@
   document.addEventListener("yt-navigate-finish", function () {
     latestToken = null;
     latestTokenUrl = null;
+    latestQualities = null;
+    latestQualitiesUrl = null;
     ensureButton();
   });
 

@@ -52,6 +52,58 @@
     return null;
   }
 
+  // The page's own /youtubei/v1/player response (or, for the first video
+  // on a freshly loaded page, window.ytInitialPlayerResponse) already
+  // lists every resolution the video actually has, height/width/
+  // contentLength included - even for formats SABR strips the url from.
+  // Reading it here sidesteps the server-side quality-probe's whole
+  // SABR problem (see downloader.py's probe_qualities) entirely: this
+  // isn't asking the format to be *downloadable*, just reading metadata
+  // the page already received regardless.
+  const COMMON_LABELS = { 4320: "8K", 2160: "4K", 1440: "2K", 1080: "Full HD", 720: "HD" };
+
+  function extractQualities(playerResponse) {
+    const streamingData = playerResponse && playerResponse.streamingData;
+    if (!streamingData) return null;
+    const allFormats = [].concat(streamingData.formats || [], streamingData.adaptiveFormats || []);
+    const byHeight = {};
+    let bestAudioBytes = null;
+    for (const f of allFormats) {
+      const height = f.height;
+      const bytes = f.contentLength ? parseInt(f.contentLength, 10) : null;
+      const isAudioOnly = !height && typeof f.mimeType === "string" && f.mimeType.indexOf("audio/") === 0;
+      if (height) {
+        const prev = byHeight[height];
+        if (!prev || (bytes && (!prev.bytes || bytes > prev.bytes))) {
+          byHeight[height] = { width: f.width, bytes: bytes };
+        }
+      } else if (isAudioOnly && bytes && (!bestAudioBytes || bytes > bestAudioBytes)) {
+        bestAudioBytes = bytes;
+      }
+    }
+    const heights = Object.keys(byHeight)
+      .map(Number)
+      .sort(function (a, b) {
+        return b - a;
+      });
+    if (!heights.length) return null;
+    return heights.map(function (h) {
+      const entry = byHeight[h];
+      let label = entry.width ? entry.width + "×" + h : h + "p";
+      if (COMMON_LABELS[h]) label += " (" + COMMON_LABELS[h] + ")";
+      return { value: String(h), label: label, video_bytes: entry.bytes, audio_bytes: bestAudioBytes };
+    });
+  }
+
+  function reportQualities(qualities) {
+    if (!qualities || !qualities.length) return;
+    window.postMessage({ __obeliskBridge: true, type: "qualities", qualities: qualities }, "*");
+  }
+
+  function isPlayerRequestUrl(url) {
+    return typeof url === "string" && url.indexOf("/youtubei/v1/player") !== -1;
+  }
+
   // The tab background.js opens for this is created with active:false, so
   // document.visibilityState is "hidden" for its whole life (that's a
   // property of the tab itself, unrelated to the earlier chrome.alarms
@@ -85,8 +137,8 @@
 
   const originalFetch = window.fetch;
   window.fetch = function (input, init) {
+    const url = typeof input === "string" ? input : input && input.url;
     try {
-      const url = typeof input === "string" ? input : input && input.url;
       const fromUrl = url ? extractFromUrl(url) : null;
       if (fromUrl) reportToken(fromUrl, "fetch-url");
       const body = init && init.body;
@@ -95,7 +147,18 @@
     } catch (err) {
       // never let capture logic break the page's own playback
     }
-    return originalFetch.apply(this, arguments);
+    const result = originalFetch.apply(this, arguments);
+    if (isPlayerRequestUrl(url)) {
+      result
+        .then(function (res) {
+          return res.clone().json();
+        })
+        .then(function (json) {
+          reportQualities(extractQualities(json));
+        })
+        .catch(function () {});
+    }
+    return result;
   };
 
   const originalOpen = XMLHttpRequest.prototype.open;
@@ -107,6 +170,7 @@
     } catch (err) {
       // ignore
     }
+    this.__obeliskIsPlayerRequest = isPlayerRequestUrl(url);
     return originalOpen.apply(this, arguments);
   };
   XMLHttpRequest.prototype.send = function (body) {
@@ -116,6 +180,30 @@
     } catch (err) {
       // ignore
     }
+    if (this.__obeliskIsPlayerRequest) {
+      this.addEventListener("load", function () {
+        try {
+          reportQualities(extractQualities(JSON.parse(this.responseText)));
+        } catch (err) {
+          // not JSON, or shape we don't recognize - ignore
+        }
+      });
+    }
     return originalSend.apply(this, arguments);
   };
+
+  // Covers the very first video on a freshly loaded page: its player
+  // response is embedded straight into the HTML (window.ytInitialPlayerResponse)
+  // rather than fetched via the hooks above, which only see *subsequent*
+  // videos navigated to within the same SPA session.
+  let initialCheckAttempts = 0;
+  const initialCheckTimer = setInterval(function () {
+    initialCheckAttempts += 1;
+    if (window.ytInitialPlayerResponse) {
+      reportQualities(extractQualities(window.ytInitialPlayerResponse));
+      clearInterval(initialCheckTimer);
+    } else if (initialCheckAttempts > 40) {
+      clearInterval(initialCheckTimer);
+    }
+  }, 250);
 })();

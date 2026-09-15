@@ -114,10 +114,14 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
     try {
       const { serverUrl } = await getConfig();
       if (!serverUrl) throw new Error("not configured");
+      const body =
+        "url=" + encodeURIComponent(message.url) +
+        "&po_token=" + encodeURIComponent(message.token || "") +
+        "&qualities=" + encodeURIComponent(message.qualities ? JSON.stringify(message.qualities) : "");
       const res = await apiFetch("/api/extension/prefill", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: "url=" + encodeURIComponent(message.url) + "&po_token=" + encodeURIComponent(message.token || ""),
+        body: body,
       });
       if (!res.ok) throw new Error("prefill failed");
       const data = await res.json();

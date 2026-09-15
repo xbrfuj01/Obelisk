@@ -346,9 +346,22 @@ if (urlClearBtn) {
     urlInput.value = data.url;
     updateUrlClearButton();
     await probeQualities();
-    // Must come after probeQualities() - it clears this field as part of
-    // resetting everything that only makes sense for the previous video.
+    // Both of these must come after probeQualities() - it resets both as
+    // part of clearing everything that only makes sense for the previous
+    // video (see resetPerVideoOptions).
     if (poTokenInput) poTokenInput.value = data.po_token || "";
+    if (Array.isArray(data.qualities) && data.qualities.length) {
+      // The extension read this straight out of the YouTube page's own
+      // player response (capture.js) - includes resolutions Obelisk's own
+      // probe can't see when YouTube SABR-restricts the format's url
+      // (the metadata survives even when the url doesn't), so it takes
+      // priority over whatever the probe above just found.
+      lastQualities = data.qualities;
+      renderQualityOptions();
+      qualityHint.textContent = `Знайдено ${data.qualities.length} варіант(ів) якості (з розширення).`;
+      urlStatus.innerHTML = "✓";
+      urlStatus.className = "url-status ok";
+    }
   } catch (err) {
     // silently ignore - worst case the field is just empty and the user
     // pastes the link manually

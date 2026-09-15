@@ -83,14 +83,19 @@ _prefill_store = {}
 PREFILL_TTL_SECONDS = 120
 
 
-def create_prefill(url: str, po_token: str | None) -> str:
+def create_prefill(url: str, po_token: str | None, qualities: list | None = None) -> str:
     now = time.time()
     prefill_id = secrets.token_urlsafe(16)
     with _prefill_lock:
         expired = [k for k, v in _prefill_store.items() if v["expires_at"] < now]
         for k in expired:
             del _prefill_store[k]
-        _prefill_store[prefill_id] = {"url": url, "po_token": po_token, "expires_at": now + PREFILL_TTL_SECONDS}
+        _prefill_store[prefill_id] = {
+            "url": url,
+            "po_token": po_token,
+            "qualities": qualities,
+            "expires_at": now + PREFILL_TTL_SECONDS,
+        }
     return prefill_id
 
 
@@ -99,7 +104,7 @@ def pop_prefill(prefill_id: str):
         entry = _prefill_store.pop(prefill_id, None)
     if not entry or entry["expires_at"] < time.time():
         return None
-    return {"url": entry["url"], "po_token": entry["po_token"]}
+    return {"url": entry["url"], "po_token": entry["po_token"], "qualities": entry.get("qualities")}
 
 
 sys.stdout = _ThreadAwareMuter(sys.stdout)

@@ -623,24 +623,56 @@ def extension_my_stats(db: Session = Depends(get_db), username: str = Depends(re
     return {"count": count}
 
 
+def _sanitize_extension_qualities(raw: str) -> list | None:
+    """The quality list relay.js reads out of the page's own YouTube player
+    response (capture.js) - not just the token. Untrusted client input, so
+    parsed defensively: wrong shape or too many entries and this just
+    quietly returns None, falling back to Obelisk's own probe exactly like
+    a plain pasted link would."""
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(data, list) or not data or len(data) > 30:
+        return None
+    result = []
+    for item in data[:30]:
+        if not isinstance(item, dict):
+            continue
+        value = item.get("value")
+        label = item.get("label")
+        if not isinstance(value, str) or not isinstance(label, str) or not value or not label:
+            continue
+        entry = {"value": value[:20], "label": label[:60]}
+        for key in ("video_bytes", "audio_bytes"):
+            n = item.get(key)
+            entry[key] = n if isinstance(n, (int, float)) and n > 0 else None
+        result.append(entry)
+    return result or None
+
+
 @app.post("/api/extension/prefill")
 def extension_create_prefill(
     url: str = Form(...),
     po_token: str = Form(""),
+    qualities: str = Form(""),
     db: Session = Depends(get_db),
     _=Depends(require_extension_token),
 ):
     """Called by background.js when the "Завантажити" button injected on
     the YouTube page itself (relay.js) is clicked - hands off the current
-    video's URL and whatever PO token the page has already captured, so
-    the new Obelisk tab that button opens can prefill the download form
+    video's URL, whatever PO token the page has already captured, and
+    whatever quality list it read out of the page's own player response,
+    so the new Obelisk tab that button opens can prefill the download form
     without the url/token ever sitting in that tab's own address bar."""
     url = url.strip()
     if not url.startswith(("http://", "https://")):
         return JSONResponse({"error": "Некоректне посилання"}, status_code=400)
     if not is_url_allowed(url, db):
         return JSONResponse({"error": "Це посилання вказує на заборонену адресу"}, status_code=400)
-    prefill_id = create_prefill(url, po_token.strip() or None)
+    prefill_id = create_prefill(url, po_token.strip() or None, _sanitize_extension_qualities(qualities))
     return {"id": prefill_id}
 
 
