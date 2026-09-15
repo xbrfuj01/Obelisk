@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg curl make cpanminus \
+    && apt-get install -y --no-install-recommends ffmpeg curl unzip make cpanminus \
     && rm -rf /var/lib/apt/lists/*
 
 # yt-dlp needs a JS runtime to solve YouTube's player challenge - without
