@@ -511,15 +511,18 @@ def _should_use_proxy(url: str, db) -> bool:
 
 
 def _is_extension_eligible(job) -> bool:
-    """Structural eligibility for the extension-assisted path - plain,
-    non-clip video+audio YouTube only. Everything else (clips, "лише
-    відео", "лише аудіо") always uses the stable engine - the SABR fork
-    behind the extension doesn't support --download-sections yet, and
-    audio-only/video-only aren't worth the extra format-string complexity.
-    No admin setting is involved: dispatch is automatic (see _run_job) -
-    an eligible job tries the extension first if one looks alive, and
+    """Structural eligibility for the extension-assisted/SABR-fork path -
+    non-clip YouTube video, with or without audio. Clips still always use
+    the stable engine - the SABR fork doesn't support --download-sections
+    yet. "Лише відео" is eligible (fetches the normal combined
+    video+audio SABR/adaptive pair same as full "video" mode - the
+    _ensure_no_audio safety net below strips the audio afterward
+    regardless of which engine produced the file), but "лише аудіо" isn't
+    worth the extra format-string complexity for an audio-only SABR
+    selector. No admin setting is involved: dispatch is automatic (see
+    _run_job) - an eligible job tries the extension/SABR fork first, and
     silently falls back to plain yt-dlp otherwise."""
-    return job.mode == "video" and job.clip_start is None and job.clip_end is None and _is_youtube(job.url)
+    return job.mode in ("video", "video_only") and job.clip_start is None and job.clip_end is None and _is_youtube(job.url)
 
 
 # How long _run_job waits for the Obelisk Bridge extension to poll, open
