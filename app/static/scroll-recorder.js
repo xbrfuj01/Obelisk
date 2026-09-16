@@ -84,7 +84,6 @@ document.addEventListener("click", async (e) => {
 // --- Full-screen preview editor ---
 
 const urlInput = document.getElementById("sr-url");
-const aspectRatioSelect = document.getElementById("sr-aspect-ratio");
 const previewBtn = document.getElementById("sr-preview-btn");
 
 const overlay = document.getElementById("editor-overlay");
@@ -101,6 +100,7 @@ const panel = document.getElementById("editor-panel");
 const panelHeader = document.getElementById("editor-panel-header");
 const closeBtn = document.getElementById("editor-close");
 const deviceSegmented = document.getElementById("device-segmented");
+const aspectRatioSegmented = document.getElementById("aspect-ratio-segmented");
 const removeToggleBtn = document.getElementById("ed-remove-toggle");
 const removeHeaderBtn = document.getElementById("ed-remove-header");
 const undoBtn = document.getElementById("ed-undo");
@@ -118,7 +118,8 @@ let viewportHeight = 1;
 let startFraction = 0.0;
 let endFraction = 1.0;
 let removeArmed = false;
-let deviceValue = "desktop";
+let deviceValue = "mobile";
+let aspectRatioValue = "16:9";
 let framerateValue = 30;
 let blockAdsArmed = false;
 let useProxyArmed = false;
@@ -194,7 +195,7 @@ async function openSession() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         url: urlInput.value.trim(),
-        aspect_ratio: aspectRatioSelect.value,
+        aspect_ratio: aspectRatioValue,
         device: deviceValue,
         block_ads: blockAdsArmed,
         use_proxy: useProxyArmed,
@@ -264,9 +265,27 @@ closeBtn.addEventListener("click", async () => {
   await closeSession();
 });
 
+function syncAspectRatioAvailability() {
+  const disabled = deviceValue === "mobile";
+  aspectRatioSegmented.querySelectorAll(".segmented-btn").forEach((b) => {
+    b.disabled = disabled;
+  });
+}
+syncAspectRatioAvailability();
+
 setupSegmented(deviceSegmented, async (value) => {
   deviceValue = value;
+  syncAspectRatioAvailability();
   if (overlay.hidden) return;
+  await closeSession();
+  startFraction = 0.0;
+  endFraction = 1.0;
+  await openSession();
+});
+
+setupSegmented(aspectRatioSegmented, async (value) => {
+  aspectRatioValue = value;
+  if (overlay.hidden || deviceValue === "mobile") return;
   await closeSession();
   startFraction = 0.0;
   endFraction = 1.0;

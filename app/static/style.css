@@ -1685,7 +1685,8 @@ a.tool-card:hover {
   padding: 12px;
 }
 
-/* Compact icon-first controls - a two-option toggle (device, framerate) */
+/* Compact icon-first controls - a multi-option toggle (device, aspect
+   ratio, framerate) */
 .segmented {
   display: flex;
   border: 1px solid var(--border);
@@ -1694,6 +1695,9 @@ a.tool-card:hover {
 }
 .segmented-btn {
   flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 8px 0;
   background: var(--bg-input);
   border: none;
@@ -1708,6 +1712,10 @@ a.tool-card:hover {
 .segmented-btn[aria-pressed="true"] {
   background: var(--accent);
   color: #fff;
+}
+.segmented-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 /* A grid of standalone icon buttons - remove/undo/ad-block/proxy/reset */

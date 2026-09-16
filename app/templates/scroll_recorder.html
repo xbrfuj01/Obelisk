@@ -13,16 +13,6 @@
     <input type="url" name="url" id="sr-url" placeholder="https://..." required>
   </label>
 
-  <div class="field-group" id="sr-aspect-ratio-group">
-    <span class="field-label">Співвідношення сторін</span>
-    <select name="aspect_ratio" id="sr-aspect-ratio">
-      <option value="16:9" selected>16:9 (горизонтальне)</option>
-      <option value="9:16">9:16 (вертикальне)</option>
-      <option value="1:1">1:1 (квадрат)</option>
-      <option value="4:5">4:5 (портрет)</option>
-    </select>
-  </div>
-
   <button type="button" class="btn-primary" id="sr-preview-btn">Попередній перегляд</button>
 </div>
 
@@ -51,8 +41,15 @@
     </div>
     <div class="editor-panel-body">
       <div class="segmented" id="device-segmented">
-        <button type="button" class="segmented-btn" data-value="desktop" aria-pressed="true" title="ПК">🖥</button>
-        <button type="button" class="segmented-btn" data-value="mobile" aria-pressed="false" title="Телефон (ігнорує співвідношення сторін, перевідкриє перегляд)">📱</button>
+        <button type="button" class="segmented-btn" data-value="desktop" aria-pressed="false" title="ПК">🖥</button>
+        <button type="button" class="segmented-btn" data-value="mobile" aria-pressed="true" title="Телефон (ігнорує співвідношення сторін)">📱</button>
+      </div>
+
+      <div class="segmented" id="aspect-ratio-segmented" title="Співвідношення сторін (лише для ПК)">
+        <button type="button" class="segmented-btn" data-value="16:9" aria-pressed="true" title="16:9 горизонтальне"><svg width="20" height="12" viewBox="0 0 20 12" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="18" height="10" rx="1.5"/></svg></button>
+        <button type="button" class="segmented-btn" data-value="9:16" aria-pressed="false" title="9:16 вертикальне"><svg width="12" height="20" viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="10" height="18" rx="1.5"/></svg></button>
+        <button type="button" class="segmented-btn" data-value="1:1" aria-pressed="false" title="1:1 квадрат"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="14" height="14" rx="1.5"/></svg></button>
+        <button type="button" class="segmented-btn" data-value="4:5" aria-pressed="false" title="4:5 портрет"><svg width="14" height="17" viewBox="0 0 14 17" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="12" height="15" rx="1.5"/></svg></button>
       </div>
 
       <div class="icon-toolbar">
