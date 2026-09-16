@@ -108,6 +108,11 @@ MAX_SCROLL_STEP_PX = 30
 MAX_CAPTURE_SECONDS = 900
 MAX_CAPTURE_FRAMES = 6000
 
+# How many consecutive ticks with zero net scroll movement before giving
+# up on a stuck page (scroll-jacked layout, a sticky element fighting the
+# scroll, etc.) instead of running until MAX_CAPTURE_SECONDS.
+STALL_TICK_LIMIT = 8
+
 RETENTION_SECONDS = 2 * 3600
 CLEANUP_INTERVAL_SECONDS = 600
 
@@ -218,6 +223,13 @@ def _prepare_page(p, browser, url, aspect_ratio, device, block_ads):
     else:
         width, height = VIEWPORTS[aspect_ratio]
         page = browser.new_page(viewport={"width": width, "height": height}, user_agent=DESKTOP_USER_AGENT)
+    # A native dialog (alert/confirm/prompt/beforeunload) blocks the page's
+    # JS thread until dismissed - Playwright does not auto-dismiss these,
+    # so without a handler any page that pops one mid-scroll freezes every
+    # subsequent evaluate() call indefinitely (looks exactly like a
+    # recording stuck at some fixed progress %, never erroring, never
+    # finishing). Auto-dismissing keeps capture moving regardless.
+    page.on("dialog", lambda dialog: dialog.dismiss())
     stealth_sync(page)
     if block_ads:
         _apply_ad_block(page)
@@ -262,6 +274,7 @@ def _scroll_and_capture(job_id, page, frames_dir, duration_seconds, output_fps):
     deadline = time.monotonic() + MAX_CAPTURE_SECONDS
 
     frame_index = 0
+    stall_ticks = 0
     state = page.evaluate(
         "() => ({y: window.scrollY, h: document.documentElement.scrollHeight})"
     )
@@ -272,6 +285,14 @@ def _scroll_and_capture(job_id, page, frames_dir, duration_seconds, output_fps):
         if job_id in _cancel_requested:
             break
         if time.monotonic() >= deadline or frame_index >= MAX_CAPTURE_FRAMES:
+            break
+        # Some pages pin/reset scrollY themselves (scroll-jacked "sections"
+        # layouts, a sticky element fighting our scroll, etc.) - scrollBy
+        # then has no real effect, and without this the loop would just
+        # keep capturing identical frames until MAX_CAPTURE_SECONDS. Give
+        # up early instead once several consecutive ticks made no progress,
+        # and encode whatever was captured so far rather than stalling.
+        if stall_ticks >= STALL_TICK_LIMIT:
             break
 
         # Lossless PNG - JPEG's compression, stacked with the H.264 encode
@@ -309,7 +330,9 @@ def _scroll_and_capture(job_id, page, frames_dir, duration_seconds, output_fps):
             })""",
             step,
         )
-        scroll_y = state["y"]
+        new_scroll_y = state["y"]
+        stall_ticks = stall_ticks + 1 if new_scroll_y <= scroll_y else 0
+        scroll_y = new_scroll_y
         # re-measure in case lazy-loaded content grew the page
         scroll_height = max(scroll_height, state["h"])
 
