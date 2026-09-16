@@ -135,12 +135,14 @@ _previews_lock = threading.Lock()
 def create_job(
     url: str, aspect_ratio: str, device: str, duration_seconds: int, framerate: int,
     block_ads: bool = False, proxy_url: str = None,
+    start_fraction: float = 0.0, end_fraction: float = 1.0,
 ) -> str:
     job_id = uuid.uuid4().hex
     with _jobs_lock:
         _jobs[job_id] = {"status": "queued", "progress": 0.0, "error": None}
     _executor.submit(
-        _run_job, job_id, url, aspect_ratio, device, duration_seconds, framerate, block_ads, proxy_url
+        _run_job, job_id, url, aspect_ratio, device, duration_seconds, framerate, block_ads, proxy_url,
+        start_fraction, end_fraction,
     )
     return job_id
 
@@ -240,6 +242,25 @@ def _prepare_page(p, browser, url, aspect_ratio, device, block_ads):
     return page
 
 
+def _scroll_by(page, dy):
+    """Scrolls by dy via an instant jump (never a page's own CSS
+    scroll-behavior:smooth - see _scroll_and_capture for why) and waits
+    for the browser to actually paint the new position before returning,
+    so whatever's captured right after (a screenshot, or just reading the
+    new position) reflects a crisp, settled frame instead of a
+    mid-animation one. Shared by the real capture loop and the
+    preview-session wheel-scroll endpoint."""
+    return page.evaluate(
+        """(dy) => new Promise((resolve) => {
+            window.scrollBy({top: dy, left: 0, behavior: 'instant'});
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                resolve({y: window.scrollY, h: document.documentElement.scrollHeight});
+            }));
+        })""",
+        dy,
+    )
+
+
 def _compute_scroll_step(total_scrollable_px, duration_seconds, output_fps):
     """Sizes the per-frame scroll step directly from the page's own
     scrollable distance and what the requested output actually needs
@@ -261,25 +282,52 @@ def _compute_scroll_step(total_scrollable_px, duration_seconds, output_fps):
     return max(MIN_SCROLL_STEP_PX, min(MAX_SCROLL_STEP_PX, round(ideal_step_px)))
 
 
-def _scroll_and_capture(job_id, page, frames_dir, duration_seconds, output_fps):
+def _scroll_and_capture(
+    job_id, page, frames_dir, duration_seconds, output_fps,
+    start_fraction=0.0, end_fraction=1.0,
+):
     """Captures one frame per _compute_scroll_step() pixels of real scroll
-    movement, all the way to the bottom of the page - deliberately not
-    paced to a time deadline itself (see _compute_scroll_step), so the raw
+    movement, from start_fraction to end_fraction of the page's scrollable
+    distance (defaults 0.0/1.0 - the whole page) - deliberately not paced
+    to a time deadline itself (see _compute_scroll_step), so the raw
     footage this produces stays fine-grained regardless of how long it
     takes in real wall-clock time. _encode (called separately, after this
     returns) is what fits the result into the exact requested output
     duration/framerate, by speeding up this footage rather than by pacing
-    the capture itself to a deadline."""
+    the capture itself to a deadline.
+
+    start_fraction/end_fraction are resolved against a fresh scrollHeight
+    reading taken right here (the same one already needed to size the
+    capture step), not a stale measurement from whenever a preview session
+    was first opened - the frontend only ever sends fractions, computed
+    the same way it already tracks "how far scrolled" from wheel-scroll
+    responses (y / (h - viewportHeight)), so a marker placed at some
+    fraction here means the same page position regardless of when it was
+    set."""
     height = page.viewport_size["height"]
     deadline = time.monotonic() + MAX_CAPTURE_SECONDS
 
-    frame_index = 0
-    stall_ticks = 0
     state = page.evaluate(
         "() => ({y: window.scrollY, h: document.documentElement.scrollHeight})"
     )
-    scroll_y, scroll_height = state["y"], state["h"]
-    step_px = _compute_scroll_step(max(0, scroll_height - height), duration_seconds, output_fps)
+    scroll_height = state["h"]
+    total_page_scrollable = max(0, scroll_height - height)
+
+    start_fraction = max(0.0, min(1.0, start_fraction))
+    end_fraction = max(0.0, min(1.0, end_fraction))
+    start_px = round(start_fraction * total_page_scrollable)
+    fixed_end = end_fraction < 1.0
+    effective_bottom = round(end_fraction * total_page_scrollable) + height if fixed_end else scroll_height
+
+    scroll_y = state["y"]
+    if start_px != scroll_y:
+        state = _scroll_by(page, start_px - scroll_y)
+        scroll_y = state["y"]
+
+    frame_index = 0
+    stall_ticks = 0
+    range_total = max(0, effective_bottom - height - start_px)
+    step_px = _compute_scroll_step(range_total, duration_seconds, output_fps)
 
     while True:
         if job_id in _cancel_requested:
@@ -301,40 +349,25 @@ def _scroll_and_capture(job_id, page, frames_dir, duration_seconds, output_fps):
         page.screenshot(path=os.path.join(frames_dir, f"frame_{frame_index:06d}.png"))
         frame_index += 1
 
-        total_scrollable = max(1, scroll_height - height)
-        progress = min(99.0, scroll_y / total_scrollable * 100) if scroll_height > height else 100.0
+        progressed = max(0, scroll_y - start_px)
+        progress = min(99.0, progressed / range_total * 100) if range_total > 0 else 100.0
         _set_status(job_id, progress=round(progress, 1))
 
-        remaining_px = max(0, scroll_height - height - scroll_y)
+        remaining_px = max(0, effective_bottom - height - scroll_y)
         if remaining_px <= 0:
             break
 
         step = min(step_px, remaining_px)
-
-        # behavior:'instant' explicitly overrides a page's own CSS
-        # scroll-behavior:smooth - without it, scrollBy kicks off the
-        # browser's own multi-frame scroll *animation* instead of an
-        # immediate jump, so the very next screenshot (taken right after,
-        # with no wait) could land mid-animation: a half-scrolled,
-        # blurred/ghosted frame instead of a settled one. The double
-        # requestAnimationFrame after scrolling waits for the browser to
-        # actually paint the new, settled position before this call
-        # returns, so every screenshot is a single crisp static frame
-        # instead of a mid-transition one.
-        state = page.evaluate(
-            """(dy) => new Promise((resolve) => {
-                window.scrollBy({top: dy, left: 0, behavior: 'instant'});
-                requestAnimationFrame(() => requestAnimationFrame(() => {
-                    resolve({y: window.scrollY, h: document.documentElement.scrollHeight});
-                }));
-            })""",
-            step,
-        )
+        state = _scroll_by(page, step)
         new_scroll_y = state["y"]
         stall_ticks = stall_ticks + 1 if new_scroll_y <= scroll_y else 0
         scroll_y = new_scroll_y
-        # re-measure in case lazy-loaded content grew the page
-        scroll_height = max(scroll_height, state["h"])
+        if not fixed_end:
+            # only "record to the actual bottom" mode adapts to lazy-
+            # loaded growth - an explicit trim is a deliberately fixed
+            # endpoint, not re-extended by content that loads in later
+            scroll_height = max(scroll_height, state["h"])
+            effective_bottom = scroll_height
 
     return frame_index
 
@@ -379,7 +412,10 @@ def _finalize_recording(job_id, job_dir, frames_dir, frame_count, duration_secon
     _set_status(job_id, status="finished", progress=100.0)
 
 
-def _run_job(job_id, url, aspect_ratio, device, duration_seconds, framerate, block_ads, proxy_url):
+def _run_job(
+    job_id, url, aspect_ratio, device, duration_seconds, framerate, block_ads, proxy_url,
+    start_fraction=0.0, end_fraction=1.0,
+):
     job_dir = os.path.join(DATA_DIR, job_id)
     frames_dir = os.path.join(job_dir, "frames")
     os.makedirs(frames_dir, exist_ok=True)
@@ -389,7 +425,9 @@ def _run_job(job_id, url, aspect_ratio, device, duration_seconds, framerate, blo
             browser = p.chromium.launch(headless=True, proxy=_parse_proxy(proxy_url))
             try:
                 page = _prepare_page(p, browser, url, aspect_ratio, device, block_ads)
-                frame_count = _scroll_and_capture(job_id, page, frames_dir, duration_seconds, framerate)
+                frame_count = _scroll_and_capture(
+                    job_id, page, frames_dir, duration_seconds, framerate, start_fraction, end_fraction
+                )
             finally:
                 browser.close()
         _finalize_recording(job_id, job_dir, frames_dir, frame_count, duration_seconds, framerate)
@@ -399,7 +437,7 @@ def _run_job(job_id, url, aspect_ratio, device, duration_seconds, framerate, blo
         _cancel_requested.discard(job_id)
 
 
-def _finish_job_on_page(job_id, page, duration_seconds, framerate):
+def _finish_job_on_page(job_id, page, duration_seconds, framerate, start_fraction=0.0, end_fraction=1.0):
     """Same tail as _run_job, but reuses an already-live page (from a
     preview session) instead of launching a fresh browser - whatever
     ad-block routes/hidden elements are already on the page just carry
@@ -409,7 +447,9 @@ def _finish_job_on_page(job_id, page, duration_seconds, framerate):
     os.makedirs(frames_dir, exist_ok=True)
     try:
         _set_status(job_id, status="recording")
-        frame_count = _scroll_and_capture(job_id, page, frames_dir, duration_seconds, framerate)
+        frame_count = _scroll_and_capture(
+            job_id, page, frames_dir, duration_seconds, framerate, start_fraction, end_fraction
+        )
         _finalize_recording(job_id, job_dir, frames_dir, frame_count, duration_seconds, framerate)
     except Exception as exc:
         _set_status(job_id, status="error", error=str(exc))
@@ -519,6 +559,16 @@ def create_preview(url: str, aspect_ratio: str, device: str, block_ads: bool, pr
     return session_id, session.screenshot_b64, session.width, session.height
 
 
+def scroll_preview(session_id: str, delta_y: float) -> dict:
+    session = _get_preview(session_id)
+
+    def action(page):
+        state = _scroll_by(page, delta_y)
+        return {"screenshot": _screenshot_b64(page), "y": state["y"], "h": state["h"]}
+
+    return session.call(action)
+
+
 def remove_at_point(session_id: str, x: float, y: float) -> str:
     session = _get_preview(session_id)
     idx = session.next_removed_index()
@@ -562,7 +612,10 @@ def undo_last(session_id: str) -> str:
     return session.call(action)
 
 
-def start_recording_from_preview(session_id: str, duration_seconds: int, framerate: int) -> str:
+def start_recording_from_preview(
+    session_id: str, duration_seconds: int, framerate: int,
+    start_fraction: float = 0.0, end_fraction: float = 1.0,
+) -> str:
     with _previews_lock:
         session = _previews.pop(session_id, None)
     if not session:
@@ -572,7 +625,9 @@ def start_recording_from_preview(session_id: str, duration_seconds: int, framera
     with _jobs_lock:
         _jobs[job_id] = {"status": "queued", "progress": 0.0, "error": None}
 
-    session.call_terminal(lambda page: _finish_job_on_page(job_id, page, duration_seconds, framerate))
+    session.call_terminal(
+        lambda page: _finish_job_on_page(job_id, page, duration_seconds, framerate, start_fraction, end_fraction)
+    )
     return job_id
 
 

@@ -43,6 +43,8 @@ class JobRequest(BaseModel):
     framerate: int
     block_ads: bool = False
     proxy_url: Optional[str] = None
+    start_fraction: float = 0.0
+    end_fraction: float = 1.0
 
 
 @app.post("/jobs")
@@ -51,7 +53,7 @@ def create_job(body: JobRequest):
     _validate_duration_framerate(body.duration_seconds, body.framerate)
     job_id = recorder.create_job(
         body.url, body.aspect_ratio, body.device, body.duration_seconds, body.framerate,
-        body.block_ads, body.proxy_url,
+        body.block_ads, body.proxy_url, body.start_fraction, body.end_fraction,
     )
     return {"job_id": job_id}
 
@@ -123,9 +125,23 @@ def undo_element(session_id: str):
     return {"screenshot": screenshot}
 
 
+class ScrollRequest(BaseModel):
+    delta_y: float
+
+
+@app.post("/preview/{session_id}/scroll")
+def scroll_preview(session_id: str, body: ScrollRequest):
+    try:
+        return recorder.scroll_preview(session_id, body.delta_y)
+    except KeyError:
+        raise HTTPException(404, "session not found")
+
+
 class RecordFromPreviewRequest(BaseModel):
     duration_seconds: int
     framerate: int
+    start_fraction: float = 0.0
+    end_fraction: float = 1.0
 
 
 @app.post("/preview/{session_id}/record")
@@ -133,7 +149,8 @@ def record_from_preview(session_id: str, body: RecordFromPreviewRequest):
     _validate_duration_framerate(body.duration_seconds, body.framerate)
     try:
         job_id = recorder.start_recording_from_preview(
-            session_id, body.duration_seconds, body.framerate
+            session_id, body.duration_seconds, body.framerate,
+            body.start_fraction, body.end_fraction,
         )
     except KeyError:
         raise HTTPException(404, "session not found")
