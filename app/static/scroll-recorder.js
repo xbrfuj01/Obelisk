@@ -35,8 +35,10 @@ form.addEventListener("submit", async (e) => {
   const body = {
     url: fd.get("url").trim(),
     aspect_ratio: fd.get("aspect_ratio"),
-    speed: fd.get("speed"),
+    duration_seconds: Number(fd.get("duration_seconds")),
+    framerate: Number(fd.get("framerate")),
     block_ads: fd.get("block_ads") === "on",
+    use_proxy: fd.get("use_proxy") === "on",
   };
 
   statusBox.innerHTML = `<div class="card status-card">
@@ -147,6 +149,7 @@ previewBtn.addEventListener("click", async () => {
   if (!url) return;
   const aspectRatio = document.getElementById("sr-aspect-ratio").value;
   const blockAds = document.getElementById("sr-block-ads").checked;
+  const useProxy = document.getElementById("sr-use-proxy").checked;
 
   pickerModal.hidden = false;
   pickerScreenshot.removeAttribute("src");
@@ -156,7 +159,7 @@ previewBtn.addEventListener("click", async () => {
     const res = await fetch("/api/scroll-recorder/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, aspect_ratio: aspectRatio, block_ads: blockAds }),
+      body: JSON.stringify({ url, aspect_ratio: aspectRatio, block_ads: blockAds, use_proxy: useProxy }),
     });
     const data = await res.json();
     if (!res.ok || data.error) {
@@ -216,7 +219,8 @@ pickerUndoBtn.addEventListener("click", async () => {
 
 pickerRecordBtn.addEventListener("click", async () => {
   if (!previewSessionId) return;
-  const speed = document.getElementById("sr-speed").value;
+  const durationSeconds = Number(document.getElementById("sr-duration").value);
+  const framerate = Number(document.getElementById("sr-framerate").value);
   const id = previewSessionId;
   previewSessionId = null; // the sidecar session is consumed by /record either way
   pickerModal.hidden = true;
@@ -230,7 +234,7 @@ pickerRecordBtn.addEventListener("click", async () => {
     const res = await fetch(`/api/scroll-recorder/preview/${id}/record`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ speed }),
+      body: JSON.stringify({ duration_seconds: durationSeconds, framerate }),
     });
     const data = await res.json();
     if (!res.ok || data.error) {

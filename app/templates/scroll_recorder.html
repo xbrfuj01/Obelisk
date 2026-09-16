@@ -24,15 +24,20 @@
   </div>
 
   <div class="field-group">
-    <span class="field-label">Швидкість скролу</span>
-    <select name="speed" id="sr-speed">
-      <option value="slow">Повільна</option>
-      <option value="medium" selected>Середня</option>
-      <option value="fast">Швидка</option>
+    <span class="field-label">Тривалість відео (секунд)</span>
+    <input type="number" name="duration_seconds" id="sr-duration" min="3" max="300" value="15" required>
+  </div>
+
+  <div class="field-group">
+    <span class="field-label">Фреймрейт</span>
+    <select name="framerate" id="sr-framerate">
+      <option value="30" selected>30 fps</option>
+      <option value="60">60 fps</option>
     </select>
   </div>
 
   <label class="checkbox-row"><input type="checkbox" name="block_ads" id="sr-block-ads"> <span>Блокувати рекламу</span></label>
+  <label class="checkbox-row"><input type="checkbox" name="use_proxy" id="sr-use-proxy"> <span>Використовувати проксі</span></label>
 
   <div class="form-actions">
     <button type="button" class="btn-secondary" id="sr-preview-btn">Попередній перегляд і видалення елементів</button>
