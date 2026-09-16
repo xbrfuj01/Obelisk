@@ -4,10 +4,13 @@ import shutil
 import uuid
 from datetime import datetime, timedelta
 
+import httpx
 from fastapi import (
     BackgroundTasks, FastAPI, File, Request, Response, Form, Depends, HTTPException, UploadFile,
 )
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
+from fastapi.responses import (
+    HTMLResponse, RedirectResponse, FileResponse, JSONResponse, StreamingResponse,
+)
 from starlette.staticfiles import StaticFiles as _StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -205,6 +208,82 @@ def metadata_page(request: Request, db: Session = Depends(get_db), _=Depends(req
     return templates.TemplateResponse(
         "metadata.html", {"request": request, "max_upload_mb": auth.get_max_upload_mb(db)}
     )
+
+
+@app.get("/scroll-recorder", response_class=HTMLResponse)
+def scroll_recorder_page(request: Request, _=Depends(require_site_access_page)):
+    return templates.TemplateResponse("scroll_recorder.html", {"request": request})
+
+
+# Scroll Recorder itself runs in its own container (docker-compose.yml),
+# unreachable from outside the compose network - these routes are a thin
+# proxy so the browser only ever talks to this app's own origin, inheriting
+# the site's normal session auth/rate-limiting instead of needing its own.
+@app.post("/api/scroll-recorder/jobs")
+async def create_scroll_recorder_job(request: Request, _=Depends(require_site_access_api)):
+    ip = request.client.host if request.client else "unknown"
+    if not auth.check_download_rate_limit(f"sr:{ip}"):
+        return JSONResponse(
+            {"error": "Забагато записів поспіль. Спробуйте пізніше."}, status_code=429
+        )
+    body = await request.json()
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(f"{config.SCROLL_RECORDER_URL}/jobs", json=body)
+    except httpx.HTTPError:
+        return JSONResponse({"error": "Модуль запису недоступний"}, status_code=502)
+    return JSONResponse(resp.json(), status_code=resp.status_code)
+
+
+@app.get("/api/scroll-recorder/jobs/{job_id}")
+async def scroll_recorder_status(job_id: str, _=Depends(require_site_access_api)):
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"{config.SCROLL_RECORDER_URL}/jobs/{job_id}")
+    except httpx.HTTPError:
+        return JSONResponse({"error": "Модуль запису недоступний"}, status_code=502)
+    return JSONResponse(resp.json(), status_code=resp.status_code)
+
+
+@app.get("/api/scroll-recorder/jobs/{job_id}/file")
+async def scroll_recorder_file(job_id: str, _=Depends(require_site_access_api)):
+    client = httpx.AsyncClient(timeout=None)
+    try:
+        upstream_req = client.build_request(
+            "GET", f"{config.SCROLL_RECORDER_URL}/jobs/{job_id}/file"
+        )
+        resp = await client.send(upstream_req, stream=True)
+    except httpx.HTTPError:
+        await client.aclose()
+        return JSONResponse({"error": "Модуль запису недоступний"}, status_code=502)
+    if resp.status_code != 200:
+        await resp.aclose()
+        await client.aclose()
+        return JSONResponse({"error": "Файл ще не готовий"}, status_code=404)
+
+    async def body():
+        try:
+            async for chunk in resp.aiter_bytes():
+                yield chunk
+        finally:
+            await resp.aclose()
+            await client.aclose()
+
+    return StreamingResponse(
+        body(),
+        media_type="video/mp4",
+        headers={"Content-Disposition": 'attachment; filename="scroll-recording.mp4"'},
+    )
+
+
+@app.delete("/api/scroll-recorder/jobs/{job_id}")
+async def cancel_scroll_recorder_job(job_id: str, _=Depends(require_site_access_api)):
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.delete(f"{config.SCROLL_RECORDER_URL}/jobs/{job_id}")
+    except httpx.HTTPError:
+        return JSONResponse({"error": "Модуль запису недоступний"}, status_code=502)
+    return JSONResponse(resp.json(), status_code=resp.status_code)
 
 
 @app.post("/api/download")

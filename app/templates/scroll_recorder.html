@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="hero">
+  <div class="hero-title-row">
+    <a href="/" class="back-link" title="Усі інструменти" aria-label="Усі інструменти"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg></a>
+    <h1>Scroll Recorder</h1>
+  </div>
+  <p class="hero-sub">Вкажи посилання — сторінку буде плавно проскрольовано й записано у відео заданого формату.</p>
+</div>
+
+<form id="scroll-recorder-form" class="card">
+  <label>Посилання на сторінку
+    <input type="url" name="url" id="sr-url" placeholder="https://..." required>
+  </label>
+
+  <div class="field-group">
+    <span class="field-label">Співвідношення сторін</span>
+    <select name="aspect_ratio" id="sr-aspect-ratio">
+      <option value="16:9" selected>16:9 (горизонтальне)</option>
+      <option value="9:16">9:16 (вертикальне)</option>
+      <option value="1:1">1:1 (квадрат)</option>
+      <option value="4:5">4:5 (портрет)</option>
+    </select>
+  </div>
+
+  <div class="field-group">
+    <span class="field-label">Швидкість скролу</span>
+    <select name="speed" id="sr-speed">
+      <option value="slow">Повільна</option>
+      <option value="medium" selected>Середня</option>
+      <option value="fast">Швидка</option>
+    </select>
+  </div>
+
+  <button type="submit" class="btn-primary">Записати</button>
+</form>
+
+<div id="status-box"></div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/scroll-recorder.js"></script>
+{% endblock %}

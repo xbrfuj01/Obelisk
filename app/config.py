@@ -5,6 +5,10 @@ import os
 # the admin panel.
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 DOWNLOAD_DIR = os.environ.get("DOWNLOAD_DIR", "/downloads")
+# Compose-network DNS name of the scroll-recorder sidecar (see
+# docker-compose.yml) - not published as a host port, only reachable from
+# inside this container the same way bgutil-provider is (see downloader.py).
+SCROLL_RECORDER_URL = os.environ.get("SCROLL_RECORDER_URL", "http://scroll-recorder:8000")
 
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)

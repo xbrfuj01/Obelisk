@@ -11,6 +11,7 @@ services:
     restart: unless-stopped
     depends_on:
       - bgutil-provider
+      - scroll-recorder
 
   # Generates YouTube's "proof of origin" tokens for yt-dlp - without this,
   # YouTube forces SABR (no usable format URL) on every client this app
@@ -21,4 +22,16 @@ services:
     pull_policy: always
     container_name: obelisk-bgutil-provider
     init: true
+    restart: unless-stopped
+
+  # Records a page's auto-scroll to MP4 (Playwright + ffmpeg). No published
+  # port - reachable only from obelisk itself, over the compose network as
+  # "scroll-recorder" (see config.py's SCROLL_RECORDER_URL), which proxies
+  # it into the main UI at /scroll-recorder.
+  scroll-recorder:
+    image: ghcr.io/xbrfuj01/obelisk-scroll-recorder:latest
+    pull_policy: always
+    container_name: obelisk-scroll-recorder
+    volumes:
+      - /mnt/apps/obelisk/scroll-recorder:/data
     restart: unless-stopped
