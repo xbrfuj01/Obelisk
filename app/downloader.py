@@ -5,7 +5,7 @@ import shutil
 import socket
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
 import yt_dlp
@@ -27,21 +27,102 @@ from .models import Download
 # parsed on the CLI ({'base_url': ['http://...']}) - a bare string here
 # gets iterated character-by-character instead.
 #
+# player_client is deliberately NOT listed here (see
+# _extract_youtube_client_priority below) - passing several clients in one
+# extractor_args list makes yt-dlp query every single one of them (each its
+# own webpage/player/PO-token round trip) before returning, even once an
+# earlier client already found perfectly good formats. Trying them one at a
+# time and stopping at the first success is the same eventual result for
+# the common case (some client works) at a fraction of the latency.
+YOUTUBE_EXTRACTOR_ARGS = {
+    "youtubepot-bgutilhttp": {"base_url": ["http://bgutil-provider:4416"]},
+}
+
 # "tv_simply" (TVHTML5_SIMPLY, yt-dlp/yt-dlp#13389) - a real captured
 # videoplayback URL from a third-party downloader site showed this client
 # handing out a plain, direct, non-SABR HTTPS URL (known Content-Length) at
 # very high quality (itag 337, 2160p60), apparently not swept up in
 # YouTube's SABR-forcing rollout the way "web" has been - but it still
-# needs the same PO token as everything else. Listed first since yt-dlp
-# merges formats from every listed client and picks the best by quality
-# regardless of order, so this just gets tried first; web/tv/ios stay as a
-# fallback for anything tv_simply doesn't cover. Harmless to pass for
-# non-YouTube URLs - yt-dlp only applies extractor_args to the matching
-# extractor.
-YOUTUBE_EXTRACTOR_ARGS = {
-    "youtube": {"player_client": ["tv_simply", "web", "tv", "ios"]},
-    "youtubepot-bgutilhttp": {"base_url": ["http://bgutil-provider:4416"]},
-}
+# needs the same PO token as everything else. Tried first for that reason;
+# web/tv/ios are the fallback for whatever tv_simply doesn't cover (a real
+# log showed tv_simply skipped outright for a video "tv"/"web" still
+# handled). ios/tv_simply don't support cookie-authenticated requests at
+# all (yt-dlp skips them outright rather than erroring), so the
+# cookie-retry pass only tries the two clients that actually accept cookies.
+YOUTUBE_CLIENT_PRIORITY_ANON = ["tv_simply", "web", "tv", "ios"]
+YOUTUBE_CLIENT_PRIORITY_COOKIES = ["web", "tv"]
+
+# Short-lived memory of which YouTube client (and whether cookies were
+# needed) actually worked for a given URL. probe_qualities (when the user
+# pastes a link) and the real download (when they click "Завантажити") are
+# two entirely separate extract_info calls seconds-to-minutes apart - the
+# probe's actual format URLs can't be reused for the real download (they're
+# short-lived, and the download needs its own progress-hooked yt-dlp
+# instance anyway) - but *which client to even bother asking first* is
+# almost always still the same answer, so this lets the real download skip
+# straight to the client that already worked instead of re-running the
+# whole tv_simply -> web -> tv -> ios search from scratch.
+_youtube_client_cache = {}
+_youtube_client_cache_lock = threading.Lock()
+_YOUTUBE_CLIENT_CACHE_TTL = timedelta(minutes=10)
+
+
+def _cache_youtube_client(url: str, client: str, used_cookies: bool):
+    with _youtube_client_cache_lock:
+        _youtube_client_cache[url] = (client, used_cookies, datetime.utcnow() + _YOUTUBE_CLIENT_CACHE_TTL)
+
+
+def _get_cached_youtube_client(url: str):
+    """Returns (client, used_cookies) if a not-yet-expired hint exists for
+    this exact URL, else None."""
+    with _youtube_client_cache_lock:
+        entry = _youtube_client_cache.get(url)
+        if not entry:
+            return None
+        client, used_cookies, expires = entry
+        if datetime.utcnow() > expires:
+            del _youtube_client_cache[url]
+            return None
+        return client, used_cookies
+
+
+def _extract_youtube_client_priority(ydl_opts, url, download, clients, cached_client=None, before_retry=None):
+    """Tries each client in order, stopping at the first that actually
+    yields usable formats - yt-dlp's own per-client "https formats have
+    been skipped" warnings already mean a client with zero returned
+    formats is a dead end for this video, not something to fall back into
+    later. cached_client (see _youtube_client_cache above), if given and
+    present in `clients`, jumps the queue to be tried first regardless of
+    the normal priority order. before_retry, when downloading, cleans up
+    whatever a failed client's own partial download may have left behind
+    before the next client's attempt starts (skipped on the very first
+    attempt - nothing to clean up yet)."""
+    ordered = clients
+    if cached_client and cached_client in clients:
+        ordered = [cached_client] + [c for c in clients if c != cached_client]
+    last_error = None
+    for i, client in enumerate(ordered):
+        if i > 0 and before_retry:
+            before_retry()
+        opts = dict(ydl_opts)
+        extractor_args = dict(opts.get("extractor_args") or {})
+        extractor_args["youtube"] = {**extractor_args.get("youtube", {}), "player_client": [client]}
+        opts["extractor_args"] = extractor_args
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=download)
+        except Exception as e:
+            last_error = e
+            continue
+        if info and info.get("formats"):
+            return info, client
+        last_error = RuntimeError(f'YouTube client "{client}" yielded no usable formats')
+    raise last_error
+
+
+def _is_youtube_url(url: str) -> bool:
+    return _source_from_url(url) in ("youtube.com", "youtu.be", "m.youtube.com", "music.youtube.com")
+
 
 # Sized generously and fixed — the actual concurrency cap is admin-configurable
 # (max_concurrent_downloads, stored in the DB) and enforced by _ConcurrencyGate
@@ -251,11 +332,26 @@ def _extract_with_cookie_fallback(ydl_opts, url, *, download, should_retry=lambd
     should_retry() still allows it (e.g. not for a job that was cancelled
     mid-flight, which isn't a real failure to retry).
 
+    For YouTube specifically, each of the two passes (anonymous/cookies)
+    goes through _extract_youtube_client_priority instead of a single
+    extract_info call - see that function and YOUTUBE_CLIENT_PRIORITY_ANON/
+    _COOKIES above for why.
+
     Returns (info, used_cookies) - callers that don't care which path
     succeeded (e.g. probing) can just discard the second value."""
+    is_youtube = _is_youtube_url(url)
+    cached = _get_cached_youtube_client(url) if is_youtube else None
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            return ydl.extract_info(url, download=download), False
+        if is_youtube:
+            cached_client = cached[0] if cached and not cached[1] else None
+            info, client = _extract_youtube_client_priority(
+                ydl_opts, url, download, YOUTUBE_CLIENT_PRIORITY_ANON, cached_client=cached_client, before_retry=before_retry,
+            )
+            _cache_youtube_client(url, client, False)
+        else:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=download)
+        return info, False
     except Exception:
         cookies_path = auth.get_cookies_path()
         if not cookies_path or ydl_opts.get("cookiefile") or not should_retry():
@@ -264,8 +360,16 @@ def _extract_with_cookie_fallback(ydl_opts, url, *, download, should_retry=lambd
             before_retry()
         retry_opts = dict(ydl_opts)
         retry_opts["cookiefile"] = cookies_path
-        with yt_dlp.YoutubeDL(retry_opts) as ydl:
-            return ydl.extract_info(url, download=download), True
+        if is_youtube:
+            cached_client = cached[0] if cached and cached[1] else None
+            info, client = _extract_youtube_client_priority(
+                retry_opts, url, download, YOUTUBE_CLIENT_PRIORITY_COOKIES, cached_client=cached_client, before_retry=before_retry,
+            )
+            _cache_youtube_client(url, client, True)
+        else:
+            with yt_dlp.YoutubeDL(retry_opts) as ydl:
+                info = ydl.extract_info(url, download=download)
+        return info, True
 
 
 def probe_qualities(url: str, db):
