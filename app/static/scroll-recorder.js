@@ -114,6 +114,7 @@ const recordBtn = document.getElementById("ed-record");
 let sessionId = null;
 let currentY = 0;
 let currentH = 1;
+let viewportWidth = 1;
 let viewportHeight = 1;
 let startFraction = 0.0;
 let endFraction = 1.0;
@@ -208,6 +209,7 @@ async function openSession() {
       return;
     }
     sessionId = data.session_id;
+    viewportWidth = data.width;
     viewportHeight = data.height;
     currentY = data.y;
     currentH = data.page_height;
@@ -242,10 +244,6 @@ async function doScroll(deltaY) {
   } finally {
     setLoading(false);
   }
-}
-
-async function scrollToFraction(fraction) {
-  await doScroll(fraction * totalScrollable() - currentY);
 }
 
 previewBtn.addEventListener("click", async () => {
@@ -352,8 +350,15 @@ removeHeaderBtn.addEventListener("click", async () => {
 screenshotImg.addEventListener("click", async (e) => {
   if (!removeArmed || !sessionId) return;
   const rect = screenshotImg.getBoundingClientRect();
-  const scaleX = screenshotImg.naturalWidth / rect.width;
-  const scaleY = screenshotImg.naturalHeight / rect.height;
+  // Scale against the browser viewport's own CSS pixel size (viewportWidth/
+  // viewportHeight), not the screenshot's natural/physical pixel size -
+  // they only match when deviceScaleFactor is 1 (desktop mode). Mobile
+  // mode's Pixel 7 emulation uses deviceScaleFactor 2.625, so the
+  // screenshot is ~2.6x denser than the CSS viewport elementFromPoint
+  // expects - using naturalWidth/naturalHeight there sent wildly
+  // out-of-viewport coordinates and silently missed every element.
+  const scaleX = viewportWidth / rect.width;
+  const scaleY = viewportHeight / rect.height;
   const x = (e.clientX - rect.left) * scaleX;
   const y = (e.clientY - rect.top) * scaleY;
 
@@ -456,25 +461,34 @@ function endPanelDrag() {
 // The live view follows the handle while dragging, not just once it's
 // dropped - each network round-trip (scroll + screenshot) takes real
 // time, so rapid drag movement is coalesced: a move updates the target
-// fraction and, if a request is already in flight, just waits for it to
+// scrollY and, if a request is already in flight, just waits for it to
 // finish before firing the *latest* target rather than queuing every
 // intermediate position.
 let scrollFollowBusy = false;
 let scrollFollowPending = null;
 
-async function followFraction(fraction) {
-  scrollFollowPending = fraction;
+async function followTargetY(targetY) {
+  scrollFollowPending = targetY;
   if (scrollFollowBusy) return;
   scrollFollowBusy = true;
   while (scrollFollowPending !== null) {
     const target = scrollFollowPending;
     scrollFollowPending = null;
-    await scrollToFraction(target);
+    await doScroll(target - currentY);
   }
   scrollFollowBusy = false;
 }
 
+// Keeps the stripe comfortably in view while dragging instead of pinned
+// to the very top/bottom edge of frame: the start stripe is held at the
+// middle of the upper half of the screen, the end stripe at the middle
+// of the lower half. Clamped to the page's real scroll bounds - if that
+// would need to scroll past the top or bottom, the browser's own scroll
+// just stays pinned there (confirmed via the server's real reported y on
+// each response) and the stripe naturally keeps moving within whatever's
+// still visible instead of forcing the page further.
 function attachHandleDrag(handleEl, isStart) {
+  const centerRatio = isStart ? 0.25 : 0.75;
   handleEl.addEventListener("mousedown", (e) => {
     e.preventDefault();
     const trackRect = rangeTrack.getBoundingClientRect();
@@ -483,12 +497,13 @@ function attachHandleDrag(handleEl, isStart) {
       if (isStart) startFraction = fraction;
       else endFraction = fraction;
       updateOverlays();
-      followFraction(fraction);
+      const total = totalScrollable();
+      const targetY = Math.max(0, Math.min(total, fraction * total - centerRatio * viewportHeight));
+      followTargetY(targetY);
     }
     function onUp() {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
-      followFraction(isStart ? startFraction : endFraction);
     }
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
