@@ -162,7 +162,7 @@ async function submitFromDownload(downloadId) {
       return;
     }
     pollConvertStatus(data.id, data.duration_seconds, data.input_summary);
-    document.dispatchEvent(new CustomEvent("obelisk:job-created"));
+    document.dispatchEvent(new CustomEvent("obelisk:jobs-changed"));
   } catch (err) {
     statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка з'єднання</p></div>`;
   }
@@ -204,7 +204,7 @@ form.addEventListener("submit", (e) => {
       return;
     }
     pollConvertStatus(data.id, data.duration_seconds, data.input_summary);
-    document.dispatchEvent(new CustomEvent("obelisk:job-created"));
+    document.dispatchEvent(new CustomEvent("obelisk:jobs-changed"));
   };
   xhr.onerror = () => {
     statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка з'єднання</p></div>`;
@@ -229,14 +229,17 @@ function pollConvertStatus(id, durationSeconds, inputSummary) {
         </div>`;
         clearInterval(interval);
         refreshRecent();
+        document.dispatchEvent(new CustomEvent("obelisk:jobs-changed"));
       } else if (job.status === "error") {
         statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка конвертації: ${escapeHtml(job.error || "невідома помилка")}</p></div>`;
         clearInterval(interval);
         refreshRecent();
+        document.dispatchEvent(new CustomEvent("obelisk:jobs-changed"));
       } else if (job.status === "cancelled") {
         statusBox.innerHTML = `<div class="card status-card"><p>Конвертацію скасовано.</p></div>`;
         clearInterval(interval);
         refreshRecent();
+        document.dispatchEvent(new CustomEvent("obelisk:jobs-changed"));
       } else if (isIndeterminate) {
         statusBox.innerHTML = `<div class="card status-card">
           ${statusCancelBtn(id)}

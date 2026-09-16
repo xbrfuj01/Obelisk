@@ -193,10 +193,13 @@
     if (e.key === "Escape" && !panel.hidden) closePanel();
   });
 
-  // Fired by app.js/converter.js right after a new job is created, so the
-  // badge picks it up immediately instead of waiting for the next scheduled
-  // poll tick (which can be several seconds away if the panel is closed).
-  document.addEventListener("obelisk:job-created", refresh);
+  // Fired by app.js/converter.js right when a job is created AND right
+  // when one of their own active polls notices it reach a terminal state
+  // (finished/error/cancelled) - so the badge count updates the instant
+  // a task starts or ends on this tab, instead of waiting for the next
+  // scheduled poll tick here (which can be several seconds away if the
+  // panel is closed).
+  document.addEventListener("obelisk:jobs-changed", refresh);
 
   // Browsers throttle background-tab timers (sometimes to once a minute or
   // less), so a job that finishes while the tab isn't focused can leave the
@@ -348,9 +351,11 @@
     if (e.key === "Escape" && !panel.hidden) closePanel();
   });
 
-  // Fired by app.js/converter.js right after a new job is created, so an
-  // admin watching the site-wide tray sees it appear immediately too.
-  document.addEventListener("obelisk:job-created", refresh);
+  // Fired by app.js/converter.js right when a job is created AND right
+  // when one of their own active polls notices it reach a terminal state -
+  // an admin watching this site-wide tray (on this same tab) sees both
+  // happen immediately instead of waiting for this tray's own poll tick.
+  document.addEventListener("obelisk:jobs-changed", refresh);
 
   // Same reasoning as the personal tray above - don't leave the badge
   // showing a stale count just because the tab was backgrounded.

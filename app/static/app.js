@@ -346,7 +346,7 @@ form.addEventListener("submit", async (e) => {
       return;
     }
     pollStatus(data.id, estimatedBytes, isClipped);
-    document.dispatchEvent(new CustomEvent("obelisk:job-created"));
+    document.dispatchEvent(new CustomEvent("obelisk:jobs-changed"));
   } catch (err) {
     statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка з'єднання</p></div>`;
   }
@@ -417,6 +417,7 @@ function pollStatus(id, estimatedBytes, isClipped) {
         // показуємо той самий рядок стану, але вже для процесу конвертації.
         clearInterval(interval);
         refreshRecent();
+        document.dispatchEvent(new CustomEvent("obelisk:jobs-changed"));
         pollAutoConvert(job.auto_convert_id, job.title);
       } else if (job.status === "finished") {
         const finalSize = formatSize(job.filesize) || estimatedSize;
@@ -436,14 +437,17 @@ function pollStatus(id, estimatedBytes, isClipped) {
         </div>`;
         clearInterval(interval);
         refreshRecent();
+        document.dispatchEvent(new CustomEvent("obelisk:jobs-changed"));
       } else if (job.status === "error") {
         statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка завантаження: ${escapeHtml(job.error || "невідома помилка")}</p></div>`;
         clearInterval(interval);
         refreshRecent();
+        document.dispatchEvent(new CustomEvent("obelisk:jobs-changed"));
       } else if (job.status === "cancelled") {
         statusBox.innerHTML = `<div class="card status-card"><p>Завантаження скасовано.</p></div>`;
         clearInterval(interval);
         refreshRecent();
+        document.dispatchEvent(new CustomEvent("obelisk:jobs-changed"));
       } else if (isClipped) {
         // yt-dlp never reports incremental progress while cutting a clip —
         // only a single event once it's fully done — so a real percentage
@@ -488,12 +492,15 @@ function pollAutoConvert(convertId, title) {
           </div>
         </div>`;
         clearInterval(interval);
+        document.dispatchEvent(new CustomEvent("obelisk:jobs-changed"));
       } else if (job.status === "error") {
         statusBox.innerHTML = `<div class="card status-card"><p class="error">Відео завантажено, але автоконвертація не вдалась: ${escapeHtml(job.error || "невідома помилка")}</p></div>`;
         clearInterval(interval);
+        document.dispatchEvent(new CustomEvent("obelisk:jobs-changed"));
       } else if (job.status === "cancelled") {
         statusBox.innerHTML = `<div class="card status-card"><p>Автоконвертацію скасовано.</p></div>`;
         clearInterval(interval);
+        document.dispatchEvent(new CustomEvent("obelisk:jobs-changed"));
       } else {
         const progress = job.progress || 0;
         const eta = formatEta(job.eta_seconds);
