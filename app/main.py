@@ -1238,7 +1238,7 @@ def admin_wipe_data(_=Depends(require_admin_dep)):
     return RedirectResponse("/admin?tab=settings&data_wiped=1", status_code=303)
 
 
-ACTIVE_JOB_STATUSES = ("queued", "downloading", "converting", "waiting_extension")
+ACTIVE_JOB_STATUSES = ("queued", "downloading", "converting")
 
 
 @app.post("/admin/delete-all-history")

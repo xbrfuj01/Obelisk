@@ -6,8 +6,8 @@ services:
     ports:
       - "30301:30301"
     volumes:
-      - /mnt/vault/obelisk/data:/data
-      - /mnt/vault/obelisk/downloads:/downloads
+      - /mnt/apps/obelisk/data:/data
+      - /mnt/apps/obelisk/downloads:/downloads
     restart: unless-stopped
     depends_on:
       - bgutil-provider
