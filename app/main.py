@@ -219,6 +219,17 @@ def scroll_recorder_page(request: Request, _=Depends(require_site_access_page)):
 # unreachable from outside the compose network - these routes are a thin
 # proxy so the browser only ever talks to this app's own origin, inheriting
 # the site's normal session auth/rate-limiting instead of needing its own.
+async def _proxy_scroll_recorder(method: str, path: str, json_body=None, timeout=10):
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.request(
+                method, f"{config.SCROLL_RECORDER_URL}{path}", json=json_body
+            )
+    except httpx.HTTPError:
+        return JSONResponse({"error": "Модуль запису недоступний"}, status_code=502)
+    return JSONResponse(resp.json(), status_code=resp.status_code)
+
+
 @app.post("/api/scroll-recorder/jobs")
 async def create_scroll_recorder_job(request: Request, _=Depends(require_site_access_api)):
     ip = request.client.host if request.client else "unknown"
@@ -227,22 +238,61 @@ async def create_scroll_recorder_job(request: Request, _=Depends(require_site_ac
             {"error": "Забагато записів поспіль. Спробуйте пізніше."}, status_code=429
         )
     body = await request.json()
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(f"{config.SCROLL_RECORDER_URL}/jobs", json=body)
-    except httpx.HTTPError:
-        return JSONResponse({"error": "Модуль запису недоступний"}, status_code=502)
-    return JSONResponse(resp.json(), status_code=resp.status_code)
+    return await _proxy_scroll_recorder("POST", "/jobs", json_body=body, timeout=30)
 
 
 @app.get("/api/scroll-recorder/jobs/{job_id}")
 async def scroll_recorder_status(job_id: str, _=Depends(require_site_access_api)):
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(f"{config.SCROLL_RECORDER_URL}/jobs/{job_id}")
-    except httpx.HTTPError:
-        return JSONResponse({"error": "Модуль запису недоступний"}, status_code=502)
-    return JSONResponse(resp.json(), status_code=resp.status_code)
+    return await _proxy_scroll_recorder("GET", f"/jobs/{job_id}")
+
+
+@app.delete("/api/scroll-recorder/jobs/{job_id}")
+async def cancel_scroll_recorder_job(job_id: str, _=Depends(require_site_access_api)):
+    return await _proxy_scroll_recorder("DELETE", f"/jobs/{job_id}")
+
+
+# Preview sessions open a real browser on the sidecar and hold it open
+# while the user clicks elements to remove - /preview itself can take a
+# while (a real page load), the rest are quick screenshot round-trips.
+@app.post("/api/scroll-recorder/preview")
+async def create_scroll_recorder_preview(request: Request, _=Depends(require_site_access_api)):
+    ip = request.client.host if request.client else "unknown"
+    if not auth.check_download_rate_limit(f"sr:{ip}"):
+        return JSONResponse(
+            {"error": "Забагато записів поспіль. Спробуйте пізніше."}, status_code=429
+        )
+    body = await request.json()
+    return await _proxy_scroll_recorder("POST", "/preview", json_body=body, timeout=65)
+
+
+@app.post("/api/scroll-recorder/preview/{session_id}/remove")
+async def scroll_recorder_preview_remove(
+    session_id: str, request: Request, _=Depends(require_site_access_api)
+):
+    body = await request.json()
+    return await _proxy_scroll_recorder(
+        "POST", f"/preview/{session_id}/remove", json_body=body, timeout=30
+    )
+
+
+@app.post("/api/scroll-recorder/preview/{session_id}/undo")
+async def scroll_recorder_preview_undo(session_id: str, _=Depends(require_site_access_api)):
+    return await _proxy_scroll_recorder("POST", f"/preview/{session_id}/undo", timeout=30)
+
+
+@app.post("/api/scroll-recorder/preview/{session_id}/record")
+async def scroll_recorder_preview_record(
+    session_id: str, request: Request, _=Depends(require_site_access_api)
+):
+    body = await request.json()
+    return await _proxy_scroll_recorder(
+        "POST", f"/preview/{session_id}/record", json_body=body, timeout=10
+    )
+
+
+@app.delete("/api/scroll-recorder/preview/{session_id}")
+async def cancel_scroll_recorder_preview(session_id: str, _=Depends(require_site_access_api)):
+    return await _proxy_scroll_recorder("DELETE", f"/preview/{session_id}", timeout=10)
 
 
 @app.get("/api/scroll-recorder/jobs/{job_id}/file")
@@ -274,16 +324,6 @@ async def scroll_recorder_file(job_id: str, _=Depends(require_site_access_api)):
         media_type="video/mp4",
         headers={"Content-Disposition": 'attachment; filename="scroll-recording.mp4"'},
     )
-
-
-@app.delete("/api/scroll-recorder/jobs/{job_id}")
-async def cancel_scroll_recorder_job(job_id: str, _=Depends(require_site_access_api)):
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.delete(f"{config.SCROLL_RECORDER_URL}/jobs/{job_id}")
-    except httpx.HTTPError:
-        return JSONResponse({"error": "Модуль запису недоступний"}, status_code=502)
-    return JSONResponse(resp.json(), status_code=resp.status_code)
 
 
 @app.post("/api/download")
