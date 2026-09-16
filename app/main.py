@@ -291,6 +291,16 @@ async def scroll_recorder_preview_undo(session_id: str, _=Depends(require_site_a
     return await _proxy_scroll_recorder("POST", f"/preview/{session_id}/undo", timeout=30)
 
 
+@app.post("/api/scroll-recorder/preview/{session_id}/scroll")
+async def scroll_recorder_preview_scroll(
+    session_id: str, request: Request, _=Depends(require_site_access_api)
+):
+    body = await request.json()
+    return await _proxy_scroll_recorder(
+        "POST", f"/preview/{session_id}/scroll", json_body=body, timeout=30
+    )
+
+
 @app.post("/api/scroll-recorder/preview/{session_id}/record")
 async def scroll_recorder_preview_record(
     session_id: str, request: Request, _=Depends(require_site_access_api)
