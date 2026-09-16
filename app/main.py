@@ -231,13 +231,20 @@ async def _proxy_scroll_recorder(method: str, path: str, json_body=None, timeout
 
 
 @app.post("/api/scroll-recorder/jobs")
-async def create_scroll_recorder_job(request: Request, _=Depends(require_site_access_api)):
+async def create_scroll_recorder_job(
+    request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_api)
+):
     ip = request.client.host if request.client else "unknown"
     if not auth.check_download_rate_limit(f"sr:{ip}"):
         return JSONResponse(
             {"error": "Забагато записів поспіль. Спробуйте пізніше."}, status_code=429
         )
     body = await request.json()
+    # The actual proxy URL (with embedded credentials) never reaches the
+    # browser - the frontend only sends whether it wants one, and this is
+    # the only place with DB access to resolve it into a real value.
+    if body.pop("use_proxy", False):
+        body["proxy_url"] = auth.get_proxy_url(db) or None
     return await _proxy_scroll_recorder("POST", "/jobs", json_body=body, timeout=30)
 
 
@@ -255,13 +262,17 @@ async def cancel_scroll_recorder_job(job_id: str, _=Depends(require_site_access_
 # while the user clicks elements to remove - /preview itself can take a
 # while (a real page load), the rest are quick screenshot round-trips.
 @app.post("/api/scroll-recorder/preview")
-async def create_scroll_recorder_preview(request: Request, _=Depends(require_site_access_api)):
+async def create_scroll_recorder_preview(
+    request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_api)
+):
     ip = request.client.host if request.client else "unknown"
     if not auth.check_download_rate_limit(f"sr:{ip}"):
         return JSONResponse(
             {"error": "Забагато записів поспіль. Спробуйте пізніше."}, status_code=429
         )
     body = await request.json()
+    if body.pop("use_proxy", False):
+        body["proxy_url"] = auth.get_proxy_url(db) or None
     return await _proxy_scroll_recorder("POST", "/preview", json_body=body, timeout=65)
 
 
