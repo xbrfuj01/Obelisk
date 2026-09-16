@@ -7,8 +7,10 @@ import threading
 import time
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
+from urllib.parse import unquote, urlsplit
 
 from playwright.sync_api import sync_playwright
+from playwright_stealth import stealth_sync
 
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -20,11 +22,21 @@ VIEWPORTS = {
     "4:5": (1080, 1350),
 }
 
-SPEEDS = {
-    "slow": 60,
-    "medium": 150,
-    "fast": 300,
-}
+FRAME_RATES = {30, 60}
+
+# A storage/resource guard (this project's NVMe "apps" pool is small, see
+# project-homelab-infra memory) - also the deadline _scroll_and_capture
+# paces itself against, replacing the old fixed speed presets.
+MIN_DURATION_SECONDS = 3
+MAX_DURATION_SECONDS = 300
+
+# Playwright's default headless Chromium UA can still read as automated to
+# some checks - a plain modern desktop Chrome UA is a cheap, honest-effort
+# improvement alongside playwright-stealth below.
+DESKTOP_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+)
 
 # A small curated list, not a full EasyList-format filter engine (parsing
 # AdBlock Plus filter syntax is a much bigger, separately-maintained
@@ -54,20 +66,11 @@ AD_BLOCK_CSS = """
 }
 """
 
-# How much wall-clock time each scroll step targets. The real interval ends
-# up longer than this once screenshot/evaluate overhead is added - that's
-# fine, since the eventual ffmpeg -framerate is derived from how many frames
-# actually got captured over how much real time elapsed (see
-# _scroll_and_capture), not from this constant, so the video's playback
-# speed stays correct regardless of how fast a given run could capture
-# frames.
+# How much wall-clock time each scroll step targets - recomputed every tick
+# against the real remaining time/distance (see _scroll_and_capture), so a
+# slow real tick (screenshot/evaluate overhead) just speeds up the pace of
+# the next one rather than throwing off the requested total duration.
 TARGET_TICK_SECONDS = 0.1
-
-# Hard ceiling on a single recording, checked cooperatively inside the scroll
-# loop - guards against a page whose height keeps growing (infinite scroll)
-# or that never reaches its own bottom. Playwright's own per-call timeouts
-# (goto/screenshot) separately guard against a page that just hangs outright.
-JOB_TIMEOUT_SECONDS = 600
 
 RETENTION_SECONDS = 2 * 3600
 CLEANUP_INTERVAL_SECONDS = 600
@@ -88,11 +91,16 @@ _previews = {}
 _previews_lock = threading.Lock()
 
 
-def create_job(url: str, aspect_ratio: str, speed: str, block_ads: bool = False) -> str:
+def create_job(
+    url: str, aspect_ratio: str, duration_seconds: int, framerate: int,
+    block_ads: bool = False, proxy_url: str = None,
+) -> str:
     job_id = uuid.uuid4().hex
     with _jobs_lock:
         _jobs[job_id] = {"status": "queued", "progress": 0.0, "error": None}
-    _executor.submit(_run_job, job_id, url, aspect_ratio, speed, block_ads)
+    _executor.submit(
+        _run_job, job_id, url, aspect_ratio, duration_seconds, framerate, block_ads, proxy_url
+    )
     return job_id
 
 
@@ -120,6 +128,36 @@ def _set_status(job_id, **fields):
             job.update(fields)
 
 
+def _parse_proxy(proxy_url: str):
+    """Converts a yt-dlp-style proxy URL (the same string the admin's
+    "Проксі для заблокованих сайтів" setting already stores, allowing
+    socks5h/socks4a schemes and embedded user:pass@) into Playwright's
+    proxy launch-option shape - which wants credentials as separate fields,
+    not embedded in the server URL, and doesn't recognize the h/a
+    DNS-resolution suffixes."""
+    if not proxy_url:
+        return None
+    parsed = urlsplit(proxy_url)
+    scheme = parsed.scheme.lower()
+    if scheme in ("socks5", "socks5h"):
+        scheme = "socks5"
+    elif scheme in ("socks4", "socks4a"):
+        scheme = "socks4"
+    elif scheme not in ("http", "https"):
+        scheme = "http"
+
+    server = f"{scheme}://{parsed.hostname}"
+    if parsed.port:
+        server += f":{parsed.port}"
+
+    proxy = {"server": server}
+    if parsed.username:
+        proxy["username"] = unquote(parsed.username)
+    if parsed.password:
+        proxy["password"] = unquote(parsed.password)
+    return proxy
+
+
 def _apply_ad_block(page):
     def _route_handler(route):
         if any(domain in route.request.url for domain in AD_BLOCK_DOMAINS):
@@ -140,7 +178,8 @@ def _screenshot_b64(page) -> str:
 
 def _prepare_page(browser, url, aspect_ratio, block_ads):
     width, height = VIEWPORTS[aspect_ratio]
-    page = browser.new_page(viewport={"width": width, "height": height})
+    page = browser.new_page(viewport={"width": width, "height": height}, user_agent=DESKTOP_USER_AGENT)
+    stealth_sync(page)
     if block_ads:
         _apply_ad_block(page)
     page.goto(url, wait_until="load", timeout=60000)
@@ -150,44 +189,62 @@ def _prepare_page(browser, url, aspect_ratio, block_ads):
     return page
 
 
-def _scroll_and_capture(job_id, page, frames_dir, speed):
+def _scroll_and_capture(job_id, page, frames_dir, duration_seconds):
     height = page.viewport_size["height"]
-    px_per_tick = max(1, round(SPEEDS[speed] * TARGET_TICK_SECONDS))
-    deadline = time.monotonic() + JOB_TIMEOUT_SECONDS
+    deadline = time.monotonic() + duration_seconds
 
     frame_index = 0
     start = time.monotonic()
     scroll_height = page.evaluate("document.documentElement.scrollHeight")
 
-    while time.monotonic() < deadline:
+    while True:
         if job_id in _cancel_requested:
+            break
+
+        now = time.monotonic()
+        if now >= deadline:
             break
 
         page.screenshot(path=os.path.join(frames_dir, f"frame_{frame_index:06d}.png"))
         frame_index += 1
 
         scroll_y = page.evaluate("window.scrollY")
-        remaining = max(1, scroll_height - height)
-        progress = min(99.0, scroll_y / remaining * 100) if scroll_height > height else 100.0
+        total_scrollable = max(1, scroll_height - height)
+        progress = min(99.0, scroll_y / total_scrollable * 100) if scroll_height > height else 100.0
         _set_status(job_id, progress=round(progress, 1))
 
-        if scroll_y + height >= scroll_height:
+        remaining_px = max(0, scroll_height - height - scroll_y)
+        if remaining_px <= 0:
             break
+
+        # Recomputed every tick against the real clock, so a slower-than-
+        # expected tick (or scroll_height growing from lazy-loaded content)
+        # both get absorbed into the pace of what's left, instead of
+        # finishing off-target from a pace fixed once at the start.
+        remaining_time = max(TARGET_TICK_SECONDS, deadline - now)
+        px_per_tick = max(1, round(remaining_px * TARGET_TICK_SECONDS / remaining_time))
 
         page.evaluate(f"window.scrollBy(0, {px_per_tick})")
         # re-measure in case lazy-loaded content grew the page
         scroll_height = max(scroll_height, page.evaluate("document.documentElement.scrollHeight"))
 
     elapsed = max(0.001, time.monotonic() - start)
-    achieved_fps = max(1, min(60, round(frame_index / elapsed)))
-    return frame_index, achieved_fps
+    input_fps = max(1, min(60, round(frame_index / elapsed)))
+    return frame_index, input_fps
 
 
-def _encode(frames_dir, out_path, fps):
+def _encode(frames_dir, out_path, input_fps, output_fps):
+    # minterpolate blends between the real captures to reach output_fps,
+    # rather than plain frame duplication (-r alone), which would just hold
+    # each real frame for several output frames and look stepped/jerky -
+    # blend mode is cheap and suits this specific case (simple monotonic
+    # vertical scroll, not complex motion) without motion-compensated
+    # interpolation's CPU cost/artifact risk.
     cmd = [
         "ffmpeg", "-y",
-        "-framerate", str(fps),
+        "-framerate", str(input_fps),
         "-i", os.path.join(frames_dir, "frame_%06d.png"),
+        "-vf", f"minterpolate=fps={output_fps}:mi_mode=blend",
         "-c:v", "libx264", "-pix_fmt", "yuv420p",
         out_path,
     ]
@@ -196,7 +253,7 @@ def _encode(frames_dir, out_path, fps):
         raise RuntimeError(f"ffmpeg encode failed: {result.stderr[-2000:]}")
 
 
-def _finalize_recording(job_id, job_dir, frames_dir, frame_count, fps):
+def _finalize_recording(job_id, job_dir, frames_dir, frame_count, input_fps, output_fps):
     if job_id in _cancel_requested:
         _set_status(job_id, status="cancelled")
         return
@@ -206,32 +263,32 @@ def _finalize_recording(job_id, job_dir, frames_dir, frame_count, fps):
 
     _set_status(job_id, status="encoding")
     out_path = os.path.join(job_dir, "output.mp4")
-    _encode(frames_dir, out_path, fps)
+    _encode(frames_dir, out_path, input_fps, output_fps)
     shutil.rmtree(frames_dir, ignore_errors=True)
     _set_status(job_id, status="finished", progress=100.0)
 
 
-def _run_job(job_id, url, aspect_ratio, speed, block_ads):
+def _run_job(job_id, url, aspect_ratio, duration_seconds, framerate, block_ads, proxy_url):
     job_dir = os.path.join(DATA_DIR, job_id)
     frames_dir = os.path.join(job_dir, "frames")
     os.makedirs(frames_dir, exist_ok=True)
     try:
         _set_status(job_id, status="recording")
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=True, proxy=_parse_proxy(proxy_url))
             try:
                 page = _prepare_page(browser, url, aspect_ratio, block_ads)
-                frame_count, fps = _scroll_and_capture(job_id, page, frames_dir, speed)
+                frame_count, input_fps = _scroll_and_capture(job_id, page, frames_dir, duration_seconds)
             finally:
                 browser.close()
-        _finalize_recording(job_id, job_dir, frames_dir, frame_count, fps)
+        _finalize_recording(job_id, job_dir, frames_dir, frame_count, input_fps, framerate)
     except Exception as exc:
         _set_status(job_id, status="error", error=str(exc))
     finally:
         _cancel_requested.discard(job_id)
 
 
-def _finish_job_on_page(job_id, page, speed):
+def _finish_job_on_page(job_id, page, duration_seconds, framerate):
     """Same tail as _run_job, but reuses an already-live page (from a
     preview session) instead of launching a fresh browser - whatever
     ad-block routes/hidden elements are already on the page just carry
@@ -241,8 +298,8 @@ def _finish_job_on_page(job_id, page, speed):
     os.makedirs(frames_dir, exist_ok=True)
     try:
         _set_status(job_id, status="recording")
-        frame_count, fps = _scroll_and_capture(job_id, page, frames_dir, speed)
-        _finalize_recording(job_id, job_dir, frames_dir, frame_count, fps)
+        frame_count, input_fps = _scroll_and_capture(job_id, page, frames_dir, duration_seconds)
+        _finalize_recording(job_id, job_dir, frames_dir, frame_count, input_fps, framerate)
     except Exception as exc:
         _set_status(job_id, status="error", error=str(exc))
     finally:
@@ -257,7 +314,9 @@ class PreviewSession:
     submitted as a callable through an internal queue and run on that
     thread; callers block on a Future to get the result back."""
 
-    def __init__(self, session_id: str, url: str, aspect_ratio: str, block_ads: bool):
+    def __init__(
+        self, session_id: str, url: str, aspect_ratio: str, block_ads: bool, proxy_url: str = None,
+    ):
         self.id = session_id
         self.width, self.height = VIEWPORTS[aspect_ratio]
         self.last_active = time.monotonic()
@@ -268,15 +327,15 @@ class PreviewSession:
 
         ready = Future()
         self._thread = threading.Thread(
-            target=self._run, args=(url, aspect_ratio, block_ads, ready), daemon=True
+            target=self._run, args=(url, aspect_ratio, block_ads, proxy_url, ready), daemon=True
         )
         self._thread.start()
         self.screenshot_b64 = ready.result(timeout=65)
 
-    def _run(self, url, aspect_ratio, block_ads, ready):
+    def _run(self, url, aspect_ratio, block_ads, proxy_url, ready):
         try:
             with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
+                browser = p.chromium.launch(headless=True, proxy=_parse_proxy(proxy_url))
                 try:
                     page = _prepare_page(browser, url, aspect_ratio, block_ads)
                     ready.set_result(_screenshot_b64(page))
@@ -336,13 +395,13 @@ def _get_preview(session_id: str) -> PreviewSession:
     return session
 
 
-def create_preview(url: str, aspect_ratio: str, block_ads: bool):
+def create_preview(url: str, aspect_ratio: str, block_ads: bool, proxy_url: str = None):
     with _previews_lock:
         if len(_previews) >= MAX_PREVIEW_SESSIONS:
             raise RuntimeError("Забагато активних попередніх переглядів, спробуйте пізніше")
 
     session_id = uuid.uuid4().hex
-    session = PreviewSession(session_id, url, aspect_ratio, block_ads)
+    session = PreviewSession(session_id, url, aspect_ratio, block_ads, proxy_url)
     with _previews_lock:
         _previews[session_id] = session
     return session_id, session.screenshot_b64, session.width, session.height
@@ -391,7 +450,7 @@ def undo_last(session_id: str) -> str:
     return session.call(action)
 
 
-def start_recording_from_preview(session_id: str, speed: str) -> str:
+def start_recording_from_preview(session_id: str, duration_seconds: int, framerate: int) -> str:
     with _previews_lock:
         session = _previews.pop(session_id, None)
     if not session:
@@ -401,7 +460,7 @@ def start_recording_from_preview(session_id: str, speed: str) -> str:
     with _jobs_lock:
         _jobs[job_id] = {"status": "queued", "progress": 0.0, "error": None}
 
-    session.call_terminal(lambda page: _finish_job_on_page(job_id, page, speed))
+    session.call_terminal(lambda page: _finish_job_on_page(job_id, page, duration_seconds, framerate))
     return job_id
 
 

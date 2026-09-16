@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -9,7 +10,6 @@ from . import recorder
 app = FastAPI()
 
 ASPECT_RATIOS = set(recorder.VIEWPORTS)
-SPEEDS = set(recorder.SPEEDS)
 
 
 def _validate_common(url: str, aspect_ratio: str):
@@ -19,19 +19,34 @@ def _validate_common(url: str, aspect_ratio: str):
         raise HTTPException(400, "Невідоме співвідношення сторін")
 
 
+def _validate_duration_framerate(duration_seconds: int, framerate: int):
+    if not (recorder.MIN_DURATION_SECONDS <= duration_seconds <= recorder.MAX_DURATION_SECONDS):
+        raise HTTPException(
+            400,
+            f"Тривалість має бути від {recorder.MIN_DURATION_SECONDS} "
+            f"до {recorder.MAX_DURATION_SECONDS} секунд",
+        )
+    if framerate not in recorder.FRAME_RATES:
+        raise HTTPException(400, "Невідомий фреймрейт")
+
+
 class JobRequest(BaseModel):
     url: str
     aspect_ratio: str
-    speed: str
+    duration_seconds: int
+    framerate: int
     block_ads: bool = False
+    proxy_url: Optional[str] = None
 
 
 @app.post("/jobs")
 def create_job(body: JobRequest):
     _validate_common(body.url, body.aspect_ratio)
-    if body.speed not in SPEEDS:
-        raise HTTPException(400, "Невідома швидкість")
-    job_id = recorder.create_job(body.url, body.aspect_ratio, body.speed, body.block_ads)
+    _validate_duration_framerate(body.duration_seconds, body.framerate)
+    job_id = recorder.create_job(
+        body.url, body.aspect_ratio, body.duration_seconds, body.framerate,
+        body.block_ads, body.proxy_url,
+    )
     return {"job_id": job_id}
 
 
@@ -61,6 +76,7 @@ class PreviewRequest(BaseModel):
     url: str
     aspect_ratio: str
     block_ads: bool = False
+    proxy_url: Optional[str] = None
 
 
 @app.post("/preview")
@@ -68,7 +84,7 @@ def create_preview(body: PreviewRequest):
     _validate_common(body.url, body.aspect_ratio)
     try:
         session_id, screenshot, width, height = recorder.create_preview(
-            body.url, body.aspect_ratio, body.block_ads
+            body.url, body.aspect_ratio, body.block_ads, body.proxy_url
         )
     except RuntimeError as exc:
         raise HTTPException(429, str(exc))
@@ -101,15 +117,17 @@ def undo_element(session_id: str):
 
 
 class RecordFromPreviewRequest(BaseModel):
-    speed: str
+    duration_seconds: int
+    framerate: int
 
 
 @app.post("/preview/{session_id}/record")
 def record_from_preview(session_id: str, body: RecordFromPreviewRequest):
-    if body.speed not in SPEEDS:
-        raise HTTPException(400, "Невідома швидкість")
+    _validate_duration_framerate(body.duration_seconds, body.framerate)
     try:
-        job_id = recorder.start_recording_from_preview(session_id, body.speed)
+        job_id = recorder.start_recording_from_preview(
+            session_id, body.duration_seconds, body.framerate
+        )
     except KeyError:
         raise HTTPException(404, "session not found")
     return {"job_id": job_id}
