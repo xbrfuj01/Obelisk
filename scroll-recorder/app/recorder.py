@@ -360,7 +360,7 @@ def _scroll_and_capture(
         progress = min(99.0, progressed / range_total * 100) if range_total > 0 else 100.0
         _set_status(job_id, progress=round(progress, 1))
 
-        remaining_px = max(0, effective_bottom - height - scroll_y)
+        remaining_px = max(0, stop_scroll_y - scroll_y)
         if remaining_px <= 0:
             break
 
@@ -374,7 +374,8 @@ def _scroll_and_capture(
             # loaded growth - an explicit trim is a deliberately fixed
             # endpoint, not re-extended by content that loads in later
             scroll_height = max(scroll_height, state["h"])
-            effective_bottom = scroll_height
+            total_page_scrollable = max(0, scroll_height - height)
+            stop_scroll_y = total_page_scrollable
 
     return frame_index
 
