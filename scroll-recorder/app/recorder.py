@@ -44,8 +44,9 @@ MOBILE_DEVICE_NAME = "Pixel 7"
 MOBILE_VIEWPORT = (412, 839)
 
 # A storage/resource guard (this project's NVMe "apps" pool is small, see
-# project-homelab-infra memory) - also the deadline _scroll_and_capture
-# paces itself against, replacing the old fixed speed presets.
+# project-homelab-infra memory) - this is now the *output* video's length,
+# not something capture paces itself against (see _scroll_and_capture and
+# _encode below).
 MIN_DURATION_SECONDS = 3
 MAX_DURATION_SECONDS = 300
 
@@ -86,11 +87,24 @@ AD_BLOCK_CSS = """
 }
 """
 
-# How much wall-clock time each scroll step targets - recomputed every tick
-# against the real remaining time/distance (see _scroll_and_capture), so a
-# slow real tick (screenshot/evaluate overhead) just speeds up the pace of
-# the next one rather than throwing off the requested total duration.
-TARGET_TICK_SECONDS = 0.1
+# Capture moves this many CSS pixels per captured frame, regardless of how
+# long that takes in real wall-clock time - "1 frame = a few pixels of
+# scroll", the same granularity a real manual click-drag scroll would look
+# like, per the user's own explicit request. The requested output duration/
+# framerate are hit afterward in _encode by *speeding up* this raw,
+# fine-grained footage (selecting evenly-spaced frames from it), not by
+# pacing the capture itself to a deadline - pacing capture to a short
+# deadline is what previously forced large per-frame jumps and looked like
+# a slideshow.
+SCROLL_STEP_PX = 4
+
+# Safety ceilings on the raw capture phase itself, decoupled from the
+# requested output duration_seconds (which no longer bounds capture time -
+# see above). MAX_CAPTURE_FRAMES in particular bounds temporary disk usage
+# (this project's NVMe "apps" pool is small) - frames are deleted right
+# after encoding either way.
+MAX_CAPTURE_SECONDS = 900
+MAX_CAPTURE_FRAMES = 6000
 
 RETENTION_SECONDS = 2 * 3600
 CLEANUP_INTERVAL_SECONDS = 600
@@ -212,12 +226,18 @@ def _prepare_page(p, browser, url, aspect_ratio, device, block_ads):
     return page
 
 
-def _scroll_and_capture(job_id, page, frames_dir, duration_seconds):
+def _scroll_and_capture(job_id, page, frames_dir):
+    """Captures one frame per SCROLL_STEP_PX of real scroll movement, all
+    the way to the bottom of the page - a fixed, small, deliberately
+    non-time-paced step, so the raw footage this produces is fine-grained
+    regardless of how long it takes in real wall-clock time. _encode
+    (called separately, after this returns) is what fits the result into
+    the user's requested output duration/framerate, by speeding up this
+    footage rather than by pacing the capture itself to a deadline."""
     height = page.viewport_size["height"]
-    deadline = time.monotonic() + duration_seconds
+    deadline = time.monotonic() + MAX_CAPTURE_SECONDS
 
     frame_index = 0
-    start = time.monotonic()
     state = page.evaluate(
         "() => ({y: window.scrollY, h: document.documentElement.scrollHeight})"
     )
@@ -226,14 +246,12 @@ def _scroll_and_capture(job_id, page, frames_dir, duration_seconds):
     while True:
         if job_id in _cancel_requested:
             break
-
-        now = time.monotonic()
-        if now >= deadline:
+        if time.monotonic() >= deadline or frame_index >= MAX_CAPTURE_FRAMES:
             break
 
         # Lossless PNG - JPEG's compression, stacked with the H.264 encode
         # afterward, was producing double-compression ringing/ghosting
-        # specifically on sharp text edges (confirmed by real testing).
+        # specifically on sharp text edges.
         page.screenshot(path=os.path.join(frames_dir, f"frame_{frame_index:06d}.png"))
         frame_index += 1
 
@@ -245,24 +263,18 @@ def _scroll_and_capture(job_id, page, frames_dir, duration_seconds):
         if remaining_px <= 0:
             break
 
-        # Recomputed every tick against the real clock, so a slower-than-
-        # expected tick (or scroll_height growing from lazy-loaded content)
-        # both get absorbed into the pace of what's left, instead of
-        # finishing off-target from a pace fixed once at the start.
-        remaining_time = max(TARGET_TICK_SECONDS, deadline - now)
-        px_per_tick = max(1, round(remaining_px * TARGET_TICK_SECONDS / remaining_time))
+        step = min(SCROLL_STEP_PX, remaining_px)
 
         # behavior:'instant' explicitly overrides a page's own CSS
         # scroll-behavior:smooth - without it, scrollBy kicks off the
         # browser's own multi-frame scroll *animation* instead of an
         # immediate jump, so the very next screenshot (taken right after,
         # with no wait) could land mid-animation: a half-scrolled,
-        # blurred/ghosted frame instead of a settled one. This is the
-        # most likely explanation for the doubled/unreadable text a real
-        # recording showed. The double requestAnimationFrame after
-        # scrolling waits for the browser to actually paint the new,
-        # settled position before this call returns, so every screenshot
-        # is a single crisp static frame instead of a mid-transition one.
+        # blurred/ghosted frame instead of a settled one. The double
+        # requestAnimationFrame after scrolling waits for the browser to
+        # actually paint the new, settled position before this call
+        # returns, so every screenshot is a single crisp static frame
+        # instead of a mid-transition one.
         state = page.evaluate(
             """(dy) => new Promise((resolve) => {
                 window.scrollBy({top: dy, left: 0, behavior: 'instant'});
@@ -270,38 +282,41 @@ def _scroll_and_capture(job_id, page, frames_dir, duration_seconds):
                     resolve({y: window.scrollY, h: document.documentElement.scrollHeight});
                 }));
             })""",
-            px_per_tick,
+            step,
         )
         scroll_y = state["y"]
         # re-measure in case lazy-loaded content grew the page
         scroll_height = max(scroll_height, state["h"])
 
-    elapsed = max(0.001, time.monotonic() - start)
-    input_fps = max(1, min(60, round(frame_index / elapsed)))
-    return frame_index, input_fps
+    return frame_index
 
 
-def _encode(frames_dir, out_path, input_fps, output_fps):
-    # Plain frame-rate conversion (duplicate/drop as needed to reach
-    # output_fps), not a blending/interpolation filter - the latter reads
-    # as a blurry "swimming" ghosting artifact instead of a clean scroll.
-    # With _scroll_and_capture now aiming for as many genuinely distinct
-    # frames as the real capture rate allows, this is meant to look like a
-    # real many-small-steps scroll, not a smoothed-over one.
+def _encode(frames_dir, out_path, frame_count, duration_seconds, output_fps):
+    # The raw footage has far more frames, each a few pixels apart, than
+    # the requested output needs - "speed up" to the target by *selecting*
+    # every Nth real frame (never blending/interpolating, which is exactly
+    # what looked like smeared "swimming" ghosting in earlier testing) and
+    # re-timing the kept frames to an even output_fps via setpts. If the
+    # raw footage doesn't even have enough frames for the target duration
+    # at this framerate (a short page + a long requested duration),
+    # skip_n floors at 1 (keep every frame) and the output just ends up
+    # shorter than requested rather than needing to duplicate anything.
+    total_output_frames = max(1, round(duration_seconds * output_fps))
+    skip_n = max(1, round(frame_count / total_output_frames))
+    video_filter = f"select='not(mod(n\\,{skip_n}))',setpts=N/{output_fps}/TB"
     cmd = [
         "ffmpeg", "-y",
-        "-framerate", str(input_fps),
         "-i", os.path.join(frames_dir, "frame_%06d.png"),
-        "-r", str(output_fps),
+        "-vf", video_filter,
         "-c:v", "libx264", "-pix_fmt", "yuv420p",
         out_path,
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg encode failed: {result.stderr[-2000:]}")
 
 
-def _finalize_recording(job_id, job_dir, frames_dir, frame_count, input_fps, output_fps):
+def _finalize_recording(job_id, job_dir, frames_dir, frame_count, duration_seconds, output_fps):
     if job_id in _cancel_requested:
         _set_status(job_id, status="cancelled")
         return
@@ -311,7 +326,7 @@ def _finalize_recording(job_id, job_dir, frames_dir, frame_count, input_fps, out
 
     _set_status(job_id, status="encoding")
     out_path = os.path.join(job_dir, "output.mp4")
-    _encode(frames_dir, out_path, input_fps, output_fps)
+    _encode(frames_dir, out_path, frame_count, duration_seconds, output_fps)
     shutil.rmtree(frames_dir, ignore_errors=True)
     _set_status(job_id, status="finished", progress=100.0)
 
@@ -326,10 +341,10 @@ def _run_job(job_id, url, aspect_ratio, device, duration_seconds, framerate, blo
             browser = p.chromium.launch(headless=True, proxy=_parse_proxy(proxy_url))
             try:
                 page = _prepare_page(p, browser, url, aspect_ratio, device, block_ads)
-                frame_count, input_fps = _scroll_and_capture(job_id, page, frames_dir, duration_seconds)
+                frame_count = _scroll_and_capture(job_id, page, frames_dir)
             finally:
                 browser.close()
-        _finalize_recording(job_id, job_dir, frames_dir, frame_count, input_fps, framerate)
+        _finalize_recording(job_id, job_dir, frames_dir, frame_count, duration_seconds, framerate)
     except Exception as exc:
         _set_status(job_id, status="error", error=str(exc))
     finally:
@@ -346,8 +361,8 @@ def _finish_job_on_page(job_id, page, duration_seconds, framerate):
     os.makedirs(frames_dir, exist_ok=True)
     try:
         _set_status(job_id, status="recording")
-        frame_count, input_fps = _scroll_and_capture(job_id, page, frames_dir, duration_seconds)
-        _finalize_recording(job_id, job_dir, frames_dir, frame_count, input_fps, framerate)
+        frame_count = _scroll_and_capture(job_id, page, frames_dir)
+        _finalize_recording(job_id, job_dir, frames_dir, frame_count, duration_seconds, framerate)
     except Exception as exc:
         _set_status(job_id, status="error", error=str(exc))
     finally:
