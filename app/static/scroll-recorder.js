@@ -29,12 +29,26 @@ function cancelBtn(id) {
   return `<button type="button" class="status-cancel-corner" data-cancel-id="${id}" title="Скасувати" aria-label="Скасувати">${CANCEL_ICON}</button>`;
 }
 
+const deviceSelect = document.getElementById("sr-device");
+const aspectRatioGroup = document.getElementById("sr-aspect-ratio-group");
+const aspectRatioSelect = document.getElementById("sr-aspect-ratio");
+const aspectRatioHint = document.getElementById("sr-aspect-ratio-hint");
+
+function syncAspectRatioField() {
+  const isMobile = deviceSelect.value === "mobile";
+  aspectRatioSelect.disabled = isMobile;
+  aspectRatioHint.hidden = !isMobile;
+}
+deviceSelect.addEventListener("change", syncAspectRatioField);
+syncAspectRatioField();
+
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const fd = new FormData(form);
   const body = {
     url: fd.get("url").trim(),
-    aspect_ratio: fd.get("aspect_ratio"),
+    aspect_ratio: aspectRatioSelect.value,
+    device: fd.get("device"),
     duration_seconds: Number(fd.get("duration_seconds")),
     framerate: Number(fd.get("framerate")),
     block_ads: fd.get("block_ads") === "on",
@@ -148,6 +162,7 @@ previewBtn.addEventListener("click", async () => {
   const url = document.getElementById("sr-url").value.trim();
   if (!url) return;
   const aspectRatio = document.getElementById("sr-aspect-ratio").value;
+  const device = document.getElementById("sr-device").value;
   const blockAds = document.getElementById("sr-block-ads").checked;
   const useProxy = document.getElementById("sr-use-proxy").checked;
 
@@ -159,7 +174,7 @@ previewBtn.addEventListener("click", async () => {
     const res = await fetch("/api/scroll-recorder/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, aspect_ratio: aspectRatio, block_ads: blockAds, use_proxy: useProxy }),
+      body: JSON.stringify({ url, aspect_ratio: aspectRatio, device, block_ads: blockAds, use_proxy: useProxy }),
     });
     const data = await res.json();
     if (!res.ok || data.error) {

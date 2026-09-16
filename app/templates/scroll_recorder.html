@@ -14,6 +14,14 @@
   </label>
 
   <div class="field-group">
+    <span class="field-label">Пристрій</span>
+    <select name="device" id="sr-device">
+      <option value="desktop" selected>ПК</option>
+      <option value="mobile">Телефон</option>
+    </select>
+  </div>
+
+  <div class="field-group" id="sr-aspect-ratio-group">
     <span class="field-label">Співвідношення сторін</span>
     <select name="aspect_ratio" id="sr-aspect-ratio">
       <option value="16:9" selected>16:9 (горизонтальне)</option>
@@ -21,6 +29,7 @@
       <option value="1:1">1:1 (квадрат)</option>
       <option value="4:5">4:5 (портрет)</option>
     </select>
+    <span class="hint" id="sr-aspect-ratio-hint" hidden>У режимі «Телефон» ігнорується — запис іде в натуральному розмірі екрана телефону.</span>
   </div>
 
   <div class="field-group">
