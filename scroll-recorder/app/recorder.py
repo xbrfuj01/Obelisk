@@ -482,7 +482,10 @@ class PreviewSession:
             target=self._run, args=(url, aspect_ratio, device, block_ads, proxy_url, ready), daemon=True
         )
         self._thread.start()
-        self.screenshot_b64 = ready.result(timeout=65)
+        initial = ready.result(timeout=65)
+        self.screenshot_b64 = initial["screenshot"]
+        self.y = initial["y"]
+        self.h = initial["h"]
 
     def _run(self, url, aspect_ratio, device, block_ads, proxy_url, ready):
         try:
@@ -490,7 +493,12 @@ class PreviewSession:
                 browser = p.chromium.launch(headless=True, proxy=_parse_proxy(proxy_url))
                 try:
                     page = _prepare_page(p, browser, url, aspect_ratio, device, block_ads)
-                    ready.set_result(_screenshot_b64(page))
+                    state = page.evaluate(
+                        "() => ({y: window.scrollY, h: document.documentElement.scrollHeight})"
+                    )
+                    ready.set_result(
+                        {"screenshot": _screenshot_b64(page), "y": state["y"], "h": state["h"]}
+                    )
                     while True:
                         item = self._queue.get()
                         if item is None:
@@ -556,7 +564,7 @@ def create_preview(url: str, aspect_ratio: str, device: str, block_ads: bool, pr
     session = PreviewSession(session_id, url, aspect_ratio, device, block_ads, proxy_url)
     with _previews_lock:
         _previews[session_id] = session
-    return session_id, session.screenshot_b64, session.width, session.height
+    return session_id, session.screenshot_b64, session.width, session.height, session.y, session.h
 
 
 def scroll_preview(session_id: str, delta_y: float) -> dict:

@@ -92,14 +92,17 @@ class PreviewRequest(BaseModel):
 def create_preview(body: PreviewRequest):
     _validate_common(body.url, body.aspect_ratio, body.device)
     try:
-        session_id, screenshot, width, height = recorder.create_preview(
+        session_id, screenshot, width, height, y, page_height = recorder.create_preview(
             body.url, body.aspect_ratio, body.device, body.block_ads, body.proxy_url
         )
     except RuntimeError as exc:
         raise HTTPException(429, str(exc))
     except Exception as exc:
         raise HTTPException(400, f"Не вдалося відкрити сторінку: {exc}")
-    return {"session_id": session_id, "screenshot": screenshot, "width": width, "height": height}
+    return {
+        "session_id": session_id, "screenshot": screenshot, "width": width, "height": height,
+        "y": y, "page_height": page_height,
+    }
 
 
 class PointRequest(BaseModel):
