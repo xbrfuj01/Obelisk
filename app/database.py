@@ -41,6 +41,24 @@ def _auto_migrate():
                 for column in missing:
                     ddl = str(CreateColumn(column).compile(dialect=engine.dialect))
                     conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {ddl}"))
+        # SQLite's ADD COLUMN has no SQL-level DEFAULT unless a
+        # server_default was set on the model - a plain Python-side
+        # default=False (or similar) only applies to rows the ORM inserts
+        # from now on, leaving every row that already existed NULL instead
+        # of the intended value. Run for every column with a simple scalar
+        # (non-callable - skips e.g. default=datetime.utcnow, a per-row
+        # value with nothing sensible to backfill in bulk) default on every
+        # startup, not just ones just added this run: a column ADD-ed in an
+        # earlier deploy, before this backfill existed, would otherwise be
+        # stuck NULL forever.
+        with engine.begin() as conn:
+            for column in table.columns:
+                default = column.default
+                if default is not None and getattr(default, "is_scalar", False):
+                    conn.execute(
+                        text(f"UPDATE {table.name} SET {column.name} = :val WHERE {column.name} IS NULL"),
+                        {"val": default.arg},
+                    )
         for index in table.indexes:
             index.create(bind=engine, checkfirst=True)
 
