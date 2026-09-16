@@ -100,13 +100,14 @@ const handleEnd = document.getElementById("handle-end");
 const panel = document.getElementById("editor-panel");
 const panelHeader = document.getElementById("editor-panel-header");
 const closeBtn = document.getElementById("editor-close");
-const deviceSelect = document.getElementById("ed-device");
+const deviceSegmented = document.getElementById("device-segmented");
 const removeToggleBtn = document.getElementById("ed-remove-toggle");
+const removeHeaderBtn = document.getElementById("ed-remove-header");
 const undoBtn = document.getElementById("ed-undo");
 const durationInput = document.getElementById("ed-duration");
-const framerateSelect = document.getElementById("ed-framerate");
-const blockAdsCheckbox = document.getElementById("ed-block-ads");
-const useProxyCheckbox = document.getElementById("ed-use-proxy");
+const framerateSegmented = document.getElementById("framerate-segmented");
+const blockAdsBtn = document.getElementById("ed-block-ads");
+const useProxyBtn = document.getElementById("ed-use-proxy");
 const resetRangeBtn = document.getElementById("ed-reset-range");
 const recordBtn = document.getElementById("ed-record");
 
@@ -117,6 +118,23 @@ let viewportHeight = 1;
 let startFraction = 0.0;
 let endFraction = 1.0;
 let removeArmed = false;
+let deviceValue = "desktop";
+let framerateValue = 30;
+let blockAdsArmed = false;
+let useProxyArmed = false;
+
+// Shared behavior for the two-option toggle groups (device, framerate):
+// clicking a button arms it and disarms its sibling, then reports the
+// chosen value via onChange.
+function setupSegmented(containerEl, onChange) {
+  const buttons = containerEl.querySelectorAll(".segmented-btn");
+  containerEl.addEventListener("click", (e) => {
+    const btn = e.target.closest(".segmented-btn");
+    if (!btn) return;
+    buttons.forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+    onChange(btn.dataset.value);
+  });
+}
 
 function setLoading(loading) {
   loadingEl.hidden = !loading;
@@ -177,9 +195,9 @@ async function openSession() {
       body: JSON.stringify({
         url: urlInput.value.trim(),
         aspect_ratio: aspectRatioSelect.value,
-        device: deviceSelect.value,
-        block_ads: blockAdsCheckbox.checked,
-        use_proxy: useProxyCheckbox.checked,
+        device: deviceValue,
+        block_ads: blockAdsArmed,
+        use_proxy: useProxyArmed,
       }),
     });
     const data = await res.json();
@@ -246,12 +264,17 @@ closeBtn.addEventListener("click", async () => {
   await closeSession();
 });
 
-deviceSelect.addEventListener("change", async () => {
+setupSegmented(deviceSegmented, async (value) => {
+  deviceValue = value;
   if (overlay.hidden) return;
   await closeSession();
   startFraction = 0.0;
   endFraction = 1.0;
   await openSession();
+});
+
+setupSegmented(framerateSegmented, (value) => {
+  framerateValue = Number(value);
 });
 
 // Wheel-driven navigation is the primary way to move around the live
@@ -279,6 +302,32 @@ removeToggleBtn.addEventListener("click", () => {
   removeArmed = !removeArmed;
   removeToggleBtn.setAttribute("aria-pressed", String(removeArmed));
   screenshotImg.classList.toggle("remove-armed", removeArmed);
+});
+
+blockAdsBtn.addEventListener("click", () => {
+  blockAdsArmed = !blockAdsArmed;
+  blockAdsBtn.setAttribute("aria-pressed", String(blockAdsArmed));
+});
+
+useProxyBtn.addEventListener("click", () => {
+  useProxyArmed = !useProxyArmed;
+  useProxyBtn.setAttribute("aria-pressed", String(useProxyArmed));
+});
+
+removeHeaderBtn.addEventListener("click", async () => {
+  if (!sessionId) return;
+  setLoading(true);
+  try {
+    const res = await fetch(`/api/scroll-recorder/preview/${sessionId}/remove-header`, {
+      method: "POST",
+    });
+    const data = await res.json();
+    if (res.ok && data.screenshot) showScreenshot(data.screenshot);
+  } catch (err) {
+    // ignore — the screenshot just won't update this click, user can retry
+  } finally {
+    setLoading(false);
+  }
 });
 
 screenshotImg.addEventListener("click", async (e) => {
@@ -342,7 +391,7 @@ recordBtn.addEventListener("click", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         duration_seconds: Number(durationInput.value),
-        framerate: Number(framerateSelect.value),
+        framerate: framerateValue,
         start_fraction: startFraction,
         end_fraction: endFraction,
       }),
@@ -385,6 +434,27 @@ function endPanelDrag() {
 
 // --- Height-range handles (right-edge slider) and stripes (on the image) ---
 
+// The live view follows the handle while dragging, not just once it's
+// dropped - each network round-trip (scroll + screenshot) takes real
+// time, so rapid drag movement is coalesced: a move updates the target
+// fraction and, if a request is already in flight, just waits for it to
+// finish before firing the *latest* target rather than queuing every
+// intermediate position.
+let scrollFollowBusy = false;
+let scrollFollowPending = null;
+
+async function followFraction(fraction) {
+  scrollFollowPending = fraction;
+  if (scrollFollowBusy) return;
+  scrollFollowBusy = true;
+  while (scrollFollowPending !== null) {
+    const target = scrollFollowPending;
+    scrollFollowPending = null;
+    await scrollToFraction(target);
+  }
+  scrollFollowBusy = false;
+}
+
 function attachHandleDrag(handleEl, isStart) {
   handleEl.addEventListener("mousedown", (e) => {
     e.preventDefault();
@@ -394,11 +464,12 @@ function attachHandleDrag(handleEl, isStart) {
       if (isStart) startFraction = fraction;
       else endFraction = fraction;
       updateOverlays();
+      followFraction(fraction);
     }
     function onUp() {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
-      scrollToFraction(isStart ? startFraction : endFraction);
+      followFraction(isStart ? startFraction : endFraction);
     }
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);

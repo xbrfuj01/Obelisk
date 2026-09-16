@@ -1655,7 +1655,7 @@ a.tool-card:hover {
   position: fixed;
   top: 80px;
   left: 24px;
-  width: 260px;
+  width: 176px;
   max-height: calc(100vh - 100px);
   overflow-y: auto;
   background: linear-gradient(180deg, var(--bg-card), var(--card-shade));
@@ -1669,9 +1669,10 @@ a.tool-card:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--border);
   font-weight: 600;
+  font-size: 1.1rem;
   cursor: move;
   user-select: none;
 }
@@ -1680,14 +1681,74 @@ a.tool-card:hover {
 .editor-panel-body {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px;
+  gap: 10px;
+  padding: 12px;
 }
 
-.editor-tool-btn[aria-pressed="true"] {
+/* Compact icon-first controls - a two-option toggle (device, framerate) */
+.segmented {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.segmented-btn {
+  flex: 1 1 0;
+  padding: 8px 0;
+  background: var(--bg-input);
+  border: none;
+  border-left: 1px solid var(--border);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+  box-shadow: none;
+}
+.segmented-btn:first-child { border-left: none; }
+.segmented-btn[aria-pressed="true"] {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* A grid of standalone icon buttons - remove/undo/ad-block/proxy/reset */
+.icon-toolbar {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.icon-btn {
+  padding: 8px 0;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 1.05rem;
+  cursor: pointer;
+  box-shadow: none;
+}
+.icon-btn:hover { border-color: var(--border-hover); }
+.icon-btn[aria-pressed="true"] {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+}
+
+.compact-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  background: var(--bg-input);
+}
+.compact-field input {
+  border: none;
+  background: none;
+  padding: 0;
+  width: 100%;
+  color: var(--text);
+  font: inherit;
 }
 
 .user-activity-btn {

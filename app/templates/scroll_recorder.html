@@ -46,40 +46,35 @@
 
   <div class="editor-panel" id="editor-panel">
     <div class="editor-panel-header" id="editor-panel-header">
-      <span>Налаштування запису</span>
+      <span>⚙</span>
       <button type="button" class="modal-close" id="editor-close" title="Закрити" aria-label="Закрити">&times;</button>
     </div>
     <div class="editor-panel-body">
-      <div class="field-group">
-        <span class="field-label">Пристрій</span>
-        <select id="ed-device">
-          <option value="desktop" selected>ПК</option>
-          <option value="mobile">Телефон</option>
-        </select>
-        <span class="hint">У режимі «Телефон» співвідношення сторін з головної сторінки ігнорується — запис іде в натуральному розмірі екрана телефону. Зміна пристрою перевідкриває перегляд.</span>
+      <div class="segmented" id="device-segmented">
+        <button type="button" class="segmented-btn" data-value="desktop" aria-pressed="true" title="ПК">🖥</button>
+        <button type="button" class="segmented-btn" data-value="mobile" aria-pressed="false" title="Телефон (ігнорує співвідношення сторін, перевідкриє перегляд)">📱</button>
       </div>
 
-      <button type="button" class="btn-secondary editor-tool-btn" id="ed-remove-toggle" aria-pressed="false">Видалити об'єкт</button>
-      <button type="button" class="btn-secondary" id="ed-undo">Скасувати видалення</button>
+      <div class="icon-toolbar">
+        <button type="button" class="icon-btn" id="ed-remove-toggle" aria-pressed="false" title="Видалити об'єкт (клік по сторінці)">🗑</button>
+        <button type="button" class="icon-btn" id="ed-remove-header" title="Прибрати верхнє меню сайту">⬒</button>
+        <button type="button" class="icon-btn" id="ed-undo" title="Скасувати видалення">↶</button>
+        <button type="button" class="icon-btn" id="ed-block-ads" aria-pressed="false" title="Блокувати рекламу">🛡</button>
+        <button type="button" class="icon-btn" id="ed-use-proxy" aria-pressed="false" title="Використовувати проксі">🌐</button>
+        <button type="button" class="icon-btn" id="ed-reset-range" title="Скинути межі запису">⭯</button>
+      </div>
 
-      <div class="field-group">
-        <span class="field-label">Тривалість відео (секунд)</span>
+      <div class="compact-field" title="Тривалість відео (секунд)">
+        <span>⏱</span>
         <input type="number" id="ed-duration" min="3" max="300" value="15">
       </div>
 
-      <div class="field-group">
-        <span class="field-label">Фреймрейт</span>
-        <select id="ed-framerate">
-          <option value="30" selected>30 fps</option>
-          <option value="60">60 fps</option>
-        </select>
+      <div class="segmented" id="framerate-segmented" title="Фреймрейт">
+        <button type="button" class="segmented-btn" data-value="30" aria-pressed="true">30</button>
+        <button type="button" class="segmented-btn" data-value="60" aria-pressed="false">60</button>
       </div>
 
-      <label class="checkbox-row"><input type="checkbox" id="ed-block-ads"> <span>Блокувати рекламу</span></label>
-      <label class="checkbox-row"><input type="checkbox" id="ed-use-proxy"> <span>Використовувати проксі</span></label>
-
-      <button type="button" class="btn-secondary" id="ed-reset-range">Скинути межі запису</button>
-      <button type="button" class="btn-primary" id="ed-record">Записати</button>
+      <button type="button" class="btn-primary" id="ed-record" title="Записати">⏺ Записати</button>
     </div>
   </div>
 </div>
