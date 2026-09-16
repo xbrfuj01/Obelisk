@@ -1554,6 +1554,47 @@ a.tool-card:hover {
 
 .modal-box.wide { max-width: 640px; }
 
+.modal-box.picker-box { max-width: min(92vw, 1100px); }
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.form-actions .btn-primary, .form-actions .btn-secondary { align-self: auto; }
+
+.picker-image-wrap {
+  position: relative;
+  line-height: 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.picker-image-wrap img {
+  display: block;
+  width: 100%;
+  height: auto;
+  cursor: crosshair;
+}
+
+.picker-loading {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 6, 10, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.picker-loading[hidden] { display: none; }
+
+.picker-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .user-activity-btn {
   background: none;
   border: none;

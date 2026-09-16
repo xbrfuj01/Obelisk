@@ -36,6 +36,7 @@ form.addEventListener("submit", async (e) => {
     url: fd.get("url").trim(),
     aspect_ratio: fd.get("aspect_ratio"),
     speed: fd.get("speed"),
+    block_ads: fd.get("block_ads") === "on",
   };
 
   statusBox.innerHTML = `<div class="card status-card">
@@ -107,4 +108,142 @@ document.addEventListener("click", async (e) => {
   } catch (err) {
     // ignore — the next poll tick will just show whatever state actually stuck
   }
+});
+
+// --- Preview / element-removal picker ---
+
+const previewBtn = document.getElementById("sr-preview-btn");
+const pickerModal = document.getElementById("picker-modal");
+const pickerScreenshot = document.getElementById("picker-screenshot");
+const pickerLoading = document.getElementById("picker-loading");
+const pickerUndoBtn = document.getElementById("picker-undo");
+const pickerRecordBtn = document.getElementById("picker-record");
+const pickerCloseBtn = document.getElementById("picker-close");
+
+let previewSessionId = null;
+
+function setPickerLoading(loading) {
+  pickerLoading.hidden = !loading;
+  pickerScreenshot.style.pointerEvents = loading ? "none" : "auto";
+}
+
+function showPickerScreenshot(base64) {
+  pickerScreenshot.src = `data:image/png;base64,${base64}`;
+}
+
+async function closePreviewSession() {
+  if (!previewSessionId) return;
+  const id = previewSessionId;
+  previewSessionId = null;
+  try {
+    await fetch(`/api/scroll-recorder/preview/${id}`, { method: "DELETE" });
+  } catch (err) {
+    // ignore — an idle-cleanup sweep on the sidecar will eventually close it anyway
+  }
+}
+
+previewBtn.addEventListener("click", async () => {
+  const url = document.getElementById("sr-url").value.trim();
+  if (!url) return;
+  const aspectRatio = document.getElementById("sr-aspect-ratio").value;
+  const blockAds = document.getElementById("sr-block-ads").checked;
+
+  pickerModal.hidden = false;
+  pickerScreenshot.removeAttribute("src");
+  setPickerLoading(true);
+
+  try {
+    const res = await fetch("/api/scroll-recorder/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, aspect_ratio: aspectRatio, block_ads: blockAds }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      pickerModal.hidden = true;
+      statusBox.innerHTML = `<div class="card status-card"><p class="error">${escapeHtml(data.error || data.detail || "Не вдалося відкрити сторінку")}</p></div>`;
+      return;
+    }
+    previewSessionId = data.session_id;
+    showPickerScreenshot(data.screenshot);
+  } catch (err) {
+    pickerModal.hidden = true;
+    statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка з'єднання</p></div>`;
+  } finally {
+    setPickerLoading(false);
+  }
+});
+
+pickerScreenshot.addEventListener("click", async (e) => {
+  if (!previewSessionId) return;
+  const rect = pickerScreenshot.getBoundingClientRect();
+  const scaleX = pickerScreenshot.naturalWidth / rect.width;
+  const scaleY = pickerScreenshot.naturalHeight / rect.height;
+  const x = (e.clientX - rect.left) * scaleX;
+  const y = (e.clientY - rect.top) * scaleY;
+
+  setPickerLoading(true);
+  try {
+    const res = await fetch(`/api/scroll-recorder/preview/${previewSessionId}/remove`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ x, y }),
+    });
+    const data = await res.json();
+    if (res.ok && data.screenshot) showPickerScreenshot(data.screenshot);
+  } catch (err) {
+    // ignore — the screenshot just won't update this click, user can retry
+  } finally {
+    setPickerLoading(false);
+  }
+});
+
+pickerUndoBtn.addEventListener("click", async () => {
+  if (!previewSessionId) return;
+  setPickerLoading(true);
+  try {
+    const res = await fetch(`/api/scroll-recorder/preview/${previewSessionId}/undo`, {
+      method: "POST",
+    });
+    const data = await res.json();
+    if (res.ok && data.screenshot) showPickerScreenshot(data.screenshot);
+  } catch (err) {
+    // ignore
+  } finally {
+    setPickerLoading(false);
+  }
+});
+
+pickerRecordBtn.addEventListener("click", async () => {
+  if (!previewSessionId) return;
+  const speed = document.getElementById("sr-speed").value;
+  const id = previewSessionId;
+  previewSessionId = null; // the sidecar session is consumed by /record either way
+  pickerModal.hidden = true;
+
+  statusBox.innerHTML = `<div class="card status-card">
+    <p>Надсилаємо запит...</p>
+    <div class="progress"><div class="progress-bar indeterminate"></div></div>
+  </div>`;
+
+  try {
+    const res = await fetch(`/api/scroll-recorder/preview/${id}/record`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ speed }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      statusBox.innerHTML = `<div class="card status-card"><p class="error">${escapeHtml(data.error || data.detail || "Помилка")}</p></div>`;
+      return;
+    }
+    pollStatus(data.job_id);
+  } catch (err) {
+    statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка з'єднання</p></div>`;
+  }
+});
+
+pickerCloseBtn.addEventListener("click", () => {
+  pickerModal.hidden = true;
+  closePreviewSession();
 });
