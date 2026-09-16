@@ -12,10 +12,15 @@ app = FastAPI()
 ASPECT_RATIOS = set(recorder.VIEWPORTS)
 
 
-def _validate_common(url: str, aspect_ratio: str):
+def _validate_common(url: str, aspect_ratio: str, device: str):
     if not (url.startswith("http://") or url.startswith("https://")):
         raise HTTPException(400, "URL має починатися з http:// або https://")
-    if aspect_ratio not in ASPECT_RATIOS:
+    if device not in recorder.DEVICE_MODES:
+        raise HTTPException(400, "Невідомий режим пристрою")
+    # Mobile mode records at the emulated phone's own natural shape (see
+    # recorder.py's MOBILE_DEVICE_NAME comment) - aspect_ratio only applies
+    # to desktop mode, so it isn't validated/used otherwise.
+    if device == "desktop" and aspect_ratio not in ASPECT_RATIOS:
         raise HTTPException(400, "Невідоме співвідношення сторін")
 
 
@@ -33,6 +38,7 @@ def _validate_duration_framerate(duration_seconds: int, framerate: int):
 class JobRequest(BaseModel):
     url: str
     aspect_ratio: str
+    device: str = "desktop"
     duration_seconds: int
     framerate: int
     block_ads: bool = False
@@ -41,10 +47,10 @@ class JobRequest(BaseModel):
 
 @app.post("/jobs")
 def create_job(body: JobRequest):
-    _validate_common(body.url, body.aspect_ratio)
+    _validate_common(body.url, body.aspect_ratio, body.device)
     _validate_duration_framerate(body.duration_seconds, body.framerate)
     job_id = recorder.create_job(
-        body.url, body.aspect_ratio, body.duration_seconds, body.framerate,
+        body.url, body.aspect_ratio, body.device, body.duration_seconds, body.framerate,
         body.block_ads, body.proxy_url,
     )
     return {"job_id": job_id}
@@ -75,16 +81,17 @@ def cancel_job(job_id: str):
 class PreviewRequest(BaseModel):
     url: str
     aspect_ratio: str
+    device: str = "desktop"
     block_ads: bool = False
     proxy_url: Optional[str] = None
 
 
 @app.post("/preview")
 def create_preview(body: PreviewRequest):
-    _validate_common(body.url, body.aspect_ratio)
+    _validate_common(body.url, body.aspect_ratio, body.device)
     try:
         session_id, screenshot, width, height = recorder.create_preview(
-            body.url, body.aspect_ratio, body.block_ads, body.proxy_url
+            body.url, body.aspect_ratio, body.device, body.block_ads, body.proxy_url
         )
     except RuntimeError as exc:
         raise HTTPException(429, str(exc))

@@ -24,6 +24,25 @@ VIEWPORTS = {
 
 FRAME_RATES = {30, 60}
 
+DEVICE_MODES = {"desktop", "mobile"}
+
+# Real per-CSS-pixel-width breakpoints mean a genuinely narrow viewport is
+# what actually triggers a site's mobile layout - not just an is_mobile
+# flag on a 1080-1920px-wide "desktop-shaped" viewport, which most sites'
+# media queries would still treat as a large desktop/tablet. So "phone
+# mode" uses Playwright's own verified "Pixel 7" device descriptor
+# (viewport/UA/deviceScaleFactor/isMobile/hasTouch bundled together, exact
+# values confirmed against playwright-core 1.47.0's own
+# deviceDescriptorsSource.json) instead of trying to force a phone-like
+# render into one of the aspect_ratio presets above - the two goals
+# (accurate mobile rendering vs. an arbitrary chosen video frame shape)
+# don't both fit at once, so mobile mode intentionally ignores
+# aspect_ratio and just records at the phone's own natural shape.
+MOBILE_DEVICE_NAME = "Pixel 7"
+# Mirrors that same descriptor's viewport, only for reporting size to the
+# preview frontend before a real browser/Playwright driver exists yet.
+MOBILE_VIEWPORT = (412, 839)
+
 # A storage/resource guard (this project's NVMe "apps" pool is small, see
 # project-homelab-infra memory) - also the deadline _scroll_and_capture
 # paces itself against, replacing the old fixed speed presets.
@@ -32,7 +51,8 @@ MAX_DURATION_SECONDS = 300
 
 # Playwright's default headless Chromium UA can still read as automated to
 # some checks - a plain modern desktop Chrome UA is a cheap, honest-effort
-# improvement alongside playwright-stealth below.
+# improvement alongside playwright-stealth below. (Mobile mode gets its UA
+# from the Pixel 7 device descriptor instead, see above.)
 DESKTOP_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
@@ -92,14 +112,14 @@ _previews_lock = threading.Lock()
 
 
 def create_job(
-    url: str, aspect_ratio: str, duration_seconds: int, framerate: int,
+    url: str, aspect_ratio: str, device: str, duration_seconds: int, framerate: int,
     block_ads: bool = False, proxy_url: str = None,
 ) -> str:
     job_id = uuid.uuid4().hex
     with _jobs_lock:
         _jobs[job_id] = {"status": "queued", "progress": 0.0, "error": None}
     _executor.submit(
-        _run_job, job_id, url, aspect_ratio, duration_seconds, framerate, block_ads, proxy_url
+        _run_job, job_id, url, aspect_ratio, device, duration_seconds, framerate, block_ads, proxy_url
     )
     return job_id
 
@@ -176,9 +196,12 @@ def _screenshot_b64(page) -> str:
     return base64.b64encode(page.screenshot()).decode("ascii")
 
 
-def _prepare_page(browser, url, aspect_ratio, block_ads):
-    width, height = VIEWPORTS[aspect_ratio]
-    page = browser.new_page(viewport={"width": width, "height": height}, user_agent=DESKTOP_USER_AGENT)
+def _prepare_page(p, browser, url, aspect_ratio, device, block_ads):
+    if device == "mobile":
+        page = browser.new_page(**p.devices[MOBILE_DEVICE_NAME])
+    else:
+        width, height = VIEWPORTS[aspect_ratio]
+        page = browser.new_page(viewport={"width": width, "height": height}, user_agent=DESKTOP_USER_AGENT)
     stealth_sync(page)
     if block_ads:
         _apply_ad_block(page)
@@ -195,7 +218,10 @@ def _scroll_and_capture(job_id, page, frames_dir, duration_seconds):
 
     frame_index = 0
     start = time.monotonic()
-    scroll_height = page.evaluate("document.documentElement.scrollHeight")
+    state = page.evaluate(
+        "() => ({y: window.scrollY, h: document.documentElement.scrollHeight})"
+    )
+    scroll_y, scroll_height = state["y"], state["h"]
 
     while True:
         if job_id in _cancel_requested:
@@ -205,10 +231,16 @@ def _scroll_and_capture(job_id, page, frames_dir, duration_seconds):
         if now >= deadline:
             break
 
-        page.screenshot(path=os.path.join(frames_dir, f"frame_{frame_index:06d}.png"))
+        # JPEG instead of PNG, and one combined evaluate (scroll + read)
+        # per tick instead of three separate round-trips - both cut the
+        # real per-tick latency, which is what actually caps how many
+        # unique frames fit in duration_seconds (there's no artificial
+        # delay in this loop; it just runs flat-out). More real frames
+        # with a smaller shift between each is what makes the output look
+        # like a smooth manual scroll instead of an interpolated blur.
+        page.screenshot(path=os.path.join(frames_dir, f"frame_{frame_index:06d}.jpg"), type="jpeg", quality=85)
         frame_index += 1
 
-        scroll_y = page.evaluate("window.scrollY")
         total_scrollable = max(1, scroll_height - height)
         progress = min(99.0, scroll_y / total_scrollable * 100) if scroll_height > height else 100.0
         _set_status(job_id, progress=round(progress, 1))
@@ -224,9 +256,16 @@ def _scroll_and_capture(job_id, page, frames_dir, duration_seconds):
         remaining_time = max(TARGET_TICK_SECONDS, deadline - now)
         px_per_tick = max(1, round(remaining_px * TARGET_TICK_SECONDS / remaining_time))
 
-        page.evaluate(f"window.scrollBy(0, {px_per_tick})")
+        state = page.evaluate(
+            """(dy) => {
+                window.scrollBy(0, dy);
+                return {y: window.scrollY, h: document.documentElement.scrollHeight};
+            }""",
+            px_per_tick,
+        )
+        scroll_y = state["y"]
         # re-measure in case lazy-loaded content grew the page
-        scroll_height = max(scroll_height, page.evaluate("document.documentElement.scrollHeight"))
+        scroll_height = max(scroll_height, state["h"])
 
     elapsed = max(0.001, time.monotonic() - start)
     input_fps = max(1, min(60, round(frame_index / elapsed)))
@@ -234,17 +273,17 @@ def _scroll_and_capture(job_id, page, frames_dir, duration_seconds):
 
 
 def _encode(frames_dir, out_path, input_fps, output_fps):
-    # minterpolate blends between the real captures to reach output_fps,
-    # rather than plain frame duplication (-r alone), which would just hold
-    # each real frame for several output frames and look stepped/jerky -
-    # blend mode is cheap and suits this specific case (simple monotonic
-    # vertical scroll, not complex motion) without motion-compensated
-    # interpolation's CPU cost/artifact risk.
+    # Plain frame-rate conversion (duplicate/drop as needed to reach
+    # output_fps), not a blending/interpolation filter - the latter reads
+    # as a blurry "swimming" ghosting artifact instead of a clean scroll.
+    # With _scroll_and_capture now aiming for as many genuinely distinct
+    # frames as the real capture rate allows, this is meant to look like a
+    # real many-small-steps scroll, not a smoothed-over one.
     cmd = [
         "ffmpeg", "-y",
         "-framerate", str(input_fps),
-        "-i", os.path.join(frames_dir, "frame_%06d.png"),
-        "-vf", f"minterpolate=fps={output_fps}:mi_mode=blend",
+        "-i", os.path.join(frames_dir, "frame_%06d.jpg"),
+        "-r", str(output_fps),
         "-c:v", "libx264", "-pix_fmt", "yuv420p",
         out_path,
     ]
@@ -268,7 +307,7 @@ def _finalize_recording(job_id, job_dir, frames_dir, frame_count, input_fps, out
     _set_status(job_id, status="finished", progress=100.0)
 
 
-def _run_job(job_id, url, aspect_ratio, duration_seconds, framerate, block_ads, proxy_url):
+def _run_job(job_id, url, aspect_ratio, device, duration_seconds, framerate, block_ads, proxy_url):
     job_dir = os.path.join(DATA_DIR, job_id)
     frames_dir = os.path.join(job_dir, "frames")
     os.makedirs(frames_dir, exist_ok=True)
@@ -277,7 +316,7 @@ def _run_job(job_id, url, aspect_ratio, duration_seconds, framerate, block_ads, 
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, proxy=_parse_proxy(proxy_url))
             try:
-                page = _prepare_page(browser, url, aspect_ratio, block_ads)
+                page = _prepare_page(p, browser, url, aspect_ratio, device, block_ads)
                 frame_count, input_fps = _scroll_and_capture(job_id, page, frames_dir, duration_seconds)
             finally:
                 browser.close()
@@ -315,10 +354,11 @@ class PreviewSession:
     thread; callers block on a Future to get the result back."""
 
     def __init__(
-        self, session_id: str, url: str, aspect_ratio: str, block_ads: bool, proxy_url: str = None,
+        self, session_id: str, url: str, aspect_ratio: str, device: str,
+        block_ads: bool, proxy_url: str = None,
     ):
         self.id = session_id
-        self.width, self.height = VIEWPORTS[aspect_ratio]
+        self.width, self.height = MOBILE_VIEWPORT if device == "mobile" else VIEWPORTS[aspect_ratio]
         self.last_active = time.monotonic()
         self._queue = queue.Queue()
         self._state_lock = threading.Lock()
@@ -327,17 +367,17 @@ class PreviewSession:
 
         ready = Future()
         self._thread = threading.Thread(
-            target=self._run, args=(url, aspect_ratio, block_ads, proxy_url, ready), daemon=True
+            target=self._run, args=(url, aspect_ratio, device, block_ads, proxy_url, ready), daemon=True
         )
         self._thread.start()
         self.screenshot_b64 = ready.result(timeout=65)
 
-    def _run(self, url, aspect_ratio, block_ads, proxy_url, ready):
+    def _run(self, url, aspect_ratio, device, block_ads, proxy_url, ready):
         try:
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True, proxy=_parse_proxy(proxy_url))
                 try:
-                    page = _prepare_page(browser, url, aspect_ratio, block_ads)
+                    page = _prepare_page(p, browser, url, aspect_ratio, device, block_ads)
                     ready.set_result(_screenshot_b64(page))
                     while True:
                         item = self._queue.get()
@@ -395,13 +435,13 @@ def _get_preview(session_id: str) -> PreviewSession:
     return session
 
 
-def create_preview(url: str, aspect_ratio: str, block_ads: bool, proxy_url: str = None):
+def create_preview(url: str, aspect_ratio: str, device: str, block_ads: bool, proxy_url: str = None):
     with _previews_lock:
         if len(_previews) >= MAX_PREVIEW_SESSIONS:
             raise RuntimeError("Забагато активних попередніх переглядів, спробуйте пізніше")
 
     session_id = uuid.uuid4().hex
-    session = PreviewSession(session_id, url, aspect_ratio, block_ads, proxy_url)
+    session = PreviewSession(session_id, url, aspect_ratio, device, block_ads, proxy_url)
     with _previews_lock:
         _previews[session_id] = session
     return session_id, session.screenshot_b64, session.width, session.height
