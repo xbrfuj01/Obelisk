@@ -1554,31 +1554,37 @@ a.tool-card:hover {
 
 .modal-box.wide { max-width: 640px; }
 
-.modal-box.picker-box { max-width: min(92vw, 1100px); }
+/* --- Scroll Recorder full-screen editor --- */
 
-.form-actions {
+.editor-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  z-index: 400;
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  align-items: center;
+  justify-content: center;
 }
-.form-actions .btn-primary, .form-actions .btn-secondary { align-self: auto; }
+.editor-overlay[hidden] { display: none; }
 
-.picker-image-wrap {
+.editor-stage {
   position: relative;
+  max-width: 96vw;
+  max-height: 96vh;
   line-height: 0;
-  border-radius: var(--radius);
-  overflow: hidden;
-  border: 1px solid var(--border);
 }
 
-.picker-image-wrap img {
+.editor-stage img {
   display: block;
-  width: 100%;
+  max-width: 96vw;
+  max-height: 96vh;
+  width: auto;
   height: auto;
-  cursor: crosshair;
+  cursor: default;
 }
+.editor-stage img.remove-armed { cursor: crosshair; }
 
-.picker-loading {
+.editor-loading {
   position: absolute;
   inset: 0;
   background: rgba(5, 6, 10, 0.45);
@@ -1586,13 +1592,102 @@ a.tool-card:hover {
   align-items: center;
   justify-content: center;
 }
+.editor-loading[hidden] { display: none; }
 
-.picker-loading[hidden] { display: none; }
+/* Purely a client-side overlay - drawn over the <img>, never touches the
+   screenshot bytes sent to/from the server, so it can never end up in the
+   recorded video. Shown only when that boundary's absolute page position
+   falls within the currently-visible slice. */
+.scroll-bound-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--error);
+  box-shadow: 0 0 6px rgba(255, 107, 125, 0.8);
+  cursor: ns-resize;
+  transform: translateY(-50%);
+}
+.scroll-bound-line[hidden] { display: none; }
 
-.picker-actions {
+.range-track-wrap {
+  position: fixed;
+  right: 18px;
+  top: 6vh;
+  bottom: 6vh;
+  width: 24px;
+  z-index: 401;
   display: flex;
-  justify-content: flex-end;
-  gap: 10px;
+  justify-content: center;
+}
+
+.range-track {
+  position: relative;
+  width: 6px;
+  height: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.range-track-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: var(--accent);
+  border-radius: 3px;
+}
+
+.range-handle {
+  position: absolute;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--error);
+  border: 2px solid var(--bg-card);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  transform: translate(-50%, -50%);
+  cursor: ns-resize;
+}
+
+.editor-panel {
+  position: fixed;
+  top: 80px;
+  left: 24px;
+  width: 260px;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  background: linear-gradient(180deg, var(--bg-card), var(--card-shade));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.7);
+  z-index: 402;
+}
+
+.editor-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  cursor: move;
+  user-select: none;
+}
+.editor-panel-header .modal-close { position: static; }
+
+.editor-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.editor-tool-btn[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 
 .user-activity-btn {

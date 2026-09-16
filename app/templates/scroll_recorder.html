@@ -5,21 +5,13 @@
     <a href="/" class="back-link" title="Усі інструменти" aria-label="Усі інструменти"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg></a>
     <h1>Scroll Recorder</h1>
   </div>
-  <p class="hero-sub">Вкажи посилання — сторінку буде плавно проскрольовано й записано у відео заданого формату.</p>
+  <p class="hero-sub">Вкажи посилання — відкриється попередній перегляд, де можна налаштувати запис і видалити зайві елементи.</p>
 </div>
 
-<form id="scroll-recorder-form" class="card">
+<div class="card" id="scroll-recorder-form">
   <label>Посилання на сторінку
     <input type="url" name="url" id="sr-url" placeholder="https://..." required>
   </label>
-
-  <div class="field-group">
-    <span class="field-label">Пристрій</span>
-    <select name="device" id="sr-device">
-      <option value="desktop" selected>ПК</option>
-      <option value="mobile">Телефон</option>
-    </select>
-  </div>
 
   <div class="field-group" id="sr-aspect-ratio-group">
     <span class="field-label">Співвідношення сторін</span>
@@ -29,46 +21,65 @@
       <option value="1:1">1:1 (квадрат)</option>
       <option value="4:5">4:5 (портрет)</option>
     </select>
-    <span class="hint" id="sr-aspect-ratio-hint" hidden>У режимі «Телефон» ігнорується — запис іде в натуральному розмірі екрана телефону.</span>
   </div>
 
-  <div class="field-group">
-    <span class="field-label">Тривалість відео (секунд)</span>
-    <input type="number" name="duration_seconds" id="sr-duration" min="3" max="300" value="15" required>
-    <span class="hint">Сам запис (статус «Запис скролу») може тривати довше за це значення — сторінку прогортують дрібними кроками повністю, а потім прискорять до заданої тривалості.</span>
-  </div>
-
-  <div class="field-group">
-    <span class="field-label">Фреймрейт</span>
-    <select name="framerate" id="sr-framerate">
-      <option value="30" selected>30 fps</option>
-      <option value="60">60 fps</option>
-    </select>
-  </div>
-
-  <label class="checkbox-row"><input type="checkbox" name="block_ads" id="sr-block-ads"> <span>Блокувати рекламу</span></label>
-  <label class="checkbox-row"><input type="checkbox" name="use_proxy" id="sr-use-proxy"> <span>Використовувати проксі</span></label>
-
-  <div class="form-actions">
-    <button type="button" class="btn-secondary" id="sr-preview-btn">Попередній перегляд і видалення елементів</button>
-    <button type="submit" class="btn-primary">Записати</button>
-  </div>
-</form>
+  <button type="button" class="btn-primary" id="sr-preview-btn">Попередній перегляд</button>
+</div>
 
 <div id="status-box"></div>
 
-<div class="modal-overlay" id="picker-modal" hidden>
-  <div class="modal-box wide picker-box">
-    <button type="button" class="modal-close" id="picker-close" title="Закрити" aria-label="Закрити">&times;</button>
-    <h3>Виберіть елементи для видалення</h3>
-    <p class="hint">Клікніть на елемент сторінки, щоб приховати його із запису.</p>
-    <div class="picker-image-wrap">
-      <img id="picker-screenshot" alt="Попередній перегляд сторінки">
-      <div class="picker-loading" id="picker-loading" hidden><span class="spinner"></span></div>
+<div class="editor-overlay" id="editor-overlay" hidden>
+  <div class="editor-stage" id="editor-stage">
+    <img id="editor-screenshot" alt="Попередній перегляд сторінки">
+    <div class="editor-loading" id="editor-loading" hidden><span class="spinner"></span></div>
+    <div class="scroll-bound-line start" id="line-start" hidden></div>
+    <div class="scroll-bound-line end" id="line-end" hidden></div>
+  </div>
+
+  <div class="range-track-wrap">
+    <div class="range-track" id="range-track">
+      <div class="range-track-fill" id="range-track-fill"></div>
+      <div class="range-handle start" id="handle-start" title="Початок запису"></div>
+      <div class="range-handle end" id="handle-end" title="Кінець запису"></div>
     </div>
-    <div class="picker-actions">
-      <button type="button" class="btn-secondary" id="picker-undo">Скасувати видалення</button>
-      <button type="button" class="btn-primary" id="picker-record">Записати</button>
+  </div>
+
+  <div class="editor-panel" id="editor-panel">
+    <div class="editor-panel-header" id="editor-panel-header">
+      <span>Налаштування запису</span>
+      <button type="button" class="modal-close" id="editor-close" title="Закрити" aria-label="Закрити">&times;</button>
+    </div>
+    <div class="editor-panel-body">
+      <div class="field-group">
+        <span class="field-label">Пристрій</span>
+        <select id="ed-device">
+          <option value="desktop" selected>ПК</option>
+          <option value="mobile">Телефон</option>
+        </select>
+        <span class="hint">У режимі «Телефон» співвідношення сторін з головної сторінки ігнорується — запис іде в натуральному розмірі екрана телефону. Зміна пристрою перевідкриває перегляд.</span>
+      </div>
+
+      <button type="button" class="btn-secondary editor-tool-btn" id="ed-remove-toggle" aria-pressed="false">Видалити об'єкт</button>
+      <button type="button" class="btn-secondary" id="ed-undo">Скасувати видалення</button>
+
+      <div class="field-group">
+        <span class="field-label">Тривалість відео (секунд)</span>
+        <input type="number" id="ed-duration" min="3" max="300" value="15">
+      </div>
+
+      <div class="field-group">
+        <span class="field-label">Фреймрейт</span>
+        <select id="ed-framerate">
+          <option value="30" selected>30 fps</option>
+          <option value="60">60 fps</option>
+        </select>
+      </div>
+
+      <label class="checkbox-row"><input type="checkbox" id="ed-block-ads"> <span>Блокувати рекламу</span></label>
+      <label class="checkbox-row"><input type="checkbox" id="ed-use-proxy"> <span>Використовувати проксі</span></label>
+
+      <button type="button" class="btn-secondary" id="ed-reset-range">Скинути межі запису</button>
+      <button type="button" class="btn-primary" id="ed-record">Записати</button>
     </div>
   </div>
 </div>

@@ -1,4 +1,3 @@
-const form = document.getElementById("scroll-recorder-form");
 const statusBox = document.getElementById("status-box");
 
 const STATUS_LABELS = {
@@ -29,53 +28,9 @@ function cancelBtn(id) {
   return `<button type="button" class="status-cancel-corner" data-cancel-id="${id}" title="Скасувати" aria-label="Скасувати">${CANCEL_ICON}</button>`;
 }
 
-const deviceSelect = document.getElementById("sr-device");
-const aspectRatioGroup = document.getElementById("sr-aspect-ratio-group");
-const aspectRatioSelect = document.getElementById("sr-aspect-ratio");
-const aspectRatioHint = document.getElementById("sr-aspect-ratio-hint");
-
-function syncAspectRatioField() {
-  const isMobile = deviceSelect.value === "mobile";
-  aspectRatioSelect.disabled = isMobile;
-  aspectRatioHint.hidden = !isMobile;
+function showError(message) {
+  statusBox.innerHTML = `<div class="card status-card"><p class="error">${escapeHtml(message)}</p></div>`;
 }
-deviceSelect.addEventListener("change", syncAspectRatioField);
-syncAspectRatioField();
-
-form.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const fd = new FormData(form);
-  const body = {
-    url: fd.get("url").trim(),
-    aspect_ratio: aspectRatioSelect.value,
-    device: fd.get("device"),
-    duration_seconds: Number(fd.get("duration_seconds")),
-    framerate: Number(fd.get("framerate")),
-    block_ads: fd.get("block_ads") === "on",
-    use_proxy: fd.get("use_proxy") === "on",
-  };
-
-  statusBox.innerHTML = `<div class="card status-card">
-    <p>Надсилаємо запит...</p>
-    <div class="progress"><div class="progress-bar indeterminate"></div></div>
-  </div>`;
-
-  try {
-    const res = await fetch("/api/scroll-recorder/jobs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      statusBox.innerHTML = `<div class="card status-card"><p class="error">${escapeHtml(data.error || data.detail || "Помилка")}</p></div>`;
-      return;
-    }
-    pollStatus(data.job_id);
-  } catch (err) {
-    statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка з'єднання</p></div>`;
-  }
-});
 
 function pollStatus(id) {
   const interval = setInterval(async () => {
@@ -83,7 +38,7 @@ function pollStatus(id) {
       const res = await fetch(`/api/scroll-recorder/jobs/${id}`);
       const job = await res.json();
       if (!res.ok || job.error) {
-        statusBox.innerHTML = `<div class="card status-card"><p class="error">${escapeHtml(job.error || "невідома помилка")}</p></div>`;
+        showError(job.error || "невідома помилка");
         clearInterval(interval);
         return;
       }
@@ -95,7 +50,7 @@ function pollStatus(id) {
         </div>`;
         clearInterval(interval);
       } else if (job.status === "error") {
-        statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка запису: ${escapeHtml(job.error || "невідома помилка")}</p></div>`;
+        showError(`Помилка запису: ${job.error || "невідома помилка"}`);
         clearInterval(interval);
       } else if (job.status === "cancelled") {
         statusBox.innerHTML = `<div class="card status-card"><p>Запис скасовано.</p></div>`;
@@ -126,31 +81,83 @@ document.addEventListener("click", async (e) => {
   }
 });
 
-// --- Preview / element-removal picker ---
+// --- Full-screen preview editor ---
 
+const urlInput = document.getElementById("sr-url");
+const aspectRatioSelect = document.getElementById("sr-aspect-ratio");
 const previewBtn = document.getElementById("sr-preview-btn");
-const pickerModal = document.getElementById("picker-modal");
-const pickerScreenshot = document.getElementById("picker-screenshot");
-const pickerLoading = document.getElementById("picker-loading");
-const pickerUndoBtn = document.getElementById("picker-undo");
-const pickerRecordBtn = document.getElementById("picker-record");
-const pickerCloseBtn = document.getElementById("picker-close");
 
-let previewSessionId = null;
+const overlay = document.getElementById("editor-overlay");
+const stage = document.getElementById("editor-stage");
+const screenshotImg = document.getElementById("editor-screenshot");
+const loadingEl = document.getElementById("editor-loading");
+const lineStart = document.getElementById("line-start");
+const lineEnd = document.getElementById("line-end");
+const rangeTrack = document.getElementById("range-track");
+const rangeFill = document.getElementById("range-track-fill");
+const handleStart = document.getElementById("handle-start");
+const handleEnd = document.getElementById("handle-end");
+const panel = document.getElementById("editor-panel");
+const panelHeader = document.getElementById("editor-panel-header");
+const closeBtn = document.getElementById("editor-close");
+const deviceSelect = document.getElementById("ed-device");
+const removeToggleBtn = document.getElementById("ed-remove-toggle");
+const undoBtn = document.getElementById("ed-undo");
+const durationInput = document.getElementById("ed-duration");
+const framerateSelect = document.getElementById("ed-framerate");
+const blockAdsCheckbox = document.getElementById("ed-block-ads");
+const useProxyCheckbox = document.getElementById("ed-use-proxy");
+const resetRangeBtn = document.getElementById("ed-reset-range");
+const recordBtn = document.getElementById("ed-record");
 
-function setPickerLoading(loading) {
-  pickerLoading.hidden = !loading;
-  pickerScreenshot.style.pointerEvents = loading ? "none" : "auto";
+let sessionId = null;
+let currentY = 0;
+let currentH = 1;
+let viewportHeight = 1;
+let startFraction = 0.0;
+let endFraction = 1.0;
+let removeArmed = false;
+
+function setLoading(loading) {
+  loadingEl.hidden = !loading;
 }
 
-function showPickerScreenshot(base64) {
-  pickerScreenshot.src = `data:image/png;base64,${base64}`;
+function showScreenshot(b64) {
+  screenshotImg.src = `data:image/png;base64,${b64}`;
 }
 
-async function closePreviewSession() {
-  if (!previewSessionId) return;
-  const id = previewSessionId;
-  previewSessionId = null;
+function totalScrollable() {
+  return Math.max(1, currentH - viewportHeight);
+}
+
+function positionLineIfVisible(lineEl, absolutePx) {
+  const offset = absolutePx - currentY;
+  if (offset < 0 || offset > viewportHeight) {
+    lineEl.hidden = true;
+    return;
+  }
+  lineEl.style.top = `${(offset / viewportHeight) * 100}%`;
+  lineEl.hidden = false;
+}
+
+function updateOverlays() {
+  const trackHeight = rangeTrack.clientHeight;
+  const startTop = startFraction * trackHeight;
+  const endTop = endFraction * trackHeight;
+  handleStart.style.top = `${startTop}px`;
+  handleEnd.style.top = `${endTop}px`;
+  rangeFill.style.top = `${Math.min(startTop, endTop)}px`;
+  rangeFill.style.height = `${Math.abs(endTop - startTop)}px`;
+
+  const total = totalScrollable();
+  positionLineIfVisible(lineStart, startFraction * total);
+  positionLineIfVisible(lineEnd, endFraction * total);
+}
+
+async function closeSession() {
+  if (!sessionId) return;
+  const id = sessionId;
+  sessionId = null;
   try {
     await fetch(`/api/scroll-recorder/preview/${id}`, { method: "DELETE" });
   } catch (err) {
@@ -158,87 +165,171 @@ async function closePreviewSession() {
   }
 }
 
-previewBtn.addEventListener("click", async () => {
-  const url = document.getElementById("sr-url").value.trim();
-  if (!url) return;
-  const aspectRatio = document.getElementById("sr-aspect-ratio").value;
-  const device = document.getElementById("sr-device").value;
-  const blockAds = document.getElementById("sr-block-ads").checked;
-  const useProxy = document.getElementById("sr-use-proxy").checked;
-
-  pickerModal.hidden = false;
-  pickerScreenshot.removeAttribute("src");
-  setPickerLoading(true);
-
+async function openSession() {
+  setLoading(true);
+  screenshotImg.removeAttribute("src");
+  lineStart.hidden = true;
+  lineEnd.hidden = true;
   try {
     const res = await fetch("/api/scroll-recorder/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, aspect_ratio: aspectRatio, device, block_ads: blockAds, use_proxy: useProxy }),
+      body: JSON.stringify({
+        url: urlInput.value.trim(),
+        aspect_ratio: aspectRatioSelect.value,
+        device: deviceSelect.value,
+        block_ads: blockAdsCheckbox.checked,
+        use_proxy: useProxyCheckbox.checked,
+      }),
     });
     const data = await res.json();
     if (!res.ok || data.error) {
-      pickerModal.hidden = true;
-      statusBox.innerHTML = `<div class="card status-card"><p class="error">${escapeHtml(data.error || data.detail || "Не вдалося відкрити сторінку")}</p></div>`;
+      overlay.hidden = true;
+      showError(data.error || data.detail || "Не вдалося відкрити сторінку");
       return;
     }
-    previewSessionId = data.session_id;
-    showPickerScreenshot(data.screenshot);
+    sessionId = data.session_id;
+    viewportHeight = data.height;
+    currentY = data.y;
+    currentH = data.page_height;
+    showScreenshot(data.screenshot);
+    updateOverlays();
   } catch (err) {
-    pickerModal.hidden = true;
-    statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка з'єднання</p></div>`;
+    overlay.hidden = true;
+    showError("Помилка з'єднання");
   } finally {
-    setPickerLoading(false);
+    setLoading(false);
   }
+}
+
+async function doScroll(deltaY) {
+  if (!sessionId || Math.abs(deltaY) < 1) return;
+  setLoading(true);
+  try {
+    const res = await fetch(`/api/scroll-recorder/preview/${sessionId}/scroll`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ delta_y: deltaY }),
+    });
+    const data = await res.json();
+    if (res.ok && data.screenshot) {
+      showScreenshot(data.screenshot);
+      currentY = data.y;
+      currentH = data.h;
+      updateOverlays();
+    }
+  } catch (err) {
+    // ignore — the view just won't update this tick, user can scroll again
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function scrollToFraction(fraction) {
+  await doScroll(fraction * totalScrollable() - currentY);
+}
+
+previewBtn.addEventListener("click", async () => {
+  const url = urlInput.value.trim();
+  if (!url) return;
+  overlay.hidden = false;
+  startFraction = 0.0;
+  endFraction = 1.0;
+  removeArmed = false;
+  removeToggleBtn.setAttribute("aria-pressed", "false");
+  screenshotImg.classList.remove("remove-armed");
+  await openSession();
 });
 
-pickerScreenshot.addEventListener("click", async (e) => {
-  if (!previewSessionId) return;
-  const rect = pickerScreenshot.getBoundingClientRect();
-  const scaleX = pickerScreenshot.naturalWidth / rect.width;
-  const scaleY = pickerScreenshot.naturalHeight / rect.height;
+closeBtn.addEventListener("click", async () => {
+  overlay.hidden = true;
+  await closeSession();
+});
+
+deviceSelect.addEventListener("change", async () => {
+  if (overlay.hidden) return;
+  await closeSession();
+  startFraction = 0.0;
+  endFraction = 1.0;
+  await openSession();
+});
+
+// Wheel-driven navigation is the primary way to move around the live
+// remote page - accumulated and debounced, since each tick is a real
+// network round-trip (scroll + screenshot) through the sidecar.
+let wheelAccum = 0;
+let wheelTimer = null;
+stage.addEventListener(
+  "wheel",
+  (e) => {
+    e.preventDefault();
+    wheelAccum += e.deltaY;
+    if (wheelTimer) return;
+    wheelTimer = setTimeout(() => {
+      const amount = wheelAccum;
+      wheelAccum = 0;
+      wheelTimer = null;
+      doScroll(amount);
+    }, 120);
+  },
+  { passive: false }
+);
+
+removeToggleBtn.addEventListener("click", () => {
+  removeArmed = !removeArmed;
+  removeToggleBtn.setAttribute("aria-pressed", String(removeArmed));
+  screenshotImg.classList.toggle("remove-armed", removeArmed);
+});
+
+screenshotImg.addEventListener("click", async (e) => {
+  if (!removeArmed || !sessionId) return;
+  const rect = screenshotImg.getBoundingClientRect();
+  const scaleX = screenshotImg.naturalWidth / rect.width;
+  const scaleY = screenshotImg.naturalHeight / rect.height;
   const x = (e.clientX - rect.left) * scaleX;
   const y = (e.clientY - rect.top) * scaleY;
 
-  setPickerLoading(true);
+  setLoading(true);
   try {
-    const res = await fetch(`/api/scroll-recorder/preview/${previewSessionId}/remove`, {
+    const res = await fetch(`/api/scroll-recorder/preview/${sessionId}/remove`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ x, y }),
     });
     const data = await res.json();
-    if (res.ok && data.screenshot) showPickerScreenshot(data.screenshot);
+    if (res.ok && data.screenshot) showScreenshot(data.screenshot);
   } catch (err) {
     // ignore — the screenshot just won't update this click, user can retry
   } finally {
-    setPickerLoading(false);
+    setLoading(false);
   }
 });
 
-pickerUndoBtn.addEventListener("click", async () => {
-  if (!previewSessionId) return;
-  setPickerLoading(true);
+undoBtn.addEventListener("click", async () => {
+  if (!sessionId) return;
+  setLoading(true);
   try {
-    const res = await fetch(`/api/scroll-recorder/preview/${previewSessionId}/undo`, {
-      method: "POST",
-    });
+    const res = await fetch(`/api/scroll-recorder/preview/${sessionId}/undo`, { method: "POST" });
     const data = await res.json();
-    if (res.ok && data.screenshot) showPickerScreenshot(data.screenshot);
+    if (res.ok && data.screenshot) showScreenshot(data.screenshot);
   } catch (err) {
     // ignore
   } finally {
-    setPickerLoading(false);
+    setLoading(false);
   }
 });
 
-pickerRecordBtn.addEventListener("click", async () => {
-  if (!previewSessionId) return;
-  const durationSeconds = Number(document.getElementById("sr-duration").value);
-  const framerate = Number(document.getElementById("sr-framerate").value);
-  const id = previewSessionId;
-  previewSessionId = null; // the sidecar session is consumed by /record either way
-  pickerModal.hidden = true;
+resetRangeBtn.addEventListener("click", () => {
+  startFraction = 0.0;
+  endFraction = 1.0;
+  updateOverlays();
+});
+
+recordBtn.addEventListener("click", async () => {
+  if (!sessionId) return;
+  const id = sessionId;
+  sessionId = null; // the sidecar session is consumed by /record either way
+  overlay.hidden = true;
 
   statusBox.innerHTML = `<div class="card status-card">
     <p>Надсилаємо запит...</p>
@@ -249,20 +340,98 @@ pickerRecordBtn.addEventListener("click", async () => {
     const res = await fetch(`/api/scroll-recorder/preview/${id}/record`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ duration_seconds: durationSeconds, framerate }),
+      body: JSON.stringify({
+        duration_seconds: Number(durationInput.value),
+        framerate: Number(framerateSelect.value),
+        start_fraction: startFraction,
+        end_fraction: endFraction,
+      }),
     });
     const data = await res.json();
     if (!res.ok || data.error) {
-      statusBox.innerHTML = `<div class="card status-card"><p class="error">${escapeHtml(data.error || data.detail || "Помилка")}</p></div>`;
+      showError(data.error || data.detail || "Помилка");
       return;
     }
     pollStatus(data.job_id);
   } catch (err) {
-    statusBox.innerHTML = `<div class="card status-card"><p class="error">Помилка з'єднання</p></div>`;
+    showError("Помилка з'єднання");
   }
 });
 
-pickerCloseBtn.addEventListener("click", () => {
-  pickerModal.hidden = true;
-  closePreviewSession();
+// --- Draggable settings panel ---
+
+let panelDrag = null;
+panelHeader.addEventListener("mousedown", (e) => {
+  if (e.target.closest(".modal-close")) return;
+  const rect = panel.getBoundingClientRect();
+  panel.style.left = `${rect.left}px`;
+  panel.style.top = `${rect.top}px`;
+  panelDrag = { offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top };
+  document.addEventListener("mousemove", onPanelDrag);
+  document.addEventListener("mouseup", endPanelDrag);
 });
+function onPanelDrag(e) {
+  if (!panelDrag) return;
+  const x = Math.max(0, Math.min(window.innerWidth - panel.offsetWidth, e.clientX - panelDrag.offsetX));
+  const y = Math.max(0, Math.min(window.innerHeight - panel.offsetHeight, e.clientY - panelDrag.offsetY));
+  panel.style.left = `${x}px`;
+  panel.style.top = `${y}px`;
+}
+function endPanelDrag() {
+  panelDrag = null;
+  document.removeEventListener("mousemove", onPanelDrag);
+  document.removeEventListener("mouseup", endPanelDrag);
+}
+
+// --- Height-range handles (right-edge slider) and stripes (on the image) ---
+
+function attachHandleDrag(handleEl, isStart) {
+  handleEl.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    const trackRect = rangeTrack.getBoundingClientRect();
+    function onMove(ev) {
+      const fraction = Math.max(0, Math.min(1, (ev.clientY - trackRect.top) / trackRect.height));
+      if (isStart) startFraction = fraction;
+      else endFraction = fraction;
+      updateOverlays();
+    }
+    function onUp() {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      scrollToFraction(isStart ? startFraction : endFraction);
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  });
+}
+attachHandleDrag(handleStart, true);
+attachHandleDrag(handleEnd, false);
+
+function attachLineDrag(lineEl, isStart) {
+  lineEl.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    function clampedFraction(ev) {
+      const imgRect = screenshotImg.getBoundingClientRect();
+      const offsetPx = Math.max(0, Math.min(imgRect.height, ev.clientY - imgRect.top));
+      return offsetPx / imgRect.height;
+    }
+    function onMove(ev) {
+      lineEl.style.top = `${clampedFraction(ev) * 100}%`;
+    }
+    function onUp(ev) {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      const offsetFraction = clampedFraction(ev);
+      const absolutePx = currentY + offsetFraction * viewportHeight;
+      const fraction = Math.max(0, Math.min(1, absolutePx / totalScrollable()));
+      if (isStart) startFraction = fraction;
+      else endFraction = fraction;
+      updateOverlays();
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  });
+}
+attachLineDrag(lineStart, true);
+attachLineDrag(lineEnd, false);
