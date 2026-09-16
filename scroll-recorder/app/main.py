@@ -128,6 +128,15 @@ def undo_element(session_id: str):
     return {"screenshot": screenshot}
 
 
+@app.post("/preview/{session_id}/remove-header")
+def remove_header(session_id: str):
+    try:
+        screenshot = recorder.remove_header(session_id)
+    except KeyError:
+        raise HTTPException(404, "session not found")
+    return {"screenshot": screenshot}
+
+
 class ScrollRequest(BaseModel):
     delta_y: float
 

@@ -316,8 +316,15 @@ def _scroll_and_capture(
     start_fraction = max(0.0, min(1.0, start_fraction))
     end_fraction = max(0.0, min(1.0, end_fraction))
     start_px = round(start_fraction * total_page_scrollable)
+    # stop_scroll_y is a scrollY *target* (same units/range as start_px),
+    # not a page-content boundary - the frontend computes both start/end
+    # fractions identically (an absolute page position divided by
+    # total_page_scrollable), so both sides of this need the same
+    # convention or the end marker silently lands somewhere else entirely
+    # (previously off by exactly one viewport height, from mixing the two
+    # conventions between client and server).
     fixed_end = end_fraction < 1.0
-    effective_bottom = round(end_fraction * total_page_scrollable) + height if fixed_end else scroll_height
+    stop_scroll_y = round(end_fraction * total_page_scrollable) if fixed_end else total_page_scrollable
 
     scroll_y = state["y"]
     if start_px != scroll_y:
@@ -326,7 +333,7 @@ def _scroll_and_capture(
 
     frame_index = 0
     stall_ticks = 0
-    range_total = max(0, effective_bottom - height - start_px)
+    range_total = max(0, stop_scroll_y - start_px)
     step_px = _compute_scroll_step(range_total, duration_seconds, output_fps)
 
     while True:
@@ -591,6 +598,46 @@ def remove_at_point(session_id: str, x: float, y: float) -> str:
                 return true;
             }""",
             [x, y, idx],
+        )
+        if removed:
+            session.push_removed(idx)
+        return _screenshot_b64(page)
+
+    return session.call(action)
+
+
+def remove_header(session_id: str) -> str:
+    """Removes the site's own top bar (logo/nav) without requiring the
+    user to click it directly - probes the same point every page's header
+    naturally sits at (top-center), then walks up from whatever element
+    is there to the nearest ancestor that actually looks like a header bar
+    (a <header>, or anything fixed/sticky spanning at least half the
+    viewport width), so a click landing on e.g. just the logo image still
+    hides the whole bar around it instead of one small child element."""
+    session = _get_preview(session_id)
+    idx = session.next_removed_index()
+
+    def action(page):
+        removed = page.evaluate(
+            """(idx) => {
+                const start = document.elementFromPoint(window.innerWidth / 2, 5);
+                if (!start || start === document.body || start === document.documentElement) return false;
+                let el = start;
+                let candidate = null;
+                while (el && el !== document.body) {
+                    const style = getComputedStyle(el);
+                    const rect = el.getBoundingClientRect();
+                    const barLike = (style.position === 'fixed' || style.position === 'sticky' || el.tagName === 'HEADER')
+                        && rect.width >= window.innerWidth * 0.5;
+                    if (barLike) { candidate = el; break; }
+                    el = el.parentElement;
+                }
+                const target = candidate || start;
+                target.setAttribute('data-obelisk-removed', String(idx));
+                target.style.setProperty('display', 'none', 'important');
+                return true;
+            }""",
+            idx,
         )
         if removed:
             session.push_removed(idx)
