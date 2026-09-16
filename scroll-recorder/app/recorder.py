@@ -231,14 +231,10 @@ def _scroll_and_capture(job_id, page, frames_dir, duration_seconds):
         if now >= deadline:
             break
 
-        # JPEG instead of PNG, and one combined evaluate (scroll + read)
-        # per tick instead of three separate round-trips - both cut the
-        # real per-tick latency, which is what actually caps how many
-        # unique frames fit in duration_seconds (there's no artificial
-        # delay in this loop; it just runs flat-out). More real frames
-        # with a smaller shift between each is what makes the output look
-        # like a smooth manual scroll instead of an interpolated blur.
-        page.screenshot(path=os.path.join(frames_dir, f"frame_{frame_index:06d}.jpg"), type="jpeg", quality=85)
+        # Lossless PNG - JPEG's compression, stacked with the H.264 encode
+        # afterward, was producing double-compression ringing/ghosting
+        # specifically on sharp text edges (confirmed by real testing).
+        page.screenshot(path=os.path.join(frames_dir, f"frame_{frame_index:06d}.png"))
         frame_index += 1
 
         total_scrollable = max(1, scroll_height - height)
@@ -256,11 +252,24 @@ def _scroll_and_capture(job_id, page, frames_dir, duration_seconds):
         remaining_time = max(TARGET_TICK_SECONDS, deadline - now)
         px_per_tick = max(1, round(remaining_px * TARGET_TICK_SECONDS / remaining_time))
 
+        # behavior:'instant' explicitly overrides a page's own CSS
+        # scroll-behavior:smooth - without it, scrollBy kicks off the
+        # browser's own multi-frame scroll *animation* instead of an
+        # immediate jump, so the very next screenshot (taken right after,
+        # with no wait) could land mid-animation: a half-scrolled,
+        # blurred/ghosted frame instead of a settled one. This is the
+        # most likely explanation for the doubled/unreadable text a real
+        # recording showed. The double requestAnimationFrame after
+        # scrolling waits for the browser to actually paint the new,
+        # settled position before this call returns, so every screenshot
+        # is a single crisp static frame instead of a mid-transition one.
         state = page.evaluate(
-            """(dy) => {
-                window.scrollBy(0, dy);
-                return {y: window.scrollY, h: document.documentElement.scrollHeight};
-            }""",
+            """(dy) => new Promise((resolve) => {
+                window.scrollBy({top: dy, left: 0, behavior: 'instant'});
+                requestAnimationFrame(() => requestAnimationFrame(() => {
+                    resolve({y: window.scrollY, h: document.documentElement.scrollHeight});
+                }));
+            })""",
             px_per_tick,
         )
         scroll_y = state["y"]
@@ -282,7 +291,7 @@ def _encode(frames_dir, out_path, input_fps, output_fps):
     cmd = [
         "ffmpeg", "-y",
         "-framerate", str(input_fps),
-        "-i", os.path.join(frames_dir, "frame_%06d.jpg"),
+        "-i", os.path.join(frames_dir, "frame_%06d.png"),
         "-r", str(output_fps),
         "-c:v", "libx264", "-pix_fmt", "yuv420p",
         out_path,
