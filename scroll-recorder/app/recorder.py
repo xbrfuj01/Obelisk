@@ -87,22 +87,24 @@ AD_BLOCK_CSS = """
 }
 """
 
-# Capture moves this many CSS pixels per captured frame, regardless of how
-# long that takes in real wall-clock time - "1 frame = a few pixels of
-# scroll", the same granularity a real manual click-drag scroll would look
-# like, per the user's own explicit request. The requested output duration/
-# framerate are hit afterward in _encode by *speeding up* this raw,
-# fine-grained footage (selecting evenly-spaced frames from it), not by
-# pacing the capture itself to a deadline - pacing capture to a short
-# deadline is what previously forced large per-frame jumps and looked like
-# a slideshow.
-SCROLL_STEP_PX = 4
+# The per-frame scroll step is computed per-recording (see
+# _compute_scroll_step), not a fixed constant - sized directly from how
+# tall the page is and how many frames the requested output actually needs
+# (duration_seconds * framerate), so a short page doesn't get wastefully
+# over-captured and a tall one doesn't take forever. These just bound that
+# calculation on both ends: never so fine that a short page/long duration
+# combo captures far more frames than the output could ever use, never so
+# coarse (on a very tall page) that even the raw footage looks choppy
+# before any speedup.
+MIN_SCROLL_STEP_PX = 2
+MAX_SCROLL_STEP_PX = 30
 
-# Safety ceilings on the raw capture phase itself, decoupled from the
-# requested output duration_seconds (which no longer bounds capture time -
-# see above). MAX_CAPTURE_FRAMES in particular bounds temporary disk usage
-# (this project's NVMe "apps" pool is small) - frames are deleted right
-# after encoding either way.
+# Safety ceilings on the raw capture phase itself - a backstop for a page
+# whose height keeps growing (infinite scroll) or that's simply too tall
+# to finish even at MAX_SCROLL_STEP_PX, not the primary pacing mechanism
+# (see above). MAX_CAPTURE_FRAMES in particular bounds temporary disk
+# usage (this project's NVMe "apps" pool is small) - frames are deleted
+# right after encoding either way.
 MAX_CAPTURE_SECONDS = 900
 MAX_CAPTURE_FRAMES = 6000
 
@@ -226,14 +228,36 @@ def _prepare_page(p, browser, url, aspect_ratio, device, block_ads):
     return page
 
 
-def _scroll_and_capture(job_id, page, frames_dir):
-    """Captures one frame per SCROLL_STEP_PX of real scroll movement, all
-    the way to the bottom of the page - a fixed, small, deliberately
-    non-time-paced step, so the raw footage this produces is fine-grained
-    regardless of how long it takes in real wall-clock time. _encode
-    (called separately, after this returns) is what fits the result into
-    the user's requested output duration/framerate, by speeding up this
-    footage rather than by pacing the capture itself to a deadline."""
+def _compute_scroll_step(total_scrollable_px, duration_seconds, output_fps):
+    """Sizes the per-frame scroll step directly from the page's own
+    scrollable distance and what the requested output actually needs
+    (duration_seconds * output_fps frames) - not a fixed constant. The
+    "ideal" step is exactly enough raw frames to cover the whole page once
+    each, spread evenly across the target frame count: no waste
+    over-capturing a short page, no needing to when a page is short
+    relative to a long requested duration. Clamped on both ends: a floor
+    so a short page / long duration combo doesn't chase a near-zero step
+    forever, a ceiling so a very tall page still gets reasonably fine-
+    grained raw footage instead of looking choppy even before any
+    speedup - accepting a longer real capture time in that case rather
+    than a coarser one, since _encode's select/setpts speedup can still
+    smooth out an oversampled sequence but can't fix an undersampled one."""
+    target_output_frames = max(1, round(duration_seconds * output_fps))
+    if total_scrollable_px <= 0:
+        return MIN_SCROLL_STEP_PX
+    ideal_step_px = total_scrollable_px / target_output_frames
+    return max(MIN_SCROLL_STEP_PX, min(MAX_SCROLL_STEP_PX, round(ideal_step_px)))
+
+
+def _scroll_and_capture(job_id, page, frames_dir, duration_seconds, output_fps):
+    """Captures one frame per _compute_scroll_step() pixels of real scroll
+    movement, all the way to the bottom of the page - deliberately not
+    paced to a time deadline itself (see _compute_scroll_step), so the raw
+    footage this produces stays fine-grained regardless of how long it
+    takes in real wall-clock time. _encode (called separately, after this
+    returns) is what fits the result into the exact requested output
+    duration/framerate, by speeding up this footage rather than by pacing
+    the capture itself to a deadline."""
     height = page.viewport_size["height"]
     deadline = time.monotonic() + MAX_CAPTURE_SECONDS
 
@@ -242,6 +266,7 @@ def _scroll_and_capture(job_id, page, frames_dir):
         "() => ({y: window.scrollY, h: document.documentElement.scrollHeight})"
     )
     scroll_y, scroll_height = state["y"], state["h"]
+    step_px = _compute_scroll_step(max(0, scroll_height - height), duration_seconds, output_fps)
 
     while True:
         if job_id in _cancel_requested:
@@ -263,7 +288,7 @@ def _scroll_and_capture(job_id, page, frames_dir):
         if remaining_px <= 0:
             break
 
-        step = min(SCROLL_STEP_PX, remaining_px)
+        step = min(step_px, remaining_px)
 
         # behavior:'instant' explicitly overrides a page's own CSS
         # scroll-behavior:smooth - without it, scrollBy kicks off the
@@ -341,7 +366,7 @@ def _run_job(job_id, url, aspect_ratio, device, duration_seconds, framerate, blo
             browser = p.chromium.launch(headless=True, proxy=_parse_proxy(proxy_url))
             try:
                 page = _prepare_page(p, browser, url, aspect_ratio, device, block_ads)
-                frame_count = _scroll_and_capture(job_id, page, frames_dir)
+                frame_count = _scroll_and_capture(job_id, page, frames_dir, duration_seconds, framerate)
             finally:
                 browser.close()
         _finalize_recording(job_id, job_dir, frames_dir, frame_count, duration_seconds, framerate)
@@ -361,7 +386,7 @@ def _finish_job_on_page(job_id, page, duration_seconds, framerate):
     os.makedirs(frames_dir, exist_ok=True)
     try:
         _set_status(job_id, status="recording")
-        frame_count = _scroll_and_capture(job_id, page, frames_dir)
+        frame_count = _scroll_and_capture(job_id, page, frames_dir, duration_seconds, framerate)
         _finalize_recording(job_id, job_dir, frames_dir, frame_count, duration_seconds, framerate)
     except Exception as exc:
         _set_status(job_id, status="error", error=str(exc))
